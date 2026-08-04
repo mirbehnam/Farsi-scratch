@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:baselineAligned="false"
+    android:orientation="horizontal">
+
+    <!-- Bar 1: Main Sidebar with Close Button (5% Width) -->
+    <LinearLayout
+        android:id="@+id/sidebarLayout"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="0.05"
+        android:background="#1E1E2C"
+        android:gravity="top|center_horizontal"
+        android:orientation="vertical"
+        android:paddingTop="12dp">
+
+        <!-- Close App Button -->
+        <TextView
+            android:id="@+id/btnClose"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:text="✕"
+            android:textColor="#FF4D4D"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+    </LinearLayout>
+
+    <!-- Bar 2: Windows-style Vertical ScrollBar Track (5% Width) -->
+    <FrameLayout
+        android:id="@+id/scrollBarTrack"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="0.05"
+        android:background="#161622"
+        android:clickable="true"
+        android:focusable="true"
+        android:paddingHorizontal="3dp">
+
+        <!-- Windows Scroll Handle (Thumb) -->
+        <FrameLayout
+            android:id="@+id/scrollThumb"
+            android:layout_width="match_parent"
+            android:layout_height="100dp"
+            android:background="@drawable/windows_thumb_bg">
+
+            <!-- Grip indicator lines inside thumb -->
+            <LinearLayout
+                android:layout_width="14dp"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:orientation="vertical">
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="2dp"
+                    android:background="#8E8EA0" />
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="2dp"
+                    android:layout_marginTop="3dp"
+                    android:background="#8E8EA0" />
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="2dp"
+                    android:layout_marginTop="3dp"
+                    android:background="#8E8EA0" />
+            </LinearLayout>
+
+        </FrameLayout>
+
+    </FrameLayout>
+
+    <!-- WebView Container (90% Width) -->
+    <WebView
+        android:id="@+id/webView"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="0.90" />
+
+</LinearLayout>

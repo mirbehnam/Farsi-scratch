@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "12010519761",
+    "project_id": "farsi-scratch",
+    "storage_bucket": "farsi-scratch.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:12010519761:android:d5c4f941c02d958d0159f0",
+        "android_client_info": {
+          "package_name": "ir.behnamapps.fascratch"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBueQqg_XACVZyAogdTNV64Lio3BvxBguQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

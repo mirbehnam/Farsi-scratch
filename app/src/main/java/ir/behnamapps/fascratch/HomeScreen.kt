@@ -229,36 +229,43 @@ private fun RowScope.HomeSecondaryButton(
         label = "secondary-button-shake"
     )
     val contentBrush = if (drawAttention) {
-        Brush.horizontalGradient(listOf(Color(0xFFB23FE1).copy(.34f), Color(0xFF694DDB).copy(.28f)))
+        Brush.linearGradient(
+            listOf(Color(0xFFCF63CF), Color(0xFF855CD6), Color(0xFF4C72E8)),
+            start = Offset.Zero,
+            end = Offset(700f, 220f)
+        )
     } else {
         Brush.horizontalGradient(listOf(Color.Transparent, Color.Transparent))
     }
 
     Surface(
         modifier = modifier
-            .height(58.dp)
+            .height(if (drawAttention) 62.dp else 58.dp)
             .offset(x = buttonOffset.dp)
             .drawBehind {
                 if (drawAttention) {
                     drawRoundRect(
-                        color = accent.copy(alpha = .13f),
-                        topLeft = Offset(-6f, -6f),
-                        size = androidx.compose.ui.geometry.Size(size.width + 12f, size.height + 12f),
+                        color = accent.copy(alpha = .22f),
+                        topLeft = Offset(-8f, -8f),
+                        size = androidx.compose.ui.geometry.Size(size.width + 16f, size.height + 16f),
                         cornerRadius = androidx.compose.ui.geometry.CornerRadius(25f, 25f)
                     )
                 }
             }
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(18.dp),
-        color = Color.White.copy(if (drawAttention) .09f else .07f),
-        border = BorderStroke(1.dp, if (drawAttention) accent.copy(.58f) else Color.White.copy(.12f))
+        color = Color.White.copy(if (drawAttention) .13f else .07f),
+        border = BorderStroke(
+            1.dp,
+            if (drawAttention) Color.White.copy(.34f) else Color.White.copy(.12f)
+        )
     ) {
         Row(
             modifier = Modifier.fillMaxSize().background(contentBrush).padding(horizontal = 13.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center
         ) {
-            HomeIconContainer(background = accent.copy(if (drawAttention) .28f else .17f)) {
+            HomeIconContainer(background = if (drawAttention) Color.White.copy(.18f) else accent.copy(.17f)) {
                 HomeActionIcon(icon, if (drawAttention) Color.White else accent)
             }
             Spacer(Modifier.width(9.dp))
@@ -309,10 +316,21 @@ private fun HomeActionIcon(icon: HomeActionIcon, color: Color) {
                 drawPath(folder, color, style = stroke)
             }
             HomeActionIcon.Follow -> {
-                drawCircle(color, radius = size.minDimension * .17f, center = Offset(size.width * .39f, size.height * .34f), style = stroke)
-                drawArc(color, 195f, 150f, false, Offset(size.width * .14f, size.height * .45f), androidx.compose.ui.geometry.Size(size.width * .5f, size.height * .42f), style = stroke)
-                drawLine(color, Offset(size.width * .71f, size.height * .42f), Offset(size.width * .71f, size.height * .72f), strokeWidth, StrokeCap.Round)
-                drawLine(color, Offset(size.width * .56f, size.height * .57f), Offset(size.width * .86f, size.height * .57f), strokeWidth, StrokeCap.Round)
+                val plane = Path().apply {
+                    moveTo(size.width * .12f, size.height * .49f)
+                    lineTo(size.width * .88f, size.height * .16f)
+                    lineTo(size.width * .67f, size.height * .86f)
+                    lineTo(size.width * .48f, size.height * .59f)
+                    close()
+                }
+                drawPath(plane, color = color, style = stroke)
+                drawLine(
+                    color,
+                    Offset(size.width * .48f, size.height * .59f),
+                    Offset(size.width * .88f, size.height * .16f),
+                    strokeWidth,
+                    StrokeCap.Round
+                )
             }
         }
     }

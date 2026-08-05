@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.graphics.BitmapFactory
 import android.widget.Toast
@@ -61,6 +62,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -104,6 +106,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.webkit.WebViewAssetLoader
+import com.google.firebase.analytics.FirebaseAnalytics
 import kotlin.math.roundToInt
 import java.io.File
 import org.json.JSONObject
@@ -124,6 +127,7 @@ class MainActivity : ComponentActivity() {
     private var openPhonePickerForScratch = false
     private var projectLoadCommandSent = false
     private var pendingSpriteExport: File? = null
+    private var notificationPermissionResult: ((Boolean) -> Unit)? = null
     lateinit var projectRepository: ProjectRepository
         private set
     private lateinit var projectSaveBridge: ScratchProjectSaveBridge
@@ -186,13 +190,57 @@ class MainActivity : ComponentActivity() {
         pendingWebPermissionRequest = null
     }
 
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        completeNotificationPermissionIntro()
+        notificationPermissionResult?.invoke(granted)
+        notificationPermissionResult = null
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        NotificationChannels.create(this)
+        FirebaseAnalytics.getInstance(this)
+            .setUserProperty("distribution", BuildConfig.FLAVOR)
         projectRepository = ProjectRepository(this)
         projectSaveBridge = ScratchProjectSaveBridge(this)
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         makeFullScreen()
         setContent { FarsiScratchApp(this) }
+    }
+
+    fun requestNotificationPermission(onResult: (Boolean) -> Unit) {
+        val needsPermission =
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+                PackageManager.PERMISSION_GRANTED
+        if (!needsPermission) {
+            completeNotificationPermissionIntro()
+            onResult(true)
+            return
+        }
+
+        notificationPermissionResult = onResult
+        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    fun shouldShowNotificationPermissionIntro(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return false
+        if (
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        ) return false
+
+        return !getSharedPreferences("notification_preferences", MODE_PRIVATE)
+            .getBoolean("permission_intro_completed", false)
+    }
+
+    fun completeNotificationPermissionIntro() {
+        getSharedPreferences("notification_preferences", MODE_PRIVATE)
+            .edit()
+            .putBoolean("permission_intro_completed", true)
+            .apply()
     }
 
     fun openFileChooser(
@@ -436,6 +484,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        notificationPermissionResult = null
         fileChooserCallback?.onReceiveValue(null)
         pendingWebPermissionRequest?.deny()
         pendingSpriteExport?.delete()
@@ -452,7 +501,18 @@ private fun FarsiScratchApp(activity: MainActivity) {
     var showSocials by rememberSaveable { mutableStateOf(false) }
     var showMyProjects by rememberSaveable { mutableStateOf(false) }
     var showExit by rememberSaveable { mutableStateOf(false) }
+    var showNotificationPermission by rememberSaveable { mutableStateOf(false) }
+    var permissionRequestInProgress by remember { mutableStateOf(false) }
+    var permissionResult by remember { mutableStateOf<Boolean?>(null) }
     var isExpired by remember { mutableStateOf(System.currentTimeMillis() >= BuildConfig.EXPIRATION_TIME_MILLIS) }
+
+    LaunchedEffect(permissionResult) {
+        val granted = permissionResult ?: return@LaunchedEffect
+        delay(if (granted) 850L else 300L)
+        showNotificationPermission = false
+        permissionResult = null
+        screen = AppScreen.Scratch
+    }
 
     LaunchedEffect(Unit) {
         while (!isExpired) {
@@ -470,9 +530,35 @@ private fun FarsiScratchApp(activity: MainActivity) {
             if (isExpired) {
                 ExpiredScreen(BuildConfig.UPDATE_SOURCE)
             } else {
-                when (screen) {
+                if (showNotificationPermission) {
+                    NotificationPermissionScreen(
+                        granted = permissionResult == true,
+                        requestInProgress = permissionRequestInProgress,
+                        onRequestPermission = {
+                            if (!permissionRequestInProgress && permissionResult == null) {
+                                permissionRequestInProgress = true
+                                activity.requestNotificationPermission { granted ->
+                                    permissionRequestInProgress = false
+                                    permissionResult = granted
+                                }
+                            }
+                        },
+                        onSkip = {
+                            if (!permissionRequestInProgress && permissionResult == null) {
+                                activity.completeNotificationPermissionIntro()
+                                permissionResult = false
+                            }
+                        }
+                    )
+                } else when (screen) {
                     AppScreen.Home -> HomeScreen(
-                        onEnter = { screen = AppScreen.Scratch },
+                        onEnter = {
+                            if (activity.shouldShowNotificationPermissionIntro()) {
+                                showNotificationPermission = true
+                            } else {
+                                screen = AppScreen.Scratch
+                            }
+                        },
                         onFollow = { showSocials = true },
                         onMyProjects = { showMyProjects = true }
                     )
@@ -533,6 +619,118 @@ private fun FarsiScratchApp(activity: MainActivity) {
         else if (showSocials) showSocials = false
         else if (screen == AppScreen.Scratch) screen = AppScreen.Home
         else showExit = true
+    }
+}
+
+@Composable
+private fun NotificationPermissionScreen(
+    granted: Boolean,
+    requestInProgress: Boolean,
+    onRequestPermission: () -> Unit,
+    onSkip: () -> Unit
+) {
+    val accent = if (granted) Color(0xFF35C86F) else ScratchBlue
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.radialGradient(
+                    colors = listOf(Color(0xFF253B73), Color(0xFF0D0A1C)),
+                    radius = 1100f
+                )
+            )
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth(.86f),
+            shape = RoundedCornerShape(26.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF191631).copy(alpha = .96f))
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 22.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(72.dp)
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(accent.copy(alpha = .18f))
+                        .border(2.dp, accent.copy(alpha = .72f), RoundedCornerShape(22.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = if (granted) "✓" else "🔔",
+                        color = accent,
+                        fontSize = if (granted) 42.sp else 34.sp,
+                        fontWeight = FontWeight.Black
+                    )
+                }
+                Spacer(Modifier.width(28.dp))
+                Column(
+                    modifier = Modifier.weight(1f),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                Text(
+                    text = if (granted) "دسترسی با موفقیت تأیید شد" else "پیام‌های اسکرچ فارسی",
+                    color = if (granted) accent else Color.White,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Black,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.height(7.dp))
+                Text(
+                    text = "برای دریافت پیام‌های نرم‌افزار اسکرچ و اطلاع از به‌روزرسانی‌های جدید، دسترسی اعلان‌ها را تأیید کنید.",
+                    color = Color.White.copy(alpha = .72f),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.height(16.dp))
+                Button(
+                    onClick = onRequestPermission,
+                    enabled = !requestInProgress && !granted,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = accent,
+                        disabledContainerColor = if (granted) Color(0xFF35C86F) else accent.copy(.55f),
+                        disabledContentColor = Color.White
+                    )
+                ) {
+                    if (requestInProgress) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(22.dp),
+                            color = Color.White,
+                            strokeWidth = 2.5.dp
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(25.dp)
+                                .clip(RoundedCornerShape(7.dp))
+                                .border(2.dp, Color.White, RoundedCornerShape(7.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (granted) Text("✓", color = Color.White, fontWeight = FontWeight.Black)
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            if (granted) "تأیید شد" else "تأیید دسترسی اعلان‌ها",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+                if (!granted) {
+                    TextButton(onClick = onSkip, enabled = !requestInProgress) {
+                        Text("فعلاً نه؛ ورود به اسکرچ", color = Color.White.copy(alpha = .62f))
+                    }
+                }
+                }
+            }
+        }
     }
 }
 

@@ -19,3 +19,9 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# JavaScript calls these methods by their exact names through WebView.
+-keepclassmembers class ir.behnamapps.fascratch.ScratchProjectSaveBridge {
+    @android.webkit.JavascriptInterface <methods>;
+}
+-keepattributes RuntimeVisibleAnnotations,RuntimeInvisibleAnnotations

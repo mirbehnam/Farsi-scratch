@@ -14,5 +14,9 @@
 .cxx
 local.properties
 
+# Generated APK output copied by Android Studio
+/app/release/
+/app/*/release/
+
 # Ignore Scratch build assets
 app/src/main/assets/build/

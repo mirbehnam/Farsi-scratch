@@ -45,6 +45,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {
@@ -60,12 +61,13 @@ android {
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.fragment.ktx)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.compose.animation)
     implementation(libs.androidx.compose.material3)
-    implementation("androidx.webkit:webkit:1.12.0")
+    implementation(libs.androidx.webkit)
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.analytics)
     implementation(libs.firebase.messaging)

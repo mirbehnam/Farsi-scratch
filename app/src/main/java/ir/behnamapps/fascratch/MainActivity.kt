@@ -2,6 +2,7 @@ package ir.behnamapps.fascratch
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.ClipData
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
@@ -126,7 +127,6 @@ class MainActivity : ComponentActivity() {
     private var pendingProjectForScratch: SavedScratchProject? = null
     private var openPhonePickerForScratch = false
     private var projectLoadCommandSent = false
-    private var pendingSpriteExport: File? = null
     private var notificationPermissionResult: ((Boolean) -> Unit)? = null
     lateinit var projectRepository: ProjectRepository
         private set
@@ -153,33 +153,6 @@ class MainActivity : ComponentActivity() {
         fileChooserCallback = null
         fileChooserParams = null
         showProjectLibrary = false
-    }
-
-    private val spriteSaveLauncher = registerForActivityResult(
-        ActivityResultContracts.CreateDocument("application/x.scratch.sprite3")
-    ) { uri ->
-        val spriteFile = pendingSpriteExport
-        pendingSpriteExport = null
-        if (uri != null && spriteFile != null) {
-            runCatching {
-                check(spriteFile.length() > 0L) { "Sprite source is empty" }
-                val descriptor = contentResolver.openFileDescriptor(uri, "rwt")
-                    ?: error("Could not open sprite destination")
-                descriptor.use { parcelFileDescriptor ->
-                    java.io.FileOutputStream(parcelFileDescriptor.fileDescriptor).use { output ->
-                        val copiedBytes = spriteFile.inputStream().use { input -> input.copyTo(output) }
-                        output.flush()
-                        output.fd.sync()
-                        check(copiedBytes == spriteFile.length()) { "Incomplete sprite export" }
-                    }
-                }
-            }.onSuccess {
-                Toast.makeText(this, "فایل کاراکتر ذخیره شد", Toast.LENGTH_SHORT).show()
-            }.onFailure {
-                Toast.makeText(this, "ذخیره فایل کاراکتر انجام نشد", Toast.LENGTH_LONG).show()
-            }
-        }
-        spriteFile?.delete()
     }
 
     private val webPermissionLauncher = registerForActivityResult(
@@ -428,19 +401,49 @@ class MainActivity : ComponentActivity() {
     }
 
     fun finishSpriteSave(incomingFile: File, requestedName: String) {
-        pendingSpriteExport?.delete()
-        pendingSpriteExport = incomingFile
         val safeName = requestedName
             .replace(Regex("[\\\\/:*?\"<>|]"), "_")
             .trim()
             .take(100)
             .ifBlank { "کاراکتر.sprite3" }
             .let { if (it.endsWith(".sprite3", true)) it else "$it.sprite3" }
-        runCatching { spriteSaveLauncher.launch(safeName) }
+        var sharedFile: File? = null
+        runCatching {
+            check(incomingFile.length() > 0L) { "Sprite source is empty" }
+            val shareDirectory = File(cacheDir, "shared_sprites").apply { mkdirs() }
+            val expiryTime = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
+            shareDirectory.listFiles().orEmpty()
+                .filter { it.isFile && it.lastModified() < expiryTime }
+                .forEach(File::delete)
+
+            var candidate = File(shareDirectory, safeName)
+            var suffix = 2
+            while (candidate.exists()) {
+                candidate = File(
+                    shareDirectory,
+                    "${safeName.removeSuffix(".sprite3")} ($suffix).sprite3"
+                )
+                suffix++
+            }
+            sharedFile = candidate
+            if (!incomingFile.renameTo(candidate)) {
+                incomingFile.copyTo(candidate)
+                incomingFile.delete()
+            }
+
+            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", candidate)
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "application/x.scratch.sprite3"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                clipData = ClipData.newUri(contentResolver, candidate.name, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(shareIntent, "اشتراک‌گذاری کاراکتر"))
+        }
             .onFailure {
-                pendingSpriteExport?.delete()
-                pendingSpriteExport = null
-                Toast.makeText(this, "امکان انتخاب محل ذخیره وجود ندارد", Toast.LENGTH_LONG).show()
+                sharedFile?.delete()
+                incomingFile.delete()
+                Toast.makeText(this, "اشتراک‌گذاری فایل کاراکتر انجام نشد", Toast.LENGTH_LONG).show()
             }
     }
 
@@ -487,7 +490,6 @@ class MainActivity : ComponentActivity() {
         notificationPermissionResult = null
         fileChooserCallback?.onReceiveValue(null)
         pendingWebPermissionRequest?.deny()
-        pendingSpriteExport?.delete()
         projectSaveBridge.dispose()
         super.onDestroy()
     }

@@ -9,7 +9,10 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.graphics.BitmapFactory
+import android.view.KeyEvent
+import android.view.ViewConfiguration
 import android.widget.Toast
 import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
@@ -24,7 +27,9 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -40,6 +45,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
@@ -50,12 +57,17 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
@@ -71,6 +83,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -85,20 +98,29 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -112,6 +134,9 @@ import kotlin.math.roundToInt
 import java.io.File
 import org.json.JSONObject
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 val ScratchPurple = Color(0xFF855CD6)
 val ScratchBlue = Color(0xFF4C97FF)
@@ -124,6 +149,9 @@ class MainActivity : ComponentActivity() {
     private var fileChooserParams: WebChromeClient.FileChooserParams? = null
     private var pendingWebPermissionRequest: PermissionRequest? = null
     private var activeScratchWebView: WebView? = null
+    private val scratchKeyDownTimes = mutableMapOf<Int, Long>()
+    private val scratchKeyRepeatCounts = mutableMapOf<Int, Int>()
+    private val scratchTextInputBridge = ScratchTextInputBridge(this)
     private var pendingProjectForScratch: SavedScratchProject? = null
     private var openPhonePickerForScratch = false
     private var projectLoadCommandSent = false
@@ -134,6 +162,8 @@ class MainActivity : ComponentActivity() {
     var showProjectLibrary by mutableStateOf(false)
         private set
     var projectLibraryVersion by mutableIntStateOf(0)
+        private set
+    internal var scratchTextInputSession by mutableStateOf<ScratchTextInputSession?>(null)
         private set
 
     private val fileChooserLauncher = registerForActivityResult(
@@ -374,11 +404,120 @@ class MainActivity : ComponentActivity() {
     fun attachScratchWebView(webView: WebView) {
         activeScratchWebView = webView
         webView.addJavascriptInterface(projectSaveBridge, "AndroidProjectSaver")
+        webView.addJavascriptInterface(scratchTextInputBridge, "AndroidScratchTextInput")
     }
 
     fun detachScratchWebView(webView: WebView) {
         webView.removeJavascriptInterface("AndroidProjectSaver")
-        if (activeScratchWebView === webView) activeScratchWebView = null
+        webView.removeJavascriptInterface("AndroidScratchTextInput")
+        if (activeScratchWebView === webView) {
+            activeScratchWebView = null
+            scratchTextInputSession = null
+        }
+    }
+
+    fun installScratchTextInputSupport(webView: WebView) {
+        webView.evaluateJavascript(SCRATCH_TEXT_INPUT_SCRIPT, null)
+    }
+
+    internal fun openScratchTextInput(
+        id: String,
+        text: String,
+        selectionStart: Int,
+        selectionEnd: Int,
+        multiline: Boolean
+    ) {
+        val safeStart = selectionStart.coerceIn(0, text.length)
+        val safeEnd = selectionEnd.coerceIn(safeStart, text.length)
+        scratchTextInputSession = ScratchTextInputSession(
+            id = id,
+            text = text,
+            selectionStart = safeStart,
+            selectionEnd = safeEnd,
+            multiline = multiline
+        )
+    }
+
+    internal fun updateScratchTextInputFromWeb(
+        id: String,
+        text: String,
+        selectionStart: Int,
+        selectionEnd: Int
+    ) {
+        val current = scratchTextInputSession ?: return
+        if (current.id != id) return
+        val safeStart = selectionStart.coerceIn(0, text.length)
+        val safeEnd = selectionEnd.coerceIn(safeStart, text.length)
+        scratchTextInputSession = current.copy(
+            text = text,
+            selectionStart = safeStart,
+            selectionEnd = safeEnd
+        )
+    }
+
+    fun updateScratchTextInput(id: String, value: TextFieldValue) {
+        val current = scratchTextInputSession ?: return
+        if (current.id != id) return
+        scratchTextInputSession = current.copy(
+            text = value.text,
+            selectionStart = value.selection.start,
+            selectionEnd = value.selection.end
+        )
+        val script = """
+            window.__farsiScratchNativeInput && window.__farsiScratchNativeInput.setValue(
+                ${JSONObject.quote(id)},
+                ${JSONObject.quote(value.text)},
+                ${value.selection.start},
+                ${value.selection.end}
+            );
+        """.trimIndent()
+        activeScratchWebView?.evaluateJavascript(script, null)
+    }
+
+    fun finishScratchTextInput() {
+        val session = scratchTextInputSession ?: return
+        scratchTextInputSession = null
+        val script = """
+            window.__farsiScratchNativeInput &&
+                window.__farsiScratchNativeInput.finish(${JSONObject.quote(session.id)});
+        """.trimIndent()
+        activeScratchWebView?.evaluateJavascript(script, null)
+    }
+
+    fun dispatchScratchKey(keyCode: Int, pressed: Boolean) {
+        val webView = activeScratchWebView ?: return
+        val eventTime = SystemClock.uptimeMillis()
+        if (pressed) {
+            val wasAlreadyPressed = scratchKeyDownTimes.containsKey(keyCode)
+            val downTime = scratchKeyDownTimes.getOrPut(keyCode) { eventTime }
+            val repeatCount = if (wasAlreadyPressed) {
+                (scratchKeyRepeatCounts[keyCode] ?: 0) + 1
+            } else {
+                0
+            }
+            scratchKeyRepeatCounts[keyCode] = repeatCount
+            webView.dispatchKeyEvent(
+                KeyEvent(
+                    downTime,
+                    eventTime,
+                    KeyEvent.ACTION_DOWN,
+                    keyCode,
+                    repeatCount
+                )
+            )
+        } else {
+            val downTime = scratchKeyDownTimes.remove(keyCode) ?: eventTime
+            scratchKeyRepeatCounts.remove(keyCode)
+            webView.dispatchKeyEvent(
+                KeyEvent(
+                    downTime,
+                    eventTime,
+                    KeyEvent.ACTION_UP,
+                    keyCode,
+                    0
+                )
+            )
+        }
     }
 
     fun finishProjectSave(incomingFile: File, name: String) {
@@ -473,6 +612,15 @@ class MainActivity : ComponentActivity() {
         runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
     }
 
+    fun openOtherApp(packageName: String) {
+        val storeUrl = if (BuildConfig.FLAVOR == "myket") {
+            "https://myket.ir/app/$packageName"
+        } else {
+            "https://cafebazaar.ir/app/$packageName"
+        }
+        openProfile(storeUrl)
+    }
+
     private fun makeFullScreen() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         WindowCompat.getInsetsController(window, window.decorView).apply {
@@ -562,9 +710,14 @@ private fun FarsiScratchApp(activity: MainActivity) {
                             }
                         },
                         onFollow = { showSocials = true },
-                        onMyProjects = { showMyProjects = true }
+                        onMyProjects = { showMyProjects = true },
+                        onLunaPlayer = { activity.openOtherApp("ir.behnamapps.lunamusic") },
+                        onMafiaApp = { activity.openOtherApp("ir.behnamapp.mafia") }
                     )
-                    AppScreen.Scratch -> ScratchScreen(activity, onHome = { screen = AppScreen.Home })
+                    AppScreen.Scratch -> ScratchScreen(
+                        activity = activity,
+                        onHome = { showExit = true }
+                    )
                 }
             }
         }
@@ -575,8 +728,15 @@ private fun FarsiScratchApp(activity: MainActivity) {
                 onOpen = { activity.openProfile(it) }
             )
         }
-        if (!isExpired && showExit) {
-            ExitDialog(onDismiss = { showExit = false }, onExit = activity::finish)
+        if (!isExpired && showExit && screen == AppScreen.Scratch) {
+            ExitDialog(
+                onDismiss = { showExit = false },
+                onExit = {
+                    showExit = false
+                    activity.finishScratchTextInput()
+                    screen = AppScreen.Home
+                }
+            )
         }
         if (!isExpired && activity.showProjectLibrary && screen == AppScreen.Scratch) {
             val projects = remember(activity.projectLibraryVersion) {
@@ -616,11 +776,12 @@ private fun FarsiScratchApp(activity: MainActivity) {
 
     BackHandler {
         if (isExpired) activity.finish()
+        else if (showExit) showExit = false
         else if (showMyProjects) showMyProjects = false
         else if (activity.showProjectLibrary) activity.dismissProjectLibrary()
         else if (showSocials) showSocials = false
-        else if (screen == AppScreen.Scratch) screen = AppScreen.Home
-        else showExit = true
+        else if (screen == AppScreen.Scratch) showExit = true
+        else activity.finish()
     }
 }
 
@@ -962,9 +1123,44 @@ private fun ScratchScreen(activity: MainActivity, onHome: () -> Unit) {
     var progress by remember { mutableIntStateOf(0) }
     var webView by remember { mutableStateOf<WebView?>(null) }
     var scrollFraction by remember { mutableFloatStateOf(0f) }
+    var showFloatingKeyboard by rememberSaveable { mutableStateOf(false) }
+    var keyboardX by remember { mutableFloatStateOf(0f) }
+    var keyboardY by remember { mutableFloatStateOf(0f) }
+    var rootWidth by remember { mutableIntStateOf(0) }
+    var rootHeight by remember { mutableIntStateOf(0) }
+    var keyboardWidth by remember { mutableIntStateOf(0) }
+    var keyboardHeight by remember { mutableIntStateOf(0) }
+    var keyboardPositioned by remember { mutableStateOf(false) }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val keyboardMarginPx = with(density) { 8.dp.toPx() }
 
-    Row(Modifier.fillMaxSize().background(Color(0xFF12101E))) {
-        Column(
+    LaunchedEffect(rootWidth, rootHeight, keyboardWidth, keyboardHeight) {
+        if (rootWidth <= 0 || rootHeight <= 0 || keyboardWidth <= 0 || keyboardHeight <= 0) {
+            return@LaunchedEffect
+        }
+        val maxX = (rootWidth - keyboardWidth - keyboardMarginPx).coerceAtLeast(keyboardMarginPx)
+        val maxY = (rootHeight - keyboardHeight - keyboardMarginPx).coerceAtLeast(keyboardMarginPx)
+        if (!keyboardPositioned) {
+            keyboardX = keyboardMarginPx
+            keyboardY = maxY
+            keyboardPositioned = true
+        } else {
+            keyboardX = keyboardX.coerceIn(keyboardMarginPx, maxX)
+            keyboardY = keyboardY.coerceIn(keyboardMarginPx, maxY)
+        }
+    }
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color(0xFF12101E))
+            .onSizeChanged {
+                rootWidth = it.width
+                rootHeight = it.height
+            }
+    ) {
+        Row(Modifier.fillMaxSize()) {
+            Column(
             modifier = Modifier.weight(.05f).fillMaxHeight().background(Color(0xFF1D1930)).padding(vertical = 10.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -979,13 +1175,28 @@ private fun ScratchScreen(activity: MainActivity, onHome: () -> Unit) {
             ) {
                 Text("⌂", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
             }
+            Spacer(Modifier.height(7.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(.72f)
+                    .height(36.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(
+                        if (showFloatingKeyboard) ScratchPurple.copy(.72f)
+                        else Color.White.copy(.10f)
+                    )
+                    .clickable { showFloatingKeyboard = !showFloatingKeyboard },
+                contentAlignment = Alignment.Center
+            ) {
+                Text("⌨", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            }
             Spacer(Modifier.weight(1f))
             Box(Modifier.size(8.dp).clip(CircleShape).background(ScratchOrange))
             Spacer(Modifier.height(8.dp))
             Text("FA", color = Color.White.copy(.48f), fontWeight = FontWeight.Bold, fontSize = 10.sp)
         }
 
-        WindowsScrollBar(
+            WindowsScrollBar(
             modifier = Modifier.weight(.05f).fillMaxHeight(),
             scrollFraction = scrollFraction,
             onScroll = { fraction ->
@@ -997,15 +1208,293 @@ private fun ScratchScreen(activity: MainActivity, onHome: () -> Unit) {
             }
         )
 
-        Box(Modifier.weight(.90f).fillMaxHeight()) {
-            ScratchWebView(
-                activity = activity,
-                onProgress = { progress = it },
-                onLoadingChanged = { isLoading = it },
-                onWebViewReady = { webView = it },
-                onScrollFractionChanged = { scrollFraction = it }
+            Box(Modifier.weight(.90f).fillMaxHeight()) {
+                ScratchWebView(
+                    activity = activity,
+                    onProgress = { progress = it },
+                    onLoadingChanged = { isLoading = it },
+                    onWebViewReady = { webView = it },
+                    onScrollFractionChanged = { scrollFraction = it }
+                )
+                LoadingVisibility(isLoading = isLoading, progress = progress)
+            }
+        }
+
+        if (showFloatingKeyboard) {
+            FloatingScratchKeyboard(
+                modifier = Modifier
+                    .offset { IntOffset(keyboardX.roundToInt(), keyboardY.roundToInt()) }
+                    .onSizeChanged {
+                        keyboardWidth = it.width
+                        keyboardHeight = it.height
+                    },
+                onDrag = { deltaX, deltaY ->
+                    val maxX = (rootWidth - keyboardWidth - keyboardMarginPx)
+                        .coerceAtLeast(keyboardMarginPx)
+                    val maxY = (rootHeight - keyboardHeight - keyboardMarginPx)
+                        .coerceAtLeast(keyboardMarginPx)
+                    keyboardX = (keyboardX + deltaX).coerceIn(keyboardMarginPx, maxX)
+                    keyboardY = (keyboardY + deltaY).coerceIn(keyboardMarginPx, maxY)
+                },
+                onClose = { showFloatingKeyboard = false },
+                onKeyChange = activity::dispatchScratchKey
             )
-            LoadingVisibility(isLoading = isLoading, progress = progress)
+        }
+
+        activity.scratchTextInputSession?.let { session ->
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth(.72f)
+                    .widthIn(max = 720.dp)
+                    .imePadding()
+                    .padding(bottom = 8.dp)
+            ) {
+                ScratchTextInputBar(
+                    session = session,
+                    onValueChange = { activity.updateScratchTextInput(session.id, it) },
+                    onDone = activity::finishScratchTextInput
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FloatingScratchKeyboard(
+    modifier: Modifier,
+    onDrag: (Float, Float) -> Unit,
+    onClose: () -> Unit,
+    onKeyChange: (Int, Boolean) -> Unit
+) {
+    Surface(
+        modifier = modifier.width(134.dp),
+        color = Color(0xEE211B35),
+        shape = RoundedCornerShape(11.dp),
+        shadowElevation = 10.dp
+    ) {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(25.dp)
+                    .background(Color(0xFF332A4E))
+                    .pointerInput(onDrag) {
+                        detectDragGestures { change, dragAmount ->
+                            change.consume()
+                            onDrag(dragAmount.x, dragAmount.y)
+                        }
+                    }
+                    .padding(start = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("⠿", color = Color.White.copy(.62f), fontSize = 15.sp)
+                Spacer(Modifier.weight(1f))
+                Box(
+                    modifier = Modifier
+                        .size(25.dp)
+                        .clickable(onClick = onClose),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("×", color = Color.White.copy(.82f), fontSize = 17.sp)
+                }
+            }
+
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                Column(
+                    modifier = Modifier.padding(6.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                        ScratchKeyButton(
+                            label = "↑",
+                            keyCode = KeyEvent.KEYCODE_DPAD_UP,
+                            onKeyChange = onKeyChange
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        ScratchKeyButton(
+                            label = "←",
+                            keyCode = KeyEvent.KEYCODE_DPAD_LEFT,
+                            onKeyChange = onKeyChange
+                        )
+                        ScratchKeyButton(
+                            label = "↓",
+                            keyCode = KeyEvent.KEYCODE_DPAD_DOWN,
+                            onKeyChange = onKeyChange
+                        )
+                        ScratchKeyButton(
+                            label = "→",
+                            keyCode = KeyEvent.KEYCODE_DPAD_RIGHT,
+                            onKeyChange = onKeyChange
+                        )
+                    }
+                    Spacer(Modifier.height(5.dp))
+                    ScratchKeyButton(
+                        label = "SPACE",
+                        keyCode = KeyEvent.KEYCODE_SPACE,
+                        onKeyChange = onKeyChange,
+                        modifier = Modifier.fillMaxWidth().height(31.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ScratchKeyButton(
+    label: String,
+    keyCode: Int,
+    onKeyChange: (Int, Boolean) -> Unit,
+    modifier: Modifier = Modifier.size(38.dp)
+) {
+    var pressed by remember { mutableStateOf(false) }
+    val buttonScale by animateFloatAsState(
+        targetValue = if (pressed) .91f else 1f,
+        animationSpec = tween(durationMillis = if (pressed) 70 else 110),
+        label = "scratch-key-scale"
+    )
+    val buttonColor by animateColorAsState(
+        targetValue = if (pressed) ScratchBlue else Color(0xFFF4F1FA),
+        animationSpec = tween(durationMillis = 90),
+        label = "scratch-key-color"
+    )
+    Box(
+        modifier = modifier
+            .scale(buttonScale)
+            .clip(RoundedCornerShape(8.dp))
+            .background(buttonColor)
+            .border(1.dp, Color.Black.copy(.16f), RoundedCornerShape(8.dp))
+            .pointerInput(keyCode, onKeyChange) {
+                detectTapGestures(
+                    onPress = {
+                        pressed = true
+                        onKeyChange(keyCode, true)
+                        try {
+                            coroutineScope {
+                                val repeatJob = launch {
+                                    delay(ViewConfiguration.getLongPressTimeout().toLong())
+                                    while (isActive) {
+                                        onKeyChange(keyCode, true)
+                                        delay(50L)
+                                    }
+                                }
+                                try {
+                                    tryAwaitRelease()
+                                } finally {
+                                    repeatJob.cancel()
+                                }
+                            }
+                        } finally {
+                            onKeyChange(keyCode, false)
+                            pressed = false
+                        }
+                    }
+                )
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = label,
+            color = if (pressed) Color.White else Color(0xFF211B35),
+            fontSize = if (label == "SPACE") 10.sp else 21.sp,
+            fontWeight = FontWeight.Black
+        )
+    }
+}
+
+@Composable
+private fun ScratchTextInputBar(
+    session: ScratchTextInputSession,
+    onValueChange: (TextFieldValue) -> Unit,
+    onDone: () -> Unit
+) {
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    var value by remember(session.id) {
+        mutableStateOf(
+            TextFieldValue(
+                text = session.text,
+                selection = TextRange(session.selectionStart, session.selectionEnd)
+            )
+        )
+    }
+
+    LaunchedEffect(session.id) {
+        focusRequester.requestFocus()
+        keyboardController?.show()
+    }
+    LaunchedEffect(session.text, session.selectionStart, session.selectionEnd) {
+        if (session.text != value.text) {
+            value = TextFieldValue(
+                text = session.text,
+                selection = TextRange(session.selectionStart, session.selectionEnd)
+            )
+        }
+    }
+    BackHandler {
+        keyboardController?.hide()
+        onDone()
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth().height(52.dp),
+        color = Color(0xFFF8F7FC),
+        shape = RoundedCornerShape(14.dp),
+        shadowElevation = 8.dp
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            BasicTextField(
+                value = value,
+                onValueChange = {
+                    value = it
+                    onValueChange(it)
+                },
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .focusRequester(focusRequester)
+                    .padding(horizontal = 10.dp, vertical = 7.dp),
+                textStyle = androidx.compose.ui.text.TextStyle(
+                    color = Color(0xFF201936),
+                    fontSize = 16.sp,
+                    textAlign = TextAlign.Start
+                ),
+                singleLine = !session.multiline,
+                maxLines = if (session.multiline) 2 else 1,
+                keyboardOptions = KeyboardOptions(
+                    imeAction = if (session.multiline) ImeAction.Default else ImeAction.Done
+                ),
+                keyboardActions = KeyboardActions(
+                    onDone = {
+                        keyboardController?.hide()
+                        onDone()
+                    }
+                ),
+                cursorBrush = SolidColor(ScratchPurple),
+                decorationBox = { innerTextField ->
+                    Box(contentAlignment = Alignment.CenterStart) {
+                        if (value.text.isEmpty()) {
+                            Text("متن را وارد کنید", color = Color(0xFF777184), fontSize = 14.sp)
+                        }
+                        innerTextField()
+                    }
+                }
+            )
+            TextButton(
+                onClick = {
+                    keyboardController?.hide()
+                    onDone()
+                },
+                modifier = Modifier.height(42.dp)
+            ) {
+                Text("تأیید", color = ScratchPurple, fontWeight = FontWeight.Bold)
+            }
         }
     }
 }
@@ -1121,7 +1610,10 @@ private fun ScratchWebView(
                 override fun onPageFinished(view: WebView?, url: String?) {
                     onProgress(100)
                     onLoadingChanged(false)
-                    view?.let(activity::triggerQueuedProjectLoad)
+                    view?.let {
+                        activity.installScratchTextInputSupport(it)
+                        activity.triggerQueuedProjectLoad(it)
+                    }
                 }
             }
             webChromeClient = object : WebChromeClient() {

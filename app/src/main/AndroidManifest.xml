@@ -46,6 +46,7 @@
             android:name=".MainActivity"
             android:exported="true"
             android:screenOrientation="landscape"
+            android:windowSoftInputMode="adjustNothing"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

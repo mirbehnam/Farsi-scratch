@@ -63,7 +63,12 @@ class CourseApi : PurchaseBackend {
             for (index in 0 until rows.length()) {
                 val row = rows.getJSONObject(index)
                 if (row.optJSONObject("products")?.optString(provider) == BuildConfig.COURSE_SKU) {
-                    return Course(CoursePolicy.uuid(row.getString("uuid")), row.getString("title"), row.optString("short_description"), BuildConfig.COURSE_SKU)
+                    val stats = row.optJSONObject("stats")
+                    return Course(CoursePolicy.uuid(row.getString("uuid")), row.getString("title"),
+                        row.optString("description").takeIf { it.isNotBlank() } ?: row.optString("short_description"), BuildConfig.COURSE_SKU,
+                        row.optString("instructor_name"), row.optInt("difficulty"), stats?.optDouble("duration_seconds", 0.0) ?: 0.0,
+                        posterUrl(row.optJSONObject("cover")) ?: row.optString("banner_url").takeIf { it.startsWith("https://") },
+                        if (stats != null && stats.has("confirmed_purchases") && !stats.isNull("confirmed_purchases")) stats.optInt("confirmed_purchases").coerceAtLeast(0) else null)
                 }
             }
             if (response.optJSONObject("meta")?.optBoolean("has_more") != true) break
@@ -81,7 +86,8 @@ class CourseApi : PurchaseBackend {
                     val row = rows.getJSONObject(index)
                     val video = row.optJSONObject("video") ?: continue
                     val lesson = Lesson(CoursePolicy.uuid(row.getString("uuid")), course.id, section.getString("title"), row.getString("title"),
-                        video.getInt("content_version"), video.getLong("file_size_bytes"), video.getString("content_hash"))
+                        video.getInt("content_version"), video.getLong("file_size_bytes"), video.getString("content_hash"),
+                        row.optInt("difficulty"), video.optDouble("duration_seconds", 0.0), posterUrl(row.optJSONObject("cover")), row.optString("description"))
                     CoursePolicy.downloadKey(lesson)
                     add(lesson)
                 }
@@ -99,6 +105,11 @@ class CourseApi : PurchaseBackend {
             ?: throw CourseFailure("زمان اعتبار پاسخ معتبر نیست.")
         return CourseAccess(CoursePolicy.uuid(response.getString("course_uuid")), token, expiry.time)
     }
+}
+
+private fun posterUrl(cover: JSONObject?): String? = cover?.let {
+    it.optString("poster_url").takeIf { url -> url.startsWith("https://") }
+        ?: if (it.optString("type") == "image") it.optString("url").takeIf { url -> url.startsWith("https://") } else null
 }
 
 internal fun java.io.InputStream.readBytesBounded(limit: Int): ByteArray {

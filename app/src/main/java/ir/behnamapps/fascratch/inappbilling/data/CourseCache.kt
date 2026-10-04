@@ -13,22 +13,27 @@ class CourseCache(context: Context) {
     fun save(course: Course, lessons: List<Lesson>) {
         val rows = JSONArray()
         lessons.forEach { rows.put(JSONObject().put("id", it.id).put("section", it.section).put("title", it.title)
-            .put("version", it.version).put("bytes", it.bytes).put("sha256", it.sha256)) }
+            .put("version", it.version).put("bytes", it.bytes).put("sha256", it.sha256)
+            .put("difficulty", it.difficulty).put("duration", it.durationSeconds).put("cover", it.coverUrl).put("description", it.description)) }
         val data = JSONObject().put("id", course.id).put("title", course.title).put("description", course.description)
-            .put("sku", course.sku).put("lessons", rows)
+            .put("sku", course.sku).put("lessons", rows).put("instructor", course.instructor).put("difficulty", course.difficulty)
+            .put("duration", course.durationSeconds).put("cover", course.coverUrl).put("purchases", course.confirmedPurchases)
         val output = file.startWrite()
         try { output.write(data.toString().toByteArray(Charsets.UTF_8)); file.finishWrite(output) }
         catch (error: Exception) { file.failWrite(output); throw error }
     }
     fun load(): Pair<Course, List<Lesson>>? = runCatching {
         val data = JSONObject(file.openRead().use { String(it.readBytesBounded(2 * 1024 * 1024), Charsets.UTF_8) })
-        val course = Course(CoursePolicy.uuid(data.getString("id")), data.getString("title"), data.getString("description"), data.getString("sku"))
+        val course = Course(CoursePolicy.uuid(data.getString("id")), data.getString("title"), data.getString("description"), data.getString("sku"),
+            data.optString("instructor"), data.optInt("difficulty"), data.optDouble("duration", 0.0), data.optString("cover").takeIf { it.startsWith("https://") },
+            if (data.has("purchases") && !data.isNull("purchases")) data.optInt("purchases") else null)
         require(course.sku == BuildConfig.COURSE_SKU)
         val rows = data.getJSONArray("lessons")
         course to (0 until rows.length()).map { index ->
             val row = rows.getJSONObject(index)
             Lesson(CoursePolicy.uuid(row.getString("id")), course.id, row.getString("section"), row.getString("title"),
-                row.getInt("version"), row.getLong("bytes"), row.getString("sha256")).also { CoursePolicy.downloadKey(it) }
+                row.getInt("version"), row.getLong("bytes"), row.getString("sha256"), row.optInt("difficulty"), row.optDouble("duration", 0.0),
+                row.optString("cover").takeIf { it.startsWith("https://") }, row.optString("description")).also { CoursePolicy.downloadKey(it) }
         }
     }.getOrNull()
 }

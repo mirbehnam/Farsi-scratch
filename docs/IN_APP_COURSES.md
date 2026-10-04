@@ -38,7 +38,17 @@ User downloads each lesson separately, one at a time; no automatic bulk download
 
 Partial `.part` files survive interruptions. Next download resumes using HTTP Range; a server ignoring Range causes safe restart. Hash mismatch removes the corrupt partial. Low disk space is reported. Leaving/destroying the training activity cancels the foreground task; **background downloading/foreground service is not implemented**. Return and tap download again to resume. Stop leaves the partial file for resumption.
 
-Completed lessons play inside the app via VideoView/MediaController; no public URL or exported video activity is created. Deleting a file does not delete the store purchase. Cache permits offline display and playback of already-downloaded lessons after a prior server confirmation; token expiry does not remove offline lessons. Unknown/not-yet-confirmed purchases never unlock playback. Known rejection/refund locks playback; offline revocation cannot be detected until reconnecting. New content versions have different files; old versions are not automatically deleted.
+Completed lessons play inside the app via MediaPlayer/TextureView with fullscreen controls; no public URL or exported video activity is created. Deleting a file does not delete the store purchase. Cache permits offline display and playback of already-downloaded lessons after a prior server confirmation; token expiry does not remove offline lessons. Unknown/not-yet-confirmed purchases never unlock playback. Known rejection/refund locks playback; offline revocation cannot be detected until reconnecting. New content versions have different files; old versions are not automatically deleted.
+
+## Landscape course UI and fullscreen player
+
+The whole training activity is immersive landscape, not just the video. System bars remain temporarily reachable by swiping from an edge. Purchase/summary and curriculum are independent scrolling panes on short landscape devices. RTL Persian typography, section headers, all/downloaded filters, cover/poster artwork, instructor, difficulty, duration, download progress and delete confirmation are provided. Tap a lesson row to expand its description. Empty/error/loading states are distinct; missing artwork uses a neutral placeholder. Public HTTPS artwork is same-origin, bounded, sampled to at most 1024px, and memory-cached (8 MiB); credentials are never sent with it. Course/lesson metadata is cached for offline display.
+
+`stats.confirmed_purchases` from the server is explicitly labeled **confirmed purchases**, not unique students. Receipt restoration does not increment it; refunded/rejected purchases are excluded. No invented enrollment/review/rating data is shown. Real unique student totals need student accounts/identity linkage in a future phase.
+
+The fullscreen player preserves video aspect ratio and offers pinch zoom 1–4x, bounded panning, double-tap/reset to original fit, seek bar, play/pause, ±10 second seeking and elapsed/total time. Controls hide after four idle playing seconds and reappear with a tap. Playback pauses on backgrounding or audio focus loss; returning does not automatically start it. Playback resources/audio focus and keep-awake flags are released on exit. Returning to lessons keeps the training page immersive.
+
+Manual device QA: small and large landscape screens and large system fonts; image/video cover posters; locked/purchased/downloading/offline states; purchase return from each store; two-finger zoom/pan, reset, seek, end-of-video, background during prepare/play, audio interruption, repeated player entry/exit and transient navigation bars. JVM geometry tests do not substitute for touch/render testing on an Android device.
 
 ## Verification
 

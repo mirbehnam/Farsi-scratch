@@ -47,8 +47,9 @@ class TrainingActivity : ComponentActivity() {
                 labelMedium = defaults.labelMedium.copy(fontFamily = font),
                 labelSmall = defaults.labelSmall.copy(fontFamily = font)) }
             MaterialTheme(typography = typography, colorScheme = lightColorScheme(
-                primary = Color(0xFFB54708), onPrimary = Color.White,
-                secondary = Color(0xFF21634C), background = Color(0xFFF4F5F8),
+                primary = Color(0xFF245B88), onPrimary = Color.White,
+                primaryContainer = Color(0xFFDCEBF8), onPrimaryContainer = Color(0xFF153F55),
+                secondary = Color(0xFF18745C), background = Color(0xFFF2F5F9),
                 surface = Color.White, onSurface = Color(0xFF182235),
                 onSurfaceVariant = Color(0xFF596579))) {
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl, LocalTextStyle provides LocalTextStyle.current.copy(fontFamily = font)) {

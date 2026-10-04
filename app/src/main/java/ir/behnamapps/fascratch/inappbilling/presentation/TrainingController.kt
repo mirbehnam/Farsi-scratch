@@ -36,7 +36,7 @@ class TrainingController(
             mutable.update { it.copy(price = price) }
             try {
                 withTimeout(60_000) { buy.execute(course, billing, restoreOnly = true) }
-                mutable.update { it.copy(purchased = true, message = "خرید قبلی بازیابی شد؛ درس‌ها آماده دانلود هستند.") }
+                mutable.update { it.copy(purchased = true, message = null) }
             } catch (error: CourseFailure) {
                 if (error.code != "not_owned") throw error
                 if (vault.wasVerified(course.id)) {
@@ -55,7 +55,7 @@ class TrainingController(
     fun purchase(restoreOnly: Boolean) = action {
         val course = state.value.course ?: throw CourseFailure("ابتدا اطلاعات دوره را دریافت کنید.")
         withTimeout(180_000) { buy.execute(course, billing, restoreOnly) }
-        mutable.update { it.copy(purchased = true, message = "خرید تأیید شد؛ هر درس را جداگانه دانلود کنید.") }
+        mutable.update { it.copy(purchased = true, message = null) }
     }
 
     private suspend fun access(course: Course, force: Boolean = false): CourseAccess {

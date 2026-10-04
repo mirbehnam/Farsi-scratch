@@ -42,17 +42,15 @@ internal fun TrainingScreen(state: TrainingState, controller: TrainingController
             TextButton(onClick = onBack) { Text("بازگشت") }
         }
         Row(Modifier.weight(1f).padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            LazyColumn(Modifier.weight(.38f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            LazyColumn(Modifier.weight(.28f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 item { CourseSummary(state, controller) }
                 state.message?.let { message -> item {
                     Surface(shape = RoundedCornerShape(14.dp), color = Color(0xFFFFF0DB)) {
                         Text(message, Modifier.padding(14.dp), style = MaterialTheme.typography.bodySmall, color = Color(0xFF743B12))
                     }
                 } }
-                item { Text("دانلودها در فضای خصوصی اپ ذخیره می‌شوند. برای ادامه دانلود، این صفحه را باز نگه دارید.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(4.dp)) }
             }
-            Surface(Modifier.weight(.62f).fillMaxHeight(), shape = RoundedCornerShape(20.dp), color = Color.White) {
+            Surface(Modifier.weight(.72f).fillMaxHeight(), shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
                 Column(Modifier.padding(horizontal = 14.dp)) {
                     Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
@@ -103,26 +101,25 @@ internal fun TrainingScreen(state: TrainingState, controller: TrainingController
 private fun CourseSummary(state: TrainingState, controller: TrainingController) {
     val canBuy = !state.busy && state.course != null && BuildConfig.BILLING_PROVIDER != "website"
     Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
-        CourseArtwork(state.course?.coverUrl, "کاور دوره", Modifier.fillMaxWidth().aspectRatio(2f))
-        Column(Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(Color(0xFF17283E), Color(0xFF314B6B)))).padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("آموزش پروژه‌محور", color = Color(0xFFFFCB8B), style = MaterialTheme.typography.labelMedium)
-            Text(state.course?.title ?: "دوره آموزش اسکرچ", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+        CourseArtwork(state.course?.coverUrl, "کاور دوره", Modifier.fillMaxWidth().aspectRatio(2.8f))
+        Column(Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(Color(0xFF153F55), Color(0xFF246B74)))).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("آموزش پروژه‌محور", color = Color(0xFFB8F1E4), style = MaterialTheme.typography.labelSmall)
+            Text(state.course?.title ?: "دوره آموزش اسکرچ", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
             Text(state.course?.description?.takeIf { it.isNotBlank() } ?: "قدم‌به‌قدم یاد بگیرید؛ هر درس را جداگانه دانلود کنید و بدون اینترنت تماشا کنید.",
                 color = Color(0xFFE0E8F2), style = MaterialTheme.typography.bodySmall)
-            Text("${state.lessons.size} درس آموزشی  •  تماشای آفلاین", color = Color(0xFFFFCB8B), style = MaterialTheme.typography.labelSmall)
+            Text("${state.lessons.size} درس آموزشی  •  تماشای آفلاین", color = Color(0xFFB8F1E4), style = MaterialTheme.typography.labelSmall)
             state.course?.let { course ->
                 if (course.instructor.isNotBlank()) Text("مدرس: ${course.instructor}", color = Color.White, style = MaterialTheme.typography.bodySmall)
                 Text("${difficultyLabel(course.difficulty)} · ${durationLabel(course.durationSeconds)}", color = Color(0xFFE0E8F2), style = MaterialTheme.typography.labelSmall)
                 course.confirmedPurchases?.let { count -> Text("$count خرید تأییدشده", color = Color(0xFFE0E8F2), style = MaterialTheme.typography.labelSmall) }
             }
         }
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (state.purchased) {
                 Text("✓ دوره شما فعال است", color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold)
                 Text("${state.downloaded.size} از ${state.lessons.size} درس دانلود شده", style = MaterialTheme.typography.bodySmall)
                 LinearProgressIndicator(progress = { if (state.lessons.isEmpty()) 0f else state.downloaded.size.toFloat() / state.lessons.size },
                     modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.secondary, trackColor = Color(0xFFE7EFEA))
-                OutlinedButton(onClick = { controller.purchase(true) }, enabled = canBuy, modifier = Modifier.fillMaxWidth()) { Text("بازیابی و تأیید خرید") }
             } else {
                 Text(state.price ?: "قیمت از فروشگاه دریافت می‌شود", fontWeight = FontWeight.Bold)
                 Text("یک‌بار خرید · دسترسی به درس‌های این دوره", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -139,11 +136,11 @@ private fun LessonRow(lesson: Lesson, state: TrainingState, index: Int, controll
     val downloaded = lesson.id in state.downloaded
     val downloading = state.downloadingId == lesson.id
     var expanded by rememberSaveable(lesson.id) { mutableStateOf(false) }
-    Surface(shape = RoundedCornerShape(14.dp), color = if (downloaded) Color(0xFFF0F7F3) else Color(0xFFF6F7FA)) {
-        Column(Modifier.clickable { expanded = !expanded }.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Surface(shape = RoundedCornerShape(14.dp), color = if (downloaded) Color(0xFFEAF6F1) else Color(0xFFF0F4F8)) {
+        Column(Modifier.clickable { expanded = !expanded }.padding(horizontal = 10.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Box {
-                    CourseArtwork(lesson.coverUrl, "کاور ${lesson.title}", Modifier.size(width = 80.dp, height = 56.dp).clip(RoundedCornerShape(10.dp)))
+                    CourseArtwork(lesson.coverUrl, "کاور ${lesson.title}", Modifier.size(width = 112.dp, height = 76.dp).clip(RoundedCornerShape(10.dp)))
                     Surface(Modifier.align(Alignment.BottomEnd), shape = RoundedCornerShape(topStart = 6.dp), color = Color(0xDD182235)) {
                         Text(index.toString().padStart(2, '0'), Modifier.padding(horizontal = 5.dp, vertical = 2.dp), style = MaterialTheme.typography.labelSmall, color = Color.White)
                     }

@@ -96,7 +96,7 @@ class TrainingController(
             }
             catch (error: CancellationException) { throw error }
             catch (error: CourseFailure) {
-                if (error.code in setOf("refunded", "rejected", "not_owned")) {
+                if (CoursePolicy.revokesAccess(error.code)) {
                     state.value.course?.let { vault.revoke(it.id) }
                     mutable.update { it.copy(purchased = false) }
                 }

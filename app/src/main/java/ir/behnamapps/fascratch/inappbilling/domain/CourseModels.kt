@@ -51,6 +51,7 @@ class BuyCourse(private val backend: PurchaseBackend, private val receipts: Rece
 }
 
 object CoursePolicy {
+    fun revokesAccess(code: String) = code in setOf("refunded", "rejected", "not_owned", "access_disabled")
     fun uuid(value: String): String {
         require(UUID.fromString(value).toString().equals(value, ignoreCase = true))
         return value.lowercase()

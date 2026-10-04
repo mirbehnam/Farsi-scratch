@@ -7,6 +7,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PurchaseFlowTest {
+    @Test fun administrativeBlockRevokesAccessButNetworkFailureDoesNot() {
+        assertTrue(CoursePolicy.revokesAccess("access_disabled"))
+        assertTrue(CoursePolicy.revokesAccess("refunded"))
+        assertFalse(CoursePolicy.revokesAccess("pending"))
+        assertFalse(CoursePolicy.revokesAccess("configuration_error"))
+        assertFalse(CoursePolicy.revokesAccess(""))
+    }
     @Test fun configuredStorePublicKeyIsValidRsa() {
         if (BuildConfig.BILLING_PROVIDER == "website") return
         val bytes = java.util.Base64.getDecoder().decode(BuildConfig.BILLING_PUBLIC_KEY)

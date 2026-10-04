@@ -34,6 +34,8 @@ The server uses receipt-based bearer access, **not store user IDs**. A receipt c
 
 ## Downloads and offline use
 
+Server administration can disable a verified receipt independently of its store status. Restore returns HTTP 403 with `error.code = access_disabled`; the app shows a support message and revokes the locally verified flag when that response is received. Restoring never bypasses an admin block. Re-enabling requires a subsequent successful store/server restoration. Existing offline files cannot be instantly revoked on disconnected devices; receipt tokens and local files are not erased by an admin block.
+
 User downloads each lesson separately, one at a time; no automatic bulk download. Progress derives from bytes read and stays below 100% until hash verification and atomic completion. SHA-256, byte count and Content-Range are checked. Finished files use UUID/version/hash names and are saved privately under noBackupFilesDir, not Downloads/public storage.
 
 Partial `.part` files survive interruptions. Next download resumes using HTTP Range; a server ignoring Range causes safe restart. Hash mismatch removes the corrupt partial. Low disk space is reported. Leaving/destroying the training activity cancels the foreground task; **background downloading/foreground service is not implemented**. Return and tap download again to resume. Stop leaves the partial file for resumption.

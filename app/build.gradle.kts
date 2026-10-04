@@ -12,13 +12,13 @@ android {
         applicationId = "ir.behnamapps.fascratch"
         minSdk = 24
         targetSdk = 36
-        versionCode = 3
-        versionName = "1.2"
+        versionCode = 4
+        versionName = "1.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // 2026-10-01 00:00:00 Asia/Tehran
-        buildConfigField("long", "EXPIRATION_TIME_MILLIS", "1790800200000L")
+        // 2026-12-01 00:00:00 Asia/Tehran
+        buildConfigField("long", "EXPIRATION_TIME_MILLIS", "1796070600000L")
     }
 
     flavorDimensions += "distribution"

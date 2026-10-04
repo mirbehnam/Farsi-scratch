@@ -75,12 +75,12 @@ class TrainingController(
             if (error.status != 401 && error.status != 403) throw error
             downloads.download(lesson, access(course, force = true), progress)
         }
-        mutable.update { it.copy(downloaded = it.downloaded + lesson.id, message = "درس با موفقیت دانلود و بررسی شد.") }
+        mutable.update { it.copy(downloaded = it.downloaded + lesson.id, message = null) }
     }
 
     fun delete(lesson: Lesson) = action {
         withContext(Dispatchers.IO) { downloads.delete(lesson) }
-        mutable.update { it.copy(downloaded = it.downloaded - lesson.id, message = "فایل دانلودشده حذف شد؛ امکان دانلود مجدد وجود دارد.") }
+        mutable.update { it.copy(downloaded = it.downloaded - lesson.id, message = null) }
     }
     fun playable(lesson: Lesson): File? = if (state.value.purchased) downloads.completed(lesson) else null
     fun cancelDownload() { if (state.value.downloadingId != null) activeJob?.cancel() }

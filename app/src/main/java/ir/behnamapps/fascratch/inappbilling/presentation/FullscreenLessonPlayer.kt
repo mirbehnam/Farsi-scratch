@@ -93,8 +93,8 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
                     .background(Brush.verticalGradient(listOf(Color(0xD9000000), Color.Transparent)))
                     .windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = onClose) { Text("بازگشت به درس‌ها") }
-                    Text(title, Modifier.weight(1f).padding(horizontal = 12.dp), color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    TextButton(onClick = { video?.resetZoom(); interaction++ }) { Text("${String.format(Locale.US, "%.1f", zoom)}× · بازنشانی") }
+                    Text(persianDisplay(title), Modifier.weight(1f).padding(horizontal = 12.dp), color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    TextButton(onClick = { video?.resetZoom(); interaction++ }) { Text("${persianDisplay(String.format(Locale.US, "%.1f", zoom)).replace('.', '٫')}× · بازنشانی") }
                 }
                 if (!error) Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                     .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xED000000))))
@@ -113,7 +113,7 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
                         FilledTonalButton(onClick = { video?.toggle(); playing = video?.isPlaying() == true; interaction++ }, enabled = prepared) { Text(if (playing) "توقف" else "پخش") }
                         TextButton(onClick = { video?.seek(position + 10_000); interaction++ }, enabled = prepared) { Text("۱۰ ثانیه جلو") }
                         Spacer(Modifier.width(16.dp))
-                        Text("${playbackTime(position)} / ${playbackTime(duration)}", color = Color.White, style = MaterialTheme.typography.labelMedium)
+                        Text(persianDisplay("${playbackTime(position)} / ${playbackTime(duration)}"), color = Color.White, style = MaterialTheme.typography.labelMedium)
                     }
                 }
             }

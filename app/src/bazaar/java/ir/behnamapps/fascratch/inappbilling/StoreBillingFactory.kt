@@ -56,7 +56,7 @@ private class BazaarBilling(private val activity: ComponentActivity) : BillingGa
         connect()
         return suspendCancellableCoroutine { continuation ->
             payment.getInAppSkuDetails(listOf(sku)) {
-                getSkuDetailsSucceed { rows -> if (continuation.isActive) continuation.resume(rows.firstOrNull()?.price) }
+                getSkuDetailsSucceed { rows -> if (continuation.isActive) continuation.resume(rows.firstOrNull { it.sku == sku && it.type == "inapp" }?.price?.takeIf { it.isNotBlank() }) }
                 getSkuDetailsFailed { if (continuation.isActive) continuation.resume(null) }
             }
         }

@@ -14,7 +14,8 @@ data class TrainingState(
     val course: Course? = null, val lessons: List<Lesson> = emptyList(), val busy: Boolean = false,
     val purchased: Boolean = false, val price: String? = null, val message: String? = null,
     val downloadingId: String? = null, val progress: Float = 0f, val downloaded: Set<String> = emptySet(),
-    val courses: List<Course> = emptyList(), val purchasedIds: Set<String> = emptySet(), val prices: Map<String, String> = emptyMap()
+    val courses: List<Course> = emptyList(), val purchasedIds: Set<String> = emptySet(), val prices: Map<String, String> = emptyMap(),
+    val loadingPrices: Set<String> = emptySet(), val priceErrors: Set<String> = emptySet()
 )
 
 /** Catalog and per-course access stay separate. Store outages never block free previews. */
@@ -26,6 +27,15 @@ class TrainingController(
     val state = mutable.asStateFlow()
     private val buy = BuyCourse(api, vault)
     private val storeMutex = Mutex()
+    private val priceRefresher = StorePriceRefresher(scope, billing, storeMutex,
+        onLoading = { course -> mutable.update { it.copy(prices = it.prices - course.id, loadingPrices = it.loadingPrices + course.id,
+            priceErrors = it.priceErrors - course.id, price = if (it.course?.id == course.id) null else it.price) } },
+        onResult = { course, price -> mutable.update {
+            if (it.courses.none { c -> c.id == course.id && c.sku == course.sku }) it
+            else it.copy(prices = if (price != null) it.prices + (course.id to price) else it.prices - course.id,
+                loadingPrices = it.loadingPrices - course.id, priceErrors = if (price == null) it.priceErrors + course.id else it.priceErrors - course.id,
+                price = if (it.course?.id == course.id) price else it.price)
+        } })
     private var activeJob: Job? = null
     private var storeJob: Job? = null
     private var pauseStoreSync = false
@@ -55,6 +65,7 @@ class TrainingController(
     // Serial SDK access prevents competing inventory/payment callbacks. No global UI/download lock.
     private fun syncStores(courses: List<Course>) {
         if (billing.provider == "website") return
+        priceRefresher.refresh(courses)
         // Re-render/refresh must not interrupt a pending Myket SDK inventory operation.
         if (storeJob?.isActive == true) return
         pauseStoreSync = false
@@ -63,8 +74,6 @@ class TrainingController(
                 if (pauseStoreSync) break
                 try {
                     storeMutex.withLock {
-                        val price = withTimeout(20_000) { billing.price(course.sku) }
-                        if (price != null) mutable.update { it.copy(prices = it.prices + (course.id to price), price = if (it.course?.id == course.id) price else it.price) }
                         withTimeout(60_000) { buy.execute(course, billing, restoreOnly = true) }
                         updateAccess(course, true)
                     }
@@ -80,7 +89,14 @@ class TrainingController(
         }
     }
 
-    fun select(course: Course) = action(course.id) { open(course) }
+    fun select(course: Course) = action(course.id) {
+        if (billing.provider != "website") priceRefresher.refresh(listOf(course))
+        open(course)
+    }
+
+    fun refreshPrices() {
+        if (billing.provider != "website") priceRefresher.refresh(state.value.course?.let { listOf(it) } ?: state.value.courses)
+    }
 
     private suspend fun open(course: Course) {
         val cached = withContext(Dispatchers.IO) { cache.load(course.id) }

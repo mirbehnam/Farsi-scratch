@@ -1,22 +1,22 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package ir.behnamapps.fascratch.inappbilling.presentation
 
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -25,162 +25,253 @@ import ir.behnamapps.fascratch.BuildConfig
 import ir.behnamapps.fascratch.inappbilling.domain.*
 import java.util.Locale
 
+private val Ink = Color(0xFF183F38)
+private val Muted = Color(0xFF5D6C65)
+private val Paper = Color(0xFFF7F5EF)
+private val Mint = Color(0xFFE8F3EB)
+private val PreviewGreen = Color(0xFF176D46)
+private val PreviewTint = Color(0xFFD4EDDD)
+private val Line = Color(0xFFE0E5DC)
+private enum class LessonFilter { ALL, PREVIEW, DOWNLOADED }
+
 @Composable
 internal fun TrainingScreen(state: TrainingState, controller: TrainingController, onBack: () -> Unit, onPlay: (Lesson) -> Unit) {
-    var offlineOnly by rememberSaveable(state.course?.id) { mutableStateOf(false) }
-    var deleting by remember { mutableStateOf<Lesson?>(null) }
-    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
-        .windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 14.dp)) {
-        Row(Modifier.fillMaxWidth().heightIn(min = 52.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(state.course?.title ?: "آموزش", Modifier.weight(1f), fontWeight = FontWeight.Bold, fontSize = 18.sp,
-                maxLines = 1, overflow = TextOverflow.Ellipsis)
+    TrainingContent(state, onBack, { controller.load() }, { controller.select(it) },
+        { course, restore -> controller.purchase(restore, course) }, { controller.download(it) },
+        controller::cancelDownload, onPlay, controller::refreshPrices)
+}
+
+/** Callbacks keep layout previews independent of billing, downloads and Android storage. */
+@Composable
+internal fun TrainingContent(
+    state: TrainingState, onBack: () -> Unit, onRefresh: () -> Unit, onSelect: (Course) -> Unit,
+    onPurchase: (Course, Boolean) -> Unit, onDownload: (Lesson) -> Unit,
+    onCancelDownload: () -> Unit, onPlay: (Lesson) -> Unit, onRefreshPrices: () -> Unit = onRefresh
+) {
+    var filter by rememberSaveable(state.course?.id) { mutableStateOf(LessonFilter.ALL) }
+    Column(Modifier.fillMaxSize().background(Paper).windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 16.dp)) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = onBack) { Text(if (state.course == null) "بازگشت" else "همهٔ دوره‌ها") }
+            Text(persian(state.course?.title ?: "آکادمی اسکرچ فارسی"), Modifier.weight(1f), fontWeight = FontWeight.Bold,
+                color = Ink, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (state.busy && state.downloadingId == null) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-            if (state.course != null) {
-                FilterChip(selected = !offlineOnly, onClick = { offlineOnly = false }, label = { Text("همه") })
-                FilterChip(selected = offlineOnly, onClick = { offlineOnly = true }, label = { Text("دانلودها") })
-                if (!state.purchased && BuildConfig.BILLING_PROVIDER != "website") TextButton(onClick = { controller.purchase(false) }, enabled = !state.busy) { Text("خرید") }
-            }
-            TextButton(onClick = { controller.load() }, enabled = !state.busy) { Text("به‌روزرسانی") }
-            TextButton(onClick = onBack) { Text("بازگشت") }
+            TextButton(onClick = onRefresh, enabled = !state.busy) { Text("تازه‌سازی") }
         }
-        state.message?.let { Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-            Text(it, Modifier.padding(10.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
-        } }
-        if (state.course == null) {
-            if (state.courses.isEmpty()) EmptyContent(if (state.busy) "در حال دریافت دوره‌ها…" else "دوره‌ای منتشر نشده است", Modifier.weight(1f))
-            else LazyVerticalGrid(columns = GridCells.Fixed(if (state.courses.size == 1) 1 else 2), modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                items(state.courses, key = { it.id }) { course ->
-                    CourseCard(course, state, controller, horizontal = state.courses.size == 1)
-                }
-            }
-        } else {
-            val lessons = state.lessons.filter { !offlineOnly || it.id in state.downloaded }
-            if (lessons.isEmpty()) EmptyContent(if (state.busy) "در حال دریافت درس‌ها…" else if (offlineOnly) "هنوز درسی دانلود نشده است" else "درسی منتشر نشده است", Modifier.weight(1f))
-            else LazyVerticalGrid(columns = GridCells.Fixed(2), modifier = Modifier.weight(1f), contentPadding = PaddingValues(bottom = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                var previous: String? = null
-                lessons.forEach { lesson ->
-                    if (lesson.section.isNotBlank() && previous != lesson.section) {
-                        item(key = "section-${lesson.id}", span = { GridItemSpan(maxLineSpan) }) {
-                            Text(lesson.section, Modifier.padding(top = 6.dp), style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                        }
-                    }
-                    previous = lesson.section
-                    item(key = lesson.id) { LessonCard(lesson, state, controller, { onPlay(lesson) }, { deleting = lesson }) }
-                }
+        // Bound long server messages so retry/details remain reachable on short displays.
+        state.message?.let { message ->
+            Surface(Modifier.fillMaxWidth().padding(bottom = 8.dp), shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.errorContainer) {
+                Text(persian(message), Modifier.heightIn(max = 88.dp).verticalScroll(rememberScrollState()).padding(10.dp),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
             }
         }
-    }
-    deleting?.let { lesson -> AlertDialog(onDismissRequest = { deleting = null }, title = { Text("حذف فایل دانلودشده؟") },
-        text = { Text(lesson.title) }, confirmButton = { TextButton(enabled = !state.busy, onClick = { controller.delete(lesson); deleting = null }) { Text("حذف فایل") } },
-        dismissButton = { TextButton(onClick = { deleting = null }) { Text("انصراف") } }) }
-}
-
-@Composable
-private fun EmptyContent(message: String, modifier: Modifier) {
-    Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-}
-
-@Composable
-private fun CourseCard(course: Course, state: TrainingState, controller: TrainingController, horizontal: Boolean) {
-    val purchased = course.id in state.purchasedIds
-    Card(onClick = { if (!state.busy) controller.select(course) }, shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White)) {
-        if (horizontal) Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            CourseArtwork(course.coverUrl, course.title, Modifier.size(148.dp, 102.dp).clip(RoundedCornerShape(12.dp)))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) { CourseText(course) }
-            Column(Modifier.width(176.dp), horizontalAlignment = Alignment.CenterHorizontally) { CourseActions(course, state, controller, purchased) }
-        } else Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                CourseArtwork(course.coverUrl, course.title, Modifier.size(104.dp, 76.dp).clip(RoundedCornerShape(10.dp)))
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) { CourseText(course) }
+        val course = state.course
+        if (course == null) {
+            Catalog(state, onSelect, Modifier.weight(1f))
+        } else BoxWithConstraints(Modifier.weight(1f).padding(bottom = 10.dp)) {
+            // A single column remains usable with unusually large display scaling.
+            val split = maxWidth >= 580.dp && maxHeight >= 240.dp * LocalDensity.current.fontScale
+            val panelWidth = (maxWidth * .32f).coerceIn(228.dp, 280.dp)
+            val curriculum: @Composable (Modifier) -> Unit = { modifier ->
+                Curriculum(course, state, filter, { filter = it }, modifier,
+                    onDownload, onCancelDownload, onPlay,
+                    if (split) null else { { PurchasePanel(course, state, onPurchase, onRefreshPrices) } })
             }
-            CourseActions(course, state, controller, purchased)
+            if (split) Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                PurchasePanel(course, state, onPurchase, onRefreshPrices,
+                    Modifier.width(panelWidth).fillMaxHeight(), pinned = true)
+                curriculum(Modifier.weight(1f).fillMaxHeight())
+            } else curriculum(Modifier.fillMaxSize())
         }
     }
 }
 
 @Composable
-private fun CourseText(course: Course) {
-    Text(course.title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-    if (course.description.isNotBlank()) Text(course.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
-    if (course.instructor.isNotBlank()) Text(course.instructor, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-    val stats = listOfNotNull(durationLabel(course.durationSeconds), course.confirmedPurchases?.let { "$it خرید" }).joinToString(" · ")
-    if (stats.isNotEmpty()) Text(stats, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun Catalog(state: TrainingState, onSelect: (Course) -> Unit, modifier: Modifier) {
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val wide = maxWidth >= 680.dp
+        LazyVerticalGrid(columns = GridCells.Fixed(if (wide && state.courses.size > 1) 2 else 1),
+            contentPadding = PaddingValues(bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            if (state.courses.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
+                EmptyContent(if (state.busy) "در حال دریافت دوره‌ها…" else if (state.message != null) "دریافت دوره‌ها کامل نشد؛ دوباره تازه‌سازی کنید." else "دوره‌های تازه در راه‌اند", "", Modifier.fillMaxWidth())
+            }
+            items(state.courses, key = { it.id }) { course ->
+                CourseCard(course, state, onSelect, wide && state.courses.size == 1)
+            }
+        }
+    }
 }
 
 @Composable
-private fun CourseActions(course: Course, state: TrainingState, controller: TrainingController, purchased: Boolean) {
-    val source = remember { MutableInteractionSource() }
-    val pressed by source.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) .97f else 1f, label = "courseButtonPress")
+private fun CourseCard(course: Course, state: TrainingState, onSelect: (Course) -> Unit, horizontal: Boolean) {
+    val owned = course.id in state.purchasedIds
+    Card(onClick = { onSelect(course) }, enabled = !state.busy, shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White), border = BorderStroke(1.dp, Line)) {
+        val details: @Composable ColumnScope.() -> Unit = {
+            Text(persian(course.title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (course.instructor.isNotBlank()) Text(persian(course.instructor), style = MaterialTheme.typography.bodySmall, color = Muted)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text(persian(if (owned) "خریداری شده" else state.prices[course.id] ?: if (BuildConfig.BILLING_PROVIDER == "website") "نسخهٔ وب‌سایت" else if (course.id in state.priceErrors) "قیمت دریافت نشد" else "قیمت در حال دریافت"),
+                        color = Ink, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                }
+                Button(onClick = { onSelect(course) }, enabled = !state.busy, shape = RoundedCornerShape(12.dp)) {
+                    Text(if (owned) "ورود به دوره" else "مشاهده دوره")
+                }
+            }
+        }
+        if (horizontal) Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            CourseArtwork(course.coverUrl, course.title, Modifier.size(152.dp, 108.dp).clip(RoundedCornerShape(12.dp)))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp), content = details)
+        } else Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            CourseArtwork(course.coverUrl, course.title, Modifier.fillMaxWidth().height(84.dp).clip(RoundedCornerShape(12.dp)))
+            details()
+        }
+    }
+}
+
+@Composable
+private fun CourseMetadata(course: Course) {
+    if (course.instructor.isNotBlank()) Text(persian("مدرس: ${course.instructor}"), style = MaterialTheme.typography.bodySmall, color = Muted)
+    val facts = listOfNotNull(durationLabel(course.durationSeconds), course.confirmedPurchases?.takeIf { it > 0 }?.let { "${persian(it)} خرید تأییدشده" })
+    if (facts.isNotEmpty()) Text(facts.joinToString("  ·  "), style = MaterialTheme.typography.labelMedium, color = Muted)
+}
+
+@Composable
+private fun PurchasePanel(course: Course, state: TrainingState, onPurchase: (Course, Boolean) -> Unit, onRefreshPrices: () -> Unit, modifier: Modifier = Modifier, pinned: Boolean = false) {
     val canBuy = BuildConfig.BILLING_PROVIDER != "website"
-    Button(onClick = { if (purchased) controller.select(course) else controller.purchase(false, course) },
-        enabled = !state.busy && (purchased || canBuy), interactionSource = source,
-        modifier = Modifier.fillMaxWidth().graphicsLayer { scaleX = scale; scaleY = scale },
-        shape = RoundedCornerShape(12.dp), contentPadding = PaddingValues(0.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent)) {
-        Box(Modifier.fillMaxWidth().background(Brush.horizontalGradient(if (purchased) listOf(Color(0xFF18745C), Color(0xFF26937C)) else listOf(Color(0xFF245B88), Color(0xFF347DA8))))
-            .padding(horizontal = 10.dp, vertical = 12.dp), contentAlignment = Alignment.Center) {
-            Text(if (purchased) "شروع یادگیری" else "خرید · ${state.prices[course.id] ?: "…"}", color = Color.White,
-                fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    val price = state.prices[course.id]
+    val store = if (BuildConfig.BILLING_PROVIDER == "myket") "مایکت" else "کافه‌بازار"
+    Surface(modifier, shape = RoundedCornerShape(20.dp), color = Color.White, border = BorderStroke(1.dp, Line)) {
+        Column {
+            // Only the summary scrolls; price and purchase remain anchored in landscape.
+            val summaryModifier = if (pinned) Modifier.weight(1f).verticalScroll(rememberScrollState()) else Modifier
+            Column(summaryModifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(persian(course.title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Ink)
+                CourseMetadata(course)
+                if (course.description.isNotBlank()) {
+                    var showDescription by rememberSaveable(course.id) { mutableStateOf(false) }
+                    TextButton(onClick = { showDescription = !showDescription }, contentPadding = PaddingValues(0.dp)) { Text(if (showDescription) "بستن توضیحات" else "دربارهٔ دوره", style = MaterialTheme.typography.labelMedium) }
+                    if (showDescription) Text(persian(course.description), style = MaterialTheme.typography.bodySmall, color = Muted)
+                }
+            }
+            HorizontalDivider(color = Line)
+            Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (state.purchased) {
+                    Text("✓ خریداری شده", color = Ink, fontWeight = FontWeight.Bold)
+                } else if (canBuy) {
+                    Text(persian(price ?: if (course.id in state.loadingPrices) "دریافت قیمت…" else "قیمت دریافت نشد"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Ink)
+                    if (course.id !in state.loadingPrices) TextButton(onClick = onRefreshPrices, enabled = !state.busy, contentPadding = PaddingValues(0.dp)) { Text("تازه‌سازی قیمت", style = MaterialTheme.typography.labelMedium) }
+                    Button(onClick = { onPurchase(course, false) }, enabled = !state.busy && price != null,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp), shape = RoundedCornerShape(14.dp),
+                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 3.dp, pressedElevation = 0.dp)) {
+                        Text("خرید دوره", fontWeight = FontWeight.Bold, fontSize = 19.sp)
+                    }
+                    Text("پرداخت از طریق $store", modifier = Modifier.align(Alignment.CenterHorizontally), style = MaterialTheme.typography.labelSmall, color = Muted)
+                    TextButton(onClick = { onPurchase(course, true) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(0.dp)) { Text("بازیابی خرید", style = MaterialTheme.typography.labelMedium) }
+                } else {
+                    Text("خرید در نسخهٔ فروشگاهی", color = Ink, fontWeight = FontWeight.Bold)
+                    Text("برای خرید، نسخهٔ مایکت یا کافه‌بازار برنامه را نصب کنید.", style = MaterialTheme.typography.bodySmall, color = Muted)
+                }
+            }
         }
-    }
-    if (purchased) Text("✓ قبلاً خریداری شده", Modifier.padding(top = 4.dp), color = Color(0xFF18745C), style = MaterialTheme.typography.labelSmall)
-    else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        TextButton(onClick = { controller.select(course) }, enabled = !state.busy, contentPadding = PaddingValues(horizontal = 4.dp)) { Text("مشاهده درس‌ها", style = MaterialTheme.typography.labelSmall) }
-        if (canBuy) TextButton(onClick = { controller.purchase(true, course) }, enabled = !state.busy, contentPadding = PaddingValues(horizontal = 4.dp)) { Text("بازیابی خرید", style = MaterialTheme.typography.labelSmall) }
     }
 }
 
 @Composable
-private fun LessonCard(lesson: Lesson, state: TrainingState, controller: TrainingController, onPlay: () -> Unit, onDelete: () -> Unit) {
+private fun Curriculum(course: Course, state: TrainingState, filter: LessonFilter, onFilter: (LessonFilter) -> Unit,
+    modifier: Modifier, onDownload: (Lesson) -> Unit, onCancel: () -> Unit,
+    onPlay: (Lesson) -> Unit, inlinePurchase: (@Composable () -> Unit)?
+) {
+    val gridState = rememberLazyGridState()
+    LaunchedEffect(course.id, filter) { gridState.scrollToItem(0) }
+    val lessons = state.lessons.filter { when (filter) { LessonFilter.ALL -> true; LessonFilter.PREVIEW -> it.isPreview; LessonFilter.DOWNLOADED -> it.id in state.downloaded } }
+    BoxWithConstraints(modifier) {
+        LazyVerticalGrid(columns = GridCells.Fixed(if (maxWidth >= 740.dp) 2 else 1), state = gridState,
+            verticalArrangement = Arrangement.spacedBy(6.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 12.dp)) {
+            item(key = "introduction", span = { GridItemSpan(maxLineSpan) }) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (filter == LessonFilter.ALL) {
+                        inlinePurchase?.invoke()
+                    }
+                    // Wrapping avoids squeezing Persian labels at increased system font sizes.
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FilterChip(selected = filter == LessonFilter.ALL, onClick = { onFilter(LessonFilter.ALL) }, label = { Text("همهٔ درس‌ها") })
+                        if (state.lessons.any { it.isPreview }) FilterChip(selected = filter == LessonFilter.PREVIEW, onClick = { onFilter(LessonFilter.PREVIEW) }, label = { Text("رایگان") })
+                        FilterChip(selected = filter == LessonFilter.DOWNLOADED, onClick = { onFilter(LessonFilter.DOWNLOADED) }, label = { Text("دانلودها · ${persian(state.downloaded.size)}") })
+                    }
+                }
+            }
+            if (lessons.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
+                EmptyContent(if (state.busy) "در حال دریافت درس‌ها…" else if (filter == LessonFilter.DOWNLOADED) "هنوز درسی دانلود نکرده‌ای" else if (state.message != null) "دریافت درس‌ها کامل نشد" else "درسی برای نمایش نیست",
+                    if (filter == LessonFilter.DOWNLOADED) "از بخش همهٔ درس‌ها، یک درس را برای تماشای آفلاین دانلود کن." else "", Modifier.fillMaxWidth())
+            }
+            var previous: String? = null
+            lessons.forEach { lesson ->
+                if (lesson.section.isNotBlank() && previous != lesson.section) item(key = "section-${lesson.id}", span = { GridItemSpan(maxLineSpan) }) {
+                    Text(persian(lesson.section), Modifier.padding(top = 2.dp), color = Ink, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                }
+                previous = lesson.section
+                item(key = lesson.id) { LessonCard(lesson, state, onDownload, onCancel, { onPlay(lesson) }) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LessonCard(lesson: Lesson, state: TrainingState, onDownload: (Lesson) -> Unit, onCancel: () -> Unit, onPlay: () -> Unit) {
     val downloaded = lesson.id in state.downloaded
     val downloading = state.downloadingId == lesson.id
     val accessible = CoursePolicy.canLearn(lesson, state.purchased)
     var expanded by rememberSaveable(lesson.id) { mutableStateOf(false) }
-    Surface(shape = RoundedCornerShape(14.dp), color = if (downloaded) Color(0xFFEAF6F1) else Color.White) {
-        Column(Modifier.clickable { expanded = !expanded }.padding(horizontal = 10.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                CourseArtwork(lesson.coverUrl, lesson.title, Modifier.size(112.dp, 76.dp).clip(RoundedCornerShape(10.dp)))
+    Surface(shape = RoundedCornerShape(16.dp), color = if (lesson.isPreview) PreviewTint else if (downloaded && accessible) Mint else Color.White,
+        border = BorderStroke(1.dp, if (lesson.isPreview) PreviewGreen.copy(alpha = .45f) else Line)) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                CourseArtwork(lesson.coverUrl, lesson.title, Modifier.size(86.dp, 64.dp).clip(RoundedCornerShape(10.dp)))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Text(lesson.title, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
-                    DifficultyBadge(lesson.difficulty)
-                    if (lesson.isPreview) Badge("پیش‌نمایش رایگان", Color(0xFFE0F3ED), Color(0xFF17634D))
+                    Text(persian(lesson.title), fontWeight = FontWeight.Bold, color = Ink, style = MaterialTheme.typography.bodyMedium)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        DifficultyBadge(lesson.difficulty)
+                        if (lesson.isPreview) Badge("مشاهده رایگان", PreviewGreen, Color.White)
+                    }
+                    Text(listOfNotNull(durationLabel(lesson.durationSeconds), "${persian(String.format(Locale.US, "%.1f", lesson.bytes / (1024.0 * 1024))).replace('.', '٫')} مگابایت").joinToString(" · "), style = MaterialTheme.typography.labelSmall, color = Muted)
                 }
-            }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(listOfNotNull(durationLabel(lesson.durationSeconds), "${String.format(Locale.US, "%.1f", lesson.bytes / (1024.0 * 1024))} MB").joinToString(" · "),
-                    Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (downloaded) {
-                    TextButton(onClick = onDelete, enabled = !state.busy, contentPadding = PaddingValues(horizontal = 6.dp)) { Text("حذف", style = MaterialTheme.typography.labelSmall) }
-                    Button(onClick = onPlay, enabled = accessible, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)) { Text("تماشا") }
-                } else if (downloading) TextButton(onClick = controller::cancelDownload) { Text("توقف") }
-                else OutlinedButton(onClick = { controller.download(lesson) }, enabled = !state.busy && accessible,
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)) { Text(if (accessible) "دانلود" else "قفل") }
+                    Button(onClick = onPlay, enabled = accessible, shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = if (lesson.isPreview) PreviewGreen else MaterialTheme.colorScheme.primary)) { Text("تماشا") }
+                } else if (downloading) OutlinedButton(onClick = onCancel) { Text("توقف دانلود") }
+                else if (accessible) OutlinedButton(onClick = { onDownload(lesson) }, enabled = !state.busy, shape = RoundedCornerShape(10.dp)) { Text(if (lesson.isPreview) "دانلود رایگان" else "دانلود درس") }
+                else Text("نیاز به خرید", Modifier.padding(vertical = 12.dp), style = MaterialTheme.typography.labelMedium, color = Muted)
             }
-            if (expanded && lesson.description.isNotBlank()) Text(lesson.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (lesson.description.isNotBlank()) TextButton(onClick = { expanded = !expanded }, contentPadding = PaddingValues(0.dp)) { Text(if (expanded) "بستن توضیحات" else "توضیحات درس", style = MaterialTheme.typography.labelMedium) }
+            if (expanded) Text(persian(lesson.description), style = MaterialTheme.typography.bodySmall, color = Muted)
             if (downloading) {
                 LinearProgressIndicator(progress = { state.progress }, modifier = Modifier.fillMaxWidth())
-                Text("${(state.progress * 100).toInt()}٪", style = MaterialTheme.typography.labelSmall)
+                Text("${persian((state.progress * 100).toInt())}٪ دانلود شده · برای ادامه، در این صفحه بمانید", style = MaterialTheme.typography.labelSmall, color = Muted)
             }
         }
+    }
+}
+
+@Composable
+private fun EmptyContent(title: String, subtitle: String, modifier: Modifier) {
+    Column(modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(title, color = Ink, style = MaterialTheme.typography.titleMedium)
+        if (subtitle.isNotBlank()) Text(subtitle, color = Muted, style = MaterialTheme.typography.bodySmall)
     }
 }
 
 @Composable
 private fun Badge(text: String, background: Color, foreground: Color) {
-    Surface(shape = RoundedCornerShape(7.dp), color = background) {
-        Text(text, Modifier.padding(horizontal = 7.dp, vertical = 3.dp), color = foreground, style = MaterialTheme.typography.labelSmall)
+    Surface(shape = RoundedCornerShape(8.dp), color = background) {
+        Text(text, Modifier.padding(horizontal = 8.dp, vertical = 4.dp), color = foreground, style = MaterialTheme.typography.labelSmall)
     }
 }
 
 @Composable
 private fun DifficultyBadge(level: Int) {
     when (level) {
-        1 -> Badge("🌱 مقدماتی", Color(0xFFE0F3ED), Color(0xFF17634D))
+        1 -> Badge("🌱 مقدماتی", Mint, Ink)
         2 -> Badge("🙂 آسان", Color(0xFFE4EFFC), Color(0xFF245B88))
         3 -> Badge("💡 متوسط", Color(0xFFFFF1D6), Color(0xFF805300))
         4 -> Badge("🚀 پیشرفته", Color(0xFFEDE6FA), Color(0xFF69469B))
@@ -188,4 +279,6 @@ private fun DifficultyBadge(level: Int) {
     }
 }
 
-private fun durationLabel(seconds: Double): String? = if (seconds.isFinite() && seconds > 0) "${kotlin.math.ceil(seconds / 60).toInt()} دقیقه" else null
+private fun persian(value: Int) = persian(value.toString())
+private fun persian(value: String) = persianDisplay(value)
+private fun durationLabel(seconds: Double): String? = if (seconds.isFinite() && seconds > 0) "${persian(kotlin.math.ceil(seconds / 60).toInt())} دقیقه" else null

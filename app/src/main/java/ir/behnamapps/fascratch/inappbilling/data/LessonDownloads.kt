@@ -16,8 +16,8 @@ class LessonDownloads(context: Context, private val api: CourseApi) {
     private val root = File(context.noBackupFilesDir, "course-videos-${BuildConfig.FLAVOR}").apply { mkdirs() }
     fun completed(lesson: Lesson): File? = File(root, CoursePolicy.downloadKey(lesson)).takeIf { it.isFile && it.length() == lesson.bytes }
 
-    suspend fun download(lesson: Lesson, access: CourseAccess, progress: (Float) -> Unit): File = withContext(Dispatchers.IO) {
-        require(access.courseId == lesson.courseId)
+    suspend fun download(lesson: Lesson, access: CourseAccess?, progress: (Float) -> Unit): File = withContext(Dispatchers.IO) {
+        require(lesson.isPreview || access?.courseId == lesson.courseId)
         val target = File(root, CoursePolicy.downloadKey(lesson))
         completed(lesson)?.let { return@withContext it }
         val partial = File(root, target.name + ".part")
@@ -25,7 +25,8 @@ class LessonDownloads(context: Context, private val api: CourseApi) {
         if (offset > lesson.bytes) { check(partial.delete()); offset = 0 }
         if (root.usableSpace < (lesson.bytes - offset) + 10 * 1024 * 1024) throw CourseFailure("فضای کافی برای دانلود این درس وجود ندارد.")
         if (offset < lesson.bytes) {
-            val connection = api.connection("lessons/${CoursePolicy.uuid(lesson.id)}/purchased-video", access.token)
+            val connection = if (lesson.isPreview) api.previewConnection(lesson)
+                else api.connection("lessons/${CoursePolicy.uuid(lesson.id)}/purchased-video", requireNotNull(access).token)
             try {
                 connection.setRequestProperty("Accept", "video/mp4")
                 if (offset > 0) connection.setRequestProperty("Range", "bytes=$offset-")

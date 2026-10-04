@@ -54,8 +54,9 @@ class TrainingActivity : ComponentActivity() {
                 onSurfaceVariant = Color(0xFF596579))) {
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl, LocalTextStyle provides LocalTextStyle.current.copy(fontFamily = font)) {
                     BackHandler(playing != null) { playing = null }
+                    BackHandler(playing == null && state.course != null) { controller.backToCatalog() }
                     if (playing != null) FullscreenLessonPlayer(playing!!.file, playing!!.title, window, onClose = { playing = null })
-                    else TrainingScreen(state, controller, onBack = { finish() }, onPlay = { lesson ->
+                    else TrainingScreen(state, controller, onBack = { if (!controller.backToCatalog()) finish() }, onPlay = { lesson ->
                         controller.playable(lesson)?.let { playing = PlayingLesson(it, lesson.title) }
                     })
                 }

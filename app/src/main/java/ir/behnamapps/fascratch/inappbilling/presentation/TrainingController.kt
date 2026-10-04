@@ -6,15 +6,18 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 
 data class TrainingState(
     val course: Course? = null, val lessons: List<Lesson> = emptyList(), val busy: Boolean = false,
     val purchased: Boolean = false, val price: String? = null, val message: String? = null,
-    val downloadingId: String? = null, val progress: Float = 0f, val downloaded: Set<String> = emptySet()
+    val downloadingId: String? = null, val progress: Float = 0f, val downloaded: Set<String> = emptySet(),
+    val courses: List<Course> = emptyList(), val purchasedIds: Set<String> = emptySet(), val prices: Map<String, String> = emptyMap()
 )
 
-/** UI orchestration only; SDKs, server transport, encrypted storage and files stay outside UI. */
+/** Catalog and per-course access stay separate. Store outages never block free previews. */
 class TrainingController(
     private val scope: CoroutineScope, private val billing: BillingGateway, private val api: CourseApi,
     private val vault: PurchaseVault, private val cache: CourseCache, private val downloads: LessonDownloads
@@ -22,54 +25,112 @@ class TrainingController(
     private val mutable = MutableStateFlow(TrainingState())
     val state = mutable.asStateFlow()
     private val buy = BuyCourse(api, vault)
+    private val storeMutex = Mutex()
     private var activeJob: Job? = null
+    private var storeJob: Job? = null
+    private var pauseStoreSync = false
 
     fun load() = action {
-        val cached = withContext(Dispatchers.IO) { cache.load() }
-        if (cached != null) show(cached.first, cached.second)
-        val course = api.course(if (billing.provider == "website") "cafebazaar" else billing.provider)
-        val lessons = api.lessons(course)
-        withContext(Dispatchers.IO) { cache.save(course, lessons) }
-        show(course, lessons)
-        if (billing.provider != "website") {
-            val price = withTimeout(20_000) { billing.price(course.sku) }
-            mutable.update { it.copy(price = price) }
-            try {
-                withTimeout(60_000) { buy.execute(course, billing, restoreOnly = true) }
-                mutable.update { it.copy(purchased = true, message = null) }
-            } catch (error: CourseFailure) {
-                if (error.code != "not_owned") throw error
-                if (vault.wasVerified(course.id)) {
-                    vault.revoke(course.id)
-                    mutable.update { it.copy(purchased = false, message = "خرید قبلی در حساب فعلی استور وجود ندارد؛ حساب استور را بررسی کنید.") }
-                }
+        val cached = withContext(Dispatchers.IO) { cache.loadCatalog() }
+        if (cached.isNotEmpty()) showCatalog(cached)
+        val courses = api.courses(if (billing.provider == "website") "cafebazaar" else billing.provider)
+        withContext(Dispatchers.IO) { cache.saveCatalog(courses) }
+        showCatalog(courses)
+        state.value.course?.let { selected ->
+            courses.firstOrNull { it.id == selected.id }?.let { open(it) }
+                ?: mutable.update { it.copy(course = null, lessons = emptyList(), downloaded = emptySet()) }
+        }
+        syncStores(courses)
+    }
+
+    private fun showCatalog(courses: List<Course>) {
+        mutable.update { it.copy(courses = courses, purchasedIds = courses.filter { c -> vault.wasVerified(c.id) }.map { c -> c.id }.toSet()) }
+    }
+
+    private fun updateAccess(course: Course, enabled: Boolean) {
+        mutable.update { it.copy(purchasedIds = if (enabled) it.purchasedIds + course.id else it.purchasedIds - course.id,
+            purchased = if (it.course?.id == course.id) enabled else it.purchased) }
+    }
+
+    // Serial SDK access prevents competing inventory/payment callbacks. No global UI/download lock.
+    private fun syncStores(courses: List<Course>) {
+        if (billing.provider == "website") return
+        // Re-render/refresh must not interrupt a pending Myket SDK inventory operation.
+        if (storeJob?.isActive == true) return
+        pauseStoreSync = false
+        storeJob = scope.launch {
+            for (course in courses) {
+                if (pauseStoreSync) break
+                try {
+                    storeMutex.withLock {
+                        val price = withTimeout(20_000) { billing.price(course.sku) }
+                        if (price != null) mutable.update { it.copy(prices = it.prices + (course.id to price), price = if (it.course?.id == course.id) price else it.price) }
+                        withTimeout(60_000) { buy.execute(course, billing, restoreOnly = true) }
+                        updateAccess(course, true)
+                    }
+                } catch (_: TimeoutCancellationException) { runCatching { billing.close() } }
+                catch (error: CancellationException) { throw error }
+                catch (error: CourseFailure) {
+                    if (CoursePolicy.revokesAccess(error.code)) {
+                        vault.revoke(course.id); updateAccess(course, false)
+                        if (error.code != "not_owned" && state.value.course?.id == course.id) mutable.update { it.copy(message = error.userMessage) }
+                    }
+                } catch (_: Exception) { /* Retain prior verified offline access on transient failure. */ }
             }
         }
     }
 
+    fun select(course: Course) = action(course.id) { open(course) }
+
+    private suspend fun open(course: Course) {
+        val cached = withContext(Dispatchers.IO) { cache.load(course.id) }
+        show(course, cached?.second ?: emptyList())
+        val lessons = api.lessons(course)
+        withContext(Dispatchers.IO) { cache.save(course, lessons) }
+        show(course, lessons)
+    }
+
     private fun show(course: Course, lessons: List<Lesson>) {
-        mutable.update { it.copy(course = course, lessons = lessons, purchased = vault.wasVerified(course.id),
+        mutable.update { it.copy(course = course, lessons = lessons, purchased = vault.wasVerified(course.id), price = it.prices[course.id],
             downloaded = lessons.filter { lesson -> downloads.completed(lesson) != null }.map { lesson -> lesson.id }.toSet()) }
     }
 
-    fun purchase(restoreOnly: Boolean) = action {
-        val course = state.value.course ?: throw CourseFailure("ابتدا اطلاعات دوره را دریافت کنید.")
-        withTimeout(180_000) { buy.execute(course, billing, restoreOnly) }
-        mutable.update { it.copy(purchased = true, message = null) }
+    fun backToCatalog(): Boolean {
+        if (state.value.course == null) return false
+        if (state.value.busy) return true
+        mutable.update { it.copy(course = null, lessons = emptyList(), downloaded = emptySet(), message = null) }
+        return true
+    }
+
+    fun purchase(restoreOnly: Boolean, target: Course? = state.value.course) {
+        val course = target ?: return
+        action(course.id) {
+            // Let the current SDK inventory callback finish; cancelling it can leave Myket busy.
+            pauseStoreSync = true
+            storeMutex.withLock { withTimeout(180_000) { buy.execute(course, billing, restoreOnly) } }
+            updateAccess(course, true)
+            open(course)
+        }
     }
 
     private suspend fun access(course: Course, force: Boolean = false): CourseAccess {
         val saved = vault.access(course.id)
         if (!force && saved != null && saved.expiresAtMillis > System.currentTimeMillis() + 60_000) return saved
-        return withTimeout(60_000) { buy.execute(course, billing, restoreOnly = true) }
+        return storeMutex.withLock { withTimeout(60_000) { buy.execute(course, billing, restoreOnly = true) } }
     }
 
-    fun download(lesson: Lesson) = action {
+    fun download(lesson: Lesson) = action(lesson.courseId) {
         val course = state.value.course ?: throw CourseFailure("دوره در دسترس نیست.")
-        if (!vault.wasVerified(course.id)) throw CourseFailure("برای دانلود ابتدا دوره را خریداری یا بازیابی کنید.")
+        require(lesson.courseId == course.id && state.value.lessons.any { it.id == lesson.id })
+        if (!CoursePolicy.canLearn(lesson, vault.wasVerified(course.id))) throw CourseFailure("برای دانلود ابتدا دوره را خریداری یا بازیابی کنید.")
         mutable.update { it.copy(downloadingId = lesson.id, progress = 0f, message = null) }
         val progress: (Float) -> Unit = { value -> mutable.update { it.copy(progress = value) } }
-        try {
+        if (lesson.isPreview) {
+            val fresh = api.lessons(course).firstOrNull { it.id == lesson.id && it.isPreview }
+                ?: throw CourseFailure("این پیش‌نمایش دیگر رایگان یا در دسترس نیست.")
+            if (CoursePolicy.downloadKey(fresh) != CoursePolicy.downloadKey(lesson)) throw CourseFailure("نسخه درس تغییر کرده؛ فهرست را به‌روز کنید.")
+            downloads.download(fresh, null, progress)
+        } else try {
             downloads.download(lesson, access(course), progress)
         } catch (error: CourseFailure) {
             if (error.status != 401 && error.status != 403) throw error
@@ -78,27 +139,28 @@ class TrainingController(
         mutable.update { it.copy(downloaded = it.downloaded + lesson.id, message = null) }
     }
 
-    fun delete(lesson: Lesson) = action {
+    fun delete(lesson: Lesson) = action(lesson.courseId) {
         withContext(Dispatchers.IO) { downloads.delete(lesson) }
         mutable.update { it.copy(downloaded = it.downloaded - lesson.id, message = null) }
     }
-    fun playable(lesson: Lesson): File? = if (state.value.purchased) downloads.completed(lesson) else null
+    fun playable(lesson: Lesson): File? = if (lesson.courseId == state.value.course?.id &&
+        CoursePolicy.canLearn(lesson, state.value.purchased)) downloads.completed(lesson) else null
     fun cancelDownload() { if (state.value.downloadingId != null) activeJob?.cancel() }
 
-    private fun action(block: suspend () -> Unit) {
+    private fun action(courseId: String? = state.value.course?.id, block: suspend () -> Unit) {
         if (state.value.busy) return
         mutable.update { it.copy(busy = true, message = null) }
         activeJob = scope.launch {
             try { block() }
             catch (_: TimeoutCancellationException) {
                 runCatching { billing.close() }
-                mutable.update { it.copy(message = "پاسخ به‌موقع دریافت نشد؛ دوباره تلاش یا خرید را بازیابی کنید.") }
+                mutable.update { it.copy(message = "پاسخ به‌موقع دریافت نشد؛ دوباره تلاش کنید.") }
             }
             catch (error: CancellationException) { throw error }
             catch (error: CourseFailure) {
-                if (CoursePolicy.revokesAccess(error.code)) {
-                    state.value.course?.let { vault.revoke(it.id) }
-                    mutable.update { it.copy(purchased = false) }
+                if (CoursePolicy.revokesAccess(error.code) && courseId != null) {
+                    vault.revoke(courseId)
+                    mutable.update { it.copy(purchasedIds = it.purchasedIds - courseId, purchased = if (it.course?.id == courseId) false else it.purchased) }
                 }
                 mutable.update { it.copy(message = error.userMessage) }
             }

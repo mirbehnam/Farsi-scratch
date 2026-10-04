@@ -13,18 +13,20 @@ Existing project/editor features are unchanged except the HomeScreen آموزش 
 
 ## Setup
 
-- Product SKU is **scratch_basic** in both stores.
+- Initial SKU is **scratch_basic** in both stores. Each published course now uses its own active SKU from the server for the selected store; the catalog is not filtered to BuildConfig.COURSE_SKU.
 - Server base URL: `https://api.behnamapp.ir/scratch/v1`, configured in BuildConfig.COURSE_API_BASE.
 - Package ID remains `ir.behnamapps.fascratch` for all existing flavors. Confirm it matches publisher and server settings. No suffix is introduced that would break store receipt matching.
 - Public RSA keys supplied by the owner are compiled into the appropriate flavor. These are public verification keys, not private API secrets. They can be overridden by MYKET_BILLING_PUBLIC_KEY / BAZAAR_BILLING_PUBLIC_KEY Gradle properties. Never put the private server API key into the app.
 - Bazaar SDK: `com.github.cafebazaar.Poolakey:poolakey:2.2.0`; Myket SDK: `com.github.myketstore:myket-billing-client:1.19`. They are flavor-specific, not bundled together. JitPack repository is restricted to these groups.
 - Google Play Billing / Play Integrity is not used. The app already uses Firebase; Myket SDK has its own transitive dependencies. Those are not store identity proofs. Real no-GMS device testing remains necessary.
-- Deploy the server purchase migration and enable provider configuration first. Publish the course and associate its active SKU scratch_basic with each store. The app selects the published course mapped to this SKU, not a hardcoded course UUID.
+- Deploy the server purchase migration and enable provider configuration first. Publish each course and associate its active store SKU. Full API contract: [SCRATCH_BACKEND_API.md](SCRATCH_BACKEND_API.md).
 - Installed store, current store login, matching app package/signature and published/available SKU are needed for live purchases. Debug signatures may not be accepted by the publisher configuration. Do not claim unit tests prove real purchasing works.
 
 ## Purchase flow
 
-Opening آموزش loads published course/sections/lessons, store price and prior ownership. Existing owned purchases are submitted to `/purchases/restore`. Clicking خرید دوره queries ownership **before** opening payment; a failed query never means "unowned" and never starts a second payment. بازیابی خرید does not launch payment if ownership is missing.
+Opening آموزش loads the course grid; a single course is a horizontal card. Store price/ownership checks run in the background without blocking previews. Selecting a course opens a two-column lesson grid without a sidebar. Only lesson difficulty badges are displayed. Existing owned purchases are submitted to `/purchases/restore`. Clicking خرید queries ownership **before** opening payment; a failed query never means "unowned" and never starts a second payment. بازیابی خرید does not launch payment if ownership is missing.
+
+Published free-preview lessons download through fresh signed same-origin URLs without a purchase token. Cached signed URLs are not reused. Free-preview files are playable without paid entitlement; paid lessons still require course-specific verified access. Catalog cache is multi-course and lesson caches are isolated by course UUID, with a fallback for the old single-course cache.
 
 SDK receipt is persisted encrypted before server verification, protecting against process death/outages after paying. Only server success matching the selected course saves access. Receipt/server access tokens are never logged. Courses are non-consumable: no consume call is present in either adapter.
 

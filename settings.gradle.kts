@@ -21,6 +21,13 @@ dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
         maven {
+            url = uri("https://jitpack.io")
+            content {
+                includeGroup("com.github.cafebazaar.Poolakey")
+                includeGroup("com.github.myketstore")
+            }
+        }
+        maven {
             url = uri("https://maven.myket.ir")
         }
         google()
@@ -30,4 +37,3 @@ dependencyResolutionManagement {
 
 rootProject.name = "farsi scratch"
 include(":app")
- 

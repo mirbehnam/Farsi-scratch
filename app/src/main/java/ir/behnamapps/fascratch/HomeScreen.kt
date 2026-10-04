@@ -40,6 +40,7 @@ fun HomeScreen(
     onEnter: () -> Unit,
     onFollow: () -> Unit,
     onMyProjects: () -> Unit,
+    onTraining: () -> Unit,
     onLunaPlayer: () -> Unit,
     onMafiaApp: () -> Unit
 ) {
@@ -221,6 +222,9 @@ fun HomeScreen(
                             modifier = Modifier.weight(.55f),
                             compact = compactHeight
                         )
+                    }
+                    TextButton(onClick = onTraining) {
+                        Text("آموزش", color = ScratchOrange, fontWeight = FontWeight.Bold, fontFamily = HomeFontFamily)
                     }
                     if (!showLeftColumn) {
                         Spacer(Modifier.height(if (compactHeight) 10.dp else 14.dp))

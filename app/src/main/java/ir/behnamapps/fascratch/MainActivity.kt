@@ -711,6 +711,7 @@ private fun FarsiScratchApp(activity: MainActivity) {
                         },
                         onFollow = { showSocials = true },
                         onMyProjects = { showMyProjects = true },
+                        onTraining = { activity.startActivity(Intent(activity, ir.behnamapps.fascratch.inappbilling.presentation.TrainingActivity::class.java)) },
                         onLunaPlayer = { activity.openOtherApp("ir.behnamapps.lunamusic") },
                         onMafiaApp = { activity.openOtherApp("ir.behnamapp.mafia") }
                     )

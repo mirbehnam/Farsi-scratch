@@ -24,6 +24,9 @@
         android:hardwareAccelerated="true"
         android:theme="@style/Theme.FarsiScratch">
 
+        <activity android:name=".inappbilling.presentation.TrainingActivity"
+            android:exported="false" android:screenOrientation="landscape" />
+
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
             android:resource="@drawable/ic_notification" />

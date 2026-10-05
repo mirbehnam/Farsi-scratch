@@ -4,6 +4,7 @@ package ir.behnamapps.fascratch.inappbilling.presentation
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.rememberScrollState
@@ -80,6 +81,13 @@ internal fun TrainingContent(
             TextButton(onClick = onBack) { Text(if (state.course == null) "بازگشت" else "همهٔ دوره‌ها") }
             Text(persian(state.course?.title ?: "آکادمی اسکرچ فارسی"), Modifier.weight(1f), fontWeight = FontWeight.Bold,
                 color = Ink, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (state.course != null) {
+                Row(Modifier.widthIn(max = 340.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(selected = filter == LessonFilter.ALL, onClick = { filter = LessonFilter.ALL }, label = { Text("همهٔ درس‌ها") })
+                    FilterChip(selected = filter == LessonFilter.PREVIEW, onClick = { filter = LessonFilter.PREVIEW }, label = { Text("رایگان") })
+                    FilterChip(selected = filter == LessonFilter.DOWNLOADED, onClick = { filter = LessonFilter.DOWNLOADED }, label = { Text("دانلودها · ${persian(state.downloaded.size)}") })
+                }
+            }
             if (state.busy && state.downloadingId == null) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
             Box {
                 IconButton(onClick = { optionsExpanded = true }, modifier = Modifier.semantics { contentDescription = "گزینه‌های بیشتر" }) {
@@ -113,7 +121,9 @@ internal fun TrainingContent(
         val course = state.course
         if (course == null) {
             val layout = state.catalogLayout
-            if (layout != null && layout.sha256 != failedLayout && state.courses.isNotEmpty()) {
+            if (!state.catalogCacheLoaded || (layout != null && state.courses.isEmpty() && state.busy)) {
+                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            } else if (layout != null && layout.sha256 != failedLayout && state.courses.isNotEmpty()) {
                 key(layout.sha256) {
                     RemoteCatalog(layout, state, onSelect, { failedLayout = layout.sha256; onCatalogFailed(layout) },
                         { onCatalogReady(layout) }, Modifier.weight(1f)) {
@@ -126,7 +136,7 @@ internal fun TrainingContent(
             val split = maxWidth >= 580.dp && maxHeight >= 240.dp * LocalDensity.current.fontScale
             val panelWidth = (maxWidth * .32f).coerceIn(228.dp, 280.dp)
             val curriculum: @Composable (Modifier) -> Unit = { modifier ->
-                Curriculum(course, state, filter, { filter = it }, modifier,
+                Curriculum(course, state, filter, modifier,
                     onDownload, onCancelDownload, onPlay,
                     if (split) null else { { PurchasePanel(course, state, onPurchase) } })
             }
@@ -241,7 +251,7 @@ private fun PurchasePanel(course: Course, state: TrainingState, onPurchase: (Cou
 }
 
 @Composable
-private fun Curriculum(course: Course, state: TrainingState, filter: LessonFilter, onFilter: (LessonFilter) -> Unit,
+private fun Curriculum(course: Course, state: TrainingState, filter: LessonFilter,
     modifier: Modifier, onDownload: (Lesson) -> Unit, onCancel: () -> Unit,
     onPlay: (Lesson) -> Unit, inlinePurchase: (@Composable () -> Unit)?
 ) {
@@ -251,19 +261,7 @@ private fun Curriculum(course: Course, state: TrainingState, filter: LessonFilte
     BoxWithConstraints(modifier) {
         LazyVerticalGrid(columns = GridCells.Fixed(if (maxWidth >= 740.dp) 2 else 1), state = gridState,
             verticalArrangement = Arrangement.spacedBy(6.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 12.dp)) {
-            item(key = "introduction", span = { GridItemSpan(maxLineSpan) }) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (filter == LessonFilter.ALL) {
-                        inlinePurchase?.invoke()
-                    }
-                    // Wrapping avoids squeezing Persian labels at increased system font sizes.
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        FilterChip(selected = filter == LessonFilter.ALL, onClick = { onFilter(LessonFilter.ALL) }, label = { Text("همهٔ درس‌ها") })
-                        if (state.lessons.any { it.isPreview }) FilterChip(selected = filter == LessonFilter.PREVIEW, onClick = { onFilter(LessonFilter.PREVIEW) }, label = { Text("رایگان") })
-                        FilterChip(selected = filter == LessonFilter.DOWNLOADED, onClick = { onFilter(LessonFilter.DOWNLOADED) }, label = { Text("دانلودها · ${persian(state.downloaded.size)}") })
-                    }
-                }
-            }
+            if (filter == LessonFilter.ALL && inlinePurchase != null) item(key = "introduction", span = { GridItemSpan(maxLineSpan) }) { inlinePurchase() }
             if (lessons.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
                 EmptyContent(if (state.busy) "در حال دریافت درس‌ها…" else if (filter == LessonFilter.DOWNLOADED) "هنوز درسی دانلود نکرده‌ای" else if (state.message != null) "دریافت درس‌ها کامل نشد" else "درسی برای نمایش نیست",
                     if (filter == LessonFilter.DOWNLOADED) "از بخش همهٔ درس‌ها، یک درس را برای تماشای آفلاین دانلود کن." else "", Modifier.fillMaxWidth())

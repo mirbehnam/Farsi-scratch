@@ -21,7 +21,9 @@ the last good cache; an explicit schema-1 native response removes it and switche
 the screen to native. New HTML is displayed immediately but persisted only after
 successful rendering. Failed cached templates are removed; state/cache changes
 share a mutex so late readiness cannot resurrect a server-disabled template.
-Native is default and stays visible until a healthy WebView renders. Separate
+Native is default. During local snapshot loading and HTML font/layout startup,
+a neutral progress indicator is shown instead of flashing native catalog cards.
+After an actual HTML failure the native catalog remains the fallback. Separate
 layout fetch, short timeout, hash/size checks and a 1.8-second heartbeat protect
 catalog usability; JS/render errors or unsupported WebView return to native.
 Only public course/price/ownership data reaches JS. Origin-scoped main-frame messages
@@ -41,6 +43,15 @@ custom element-specific typography remains possible. Readiness waits for the fon
 so cached/remote templates do not briefly appear in another font. A font load failure
 uses the normal native fallback. Browser preview may use Tahoma if Shabnam is not
 installed there; the Android font is loaded from its own APK.
+
+Public course/lesson covers are shared between native cards and WebView through
+`CourseImageCache`. Valid same-origin HTTPS `/media/{uuid}` images are stored
+atomically in the app's private cache, with bounded reads, MIME/dimension checks,
+a 64 MiB / 100-file least-recently-used cap and no credentials or redirects.
+UUID-based replacement URLs select a new cache entry. Android may reclaim this
+cache under storage pressure; unavailable uncached images keep the placeholder.
+Lesson filters (all/free/downloaded) live in the top toolbar, horizontally
+scrollable on small screens, so lesson cards start directly below the toolbar.
 
 `app/src/main/java/ir/behnamapps/fascratch/inappbilling/` is the independent feature directory:
 

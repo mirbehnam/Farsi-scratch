@@ -15,6 +15,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import ir.behnamapps.fascratch.inappbilling.data.CourseImageCache
 import ir.behnamapps.fascratch.BuildConfig
 import ir.behnamapps.fascratch.inappbilling.data.readBytesBounded
 import ir.behnamapps.fascratch.inappbilling.domain.CoursePolicy
@@ -30,19 +32,14 @@ private val artworkCache = object : LruCache<String, Bitmap>(8 * 1024 * 1024) {
 /** Only public artwork is fetched; never send purchase credentials. Bounded bytes and sampled decoding. */
 @Composable
 internal fun CourseArtwork(url: String?, label: String, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val imageCache = remember(context) { CourseImageCache(context) }
     val bitmap by produceState<Bitmap?>(null, url) {
         value = withContext(Dispatchers.IO) {
             if (url == null || !CoursePolicy.sameOrigin(BuildConfig.COURSE_API_BASE, url)) return@withContext null
             artworkCache.get(url)?.let { return@withContext it }
             runCatching {
-                val connection = URL(url).openConnection() as HttpsURLConnection
-                val bytes = try {
-                    connection.connectTimeout = 10_000; connection.readTimeout = 15_000
-                    connection.instanceFollowRedirects = false
-                    if (connection.responseCode != 200) return@runCatching null
-                    if (!connection.contentType.orEmpty().startsWith("image/")) return@runCatching null
-                    connection.inputStream.use { it.readBytesBounded(5 * 1024 * 1024) }
-                } finally { connection.disconnect() }
+                val bytes = imageCache.load(url, 10_000, 15_000)?.bytes ?: return@runCatching null
                 val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
                 if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null

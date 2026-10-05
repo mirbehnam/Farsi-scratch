@@ -18,7 +18,7 @@ data class TrainingState(
     val downloadingId: String? = null, val progress: Float = 0f, val downloaded: Set<String> = emptySet(),
     val courses: List<Course> = emptyList(), val purchasedIds: Set<String> = emptySet(), val prices: Map<String, String> = emptyMap(),
     val loadingPrices: Set<String> = emptySet(), val priceErrors: Set<String> = emptySet(),
-    val catalogLayout: CatalogLayout? = null
+    val catalogLayout: CatalogLayout? = null, val catalogCacheLoaded: Boolean = true
 )
 
 /** Catalog and per-course access stay separate. Store outages never block free previews. */
@@ -26,7 +26,7 @@ class TrainingController(
     private val scope: CoroutineScope, private val billing: BillingGateway, private val api: CourseApi,
     private val vault: PurchaseVault, private val cache: CourseCache, private val downloads: LessonDownloads
 ) {
-    private val mutable = MutableStateFlow(TrainingState())
+    private val mutable = MutableStateFlow(TrainingState(catalogCacheLoaded = false))
     val state = mutable.asStateFlow()
     private val buy = BuyCourse(api, vault)
     private val storeMutex = Mutex()
@@ -63,6 +63,7 @@ class TrainingController(
         }
         mutable.update { it.copy(catalogLayout = it.catalogLayout ?: cached.second) }
         if (cached.first.isNotEmpty()) showCatalog(cached.first)
+        mutable.update { it.copy(catalogCacheLoaded = true) }
         refreshCatalogLayout()
         val courses = api.courses(if (billing.provider == "website") "cafebazaar" else billing.provider)
         withContext(Dispatchers.IO) { cache.saveCatalog(courses) }

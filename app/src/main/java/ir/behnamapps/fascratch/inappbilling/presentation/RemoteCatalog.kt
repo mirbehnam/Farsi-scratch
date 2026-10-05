@@ -12,6 +12,9 @@ import android.webkit.*
 import android.widget.FrameLayout
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Alignment
+import androidx.compose.material3.CircularProgressIndicator
+import ir.behnamapps.fascratch.inappbilling.data.CourseImageCache
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -39,6 +42,7 @@ import javax.net.ssl.HttpsURLConnection
 internal fun RemoteCatalog(layout: CatalogLayout, state: TrainingState, onSelect: (Course) -> Unit,
     onFailure: () -> Unit, onReady: () -> Unit, modifier: Modifier, native: @Composable () -> Unit) {
     val context = LocalContext.current
+    val imageCache = remember(context) { CourseImageCache(context) }
     val fontBootstrap = remember {
         runCatching {
             context.resources.openRawResource(R.font.shabnam).use { source ->
@@ -154,7 +158,7 @@ internal fun RemoteCatalog(layout: CatalogLayout, state: TrainingState, onSelect
                             @Deprecated("Legacy WebView callback")
                             override fun shouldOverrideUrlLoading(view: WebView, url: String) = true
                             override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest): WebResourceResponse {
-                                return catalogImage(request)
+                                return catalogImage(request, imageCache)
                             }
                             override fun onPageFinished(view: WebView, url: String?) {
                                 if (url?.trimEnd('/') != CatalogLayoutPolicy.ORIGIN) { fallback(); return }
@@ -177,7 +181,7 @@ internal fun RemoteCatalog(layout: CatalogLayout, state: TrainingState, onSelect
                             val json = runCatching { message.data?.takeIf { it.length < 1024 }?.let(::JSONObject) }.getOrNull() ?: return@addWebMessageListener
                             when (json.optString("type")) {
                                 "error" -> fallback()
-                                "heartbeat" -> checkHealth(source)
+                                "heartbeat" -> checkHealth(source, failWhenUnhealthy = ready)
                                 "view-course" -> CatalogLayoutPolicy.courseAction(json.optString("type"), json.optString("courseId"), mainFrame,
                                     origin.toString().trimEnd('/'), latestState.busy, latestState.courses)?.let(select)
                             }
@@ -188,8 +192,10 @@ internal fun RemoteCatalog(layout: CatalogLayout, state: TrainingState, onSelect
                 } catch (_: Exception) { handler.post { fallback() } }
             }
         })
-        // Never replace a working native screen with a blank WebView/loading spinner.
-        if (!ready || stopped) native()
+        // Keep the cached HTML entry visually neutral until font/layout readiness. Native
+        // cards are shown only after a real failure, never as a flash beneath HTML.
+        if (stopped) native()
+        else if (!ready) CircularProgressIndicator(Modifier.align(Alignment.Center))
     }
 }
 
@@ -201,7 +207,7 @@ private fun catalogPayload(state: TrainingState): JSONObject = JSONObject().put(
         .put("purchased", c.id in state.purchasedIds)) }
 })
 
-private fun catalogImage(request: WebResourceRequest): WebResourceResponse {
+private fun catalogImage(request: WebResourceRequest, cache: CourseImageCache): WebResourceResponse {
     fun blocked() = WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(byteArrayOf()))
     val target = request.url.toString()
     val base = BuildConfig.COURSE_API_BASE.trimEnd('/')
@@ -211,11 +217,6 @@ private fun catalogImage(request: WebResourceRequest): WebResourceResponse {
     val prefix = Uri.parse(base).path + "/media/"
     if (uri.query != null || uri.fragment != null || !uri.path.orEmpty().startsWith(prefix)) return blocked()
     if (runCatching { CoursePolicy.uuid(uri.path!!.removePrefix(prefix)) }.isFailure) return blocked()
-    val connection = runCatching { URL(target).openConnection() as HttpsURLConnection }.getOrNull() ?: return blocked()
-    return try {
-        connection.connectTimeout = 1500; connection.readTimeout = 1500; connection.instanceFollowRedirects = false; connection.useCaches = false
-        val mime = connection.contentType?.substringBefore(';')
-        if (connection.responseCode != 200 || mime !in setOf("image/webp", "image/png", "image/jpeg", "image/gif")) blocked()
-        else WebResourceResponse(mime, null, ByteArrayInputStream(connection.inputStream.use { it.readBytesBounded(3 * 1024 * 1024) }))
-    } catch (_: Exception) { blocked() } finally { connection.disconnect() }
+    val image = cache.load(target) ?: return blocked()
+    return WebResourceResponse(image.mime, null, ByteArrayInputStream(image.bytes))
 }

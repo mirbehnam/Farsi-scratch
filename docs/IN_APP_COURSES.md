@@ -10,6 +10,19 @@ Display discounts use optional `compare_at_toman` and UTC `discount_ends_at` fro
 
 ## Structure
 
+The catalog optionally uses a published HTML/CSS/JS template from anonymous
+`GET /scratch/v1/catalog-layout` (schema 1, revision, UTF-8 document and SHA-256).
+Native is default and stays visible until a healthy WebView renders. Separate
+layout fetch, short timeout, hash/size checks and a 1.8-second heartbeat protect
+catalog usability; JS/render errors or unsupported WebView return to native.
+Only public course/price/ownership data reaches JS. Origin-scoped main-frame messages
+can select known course UUIDs, never purchase or read tokens/files. File/storage/
+popups/navigation are disabled; only anonymous same-origin Scratch images load.
+Course details, billing, lessons and player remain native. Server admin UI is
+اسکرچ فارسی → طراحی فروشگاه, with drafts, isolated previews and Authenticator-protected
+publication. Full contract/deployment/acceptance checklist is in the server repo's
+`docs/SCRATCH_CATALOG_LAYOUT.md`. Physical device acceptance remains necessary.
+
 `app/src/main/java/ir/behnamapps/fascratch/inappbilling/` is the independent feature directory:
 
 - domain: models, billing/backend/storage interfaces, BuyCourse use case, metadata/URL policy.

@@ -13,6 +13,18 @@ import javax.net.ssl.HttpsURLConnection
 class CourseApi : PurchaseBackend {
     private val base = BuildConfig.COURSE_API_BASE.trimEnd('/')
 
+    /** Separate, short, anonymous request: layout failure never fails the actual catalog. */
+    suspend fun catalogLayout(): CatalogLayout? = withContext(Dispatchers.IO) {
+        val connection = connection("catalog-layout").apply { connectTimeout = 1000; readTimeout = 1000 }
+        try {
+            if (connection.responseCode != 200) return@withContext null
+            val json = JSONObject(connection.inputStream.use { String(it.readBytesBounded(512 * 1024), Charsets.UTF_8) }).getJSONObject("data")
+            CatalogLayoutPolicy.verified(json.optInt("schema"), json.optString("mode"), json.optString("revision"), json.optString("document"), json.optString("sha256"))
+        } catch (error: kotlinx.coroutines.CancellationException) { throw error }
+        catch (_: Exception) { null }
+        finally { connection.disconnect() }
+    }
+
     fun connection(path: String, token: String? = null): HttpsURLConnection {
         val target = "$base/$path"
         return connectionTo(target, token)

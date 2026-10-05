@@ -73,6 +73,7 @@ internal fun TrainingContent(
     var filter by rememberSaveable(state.course?.id) { mutableStateOf(LessonFilter.ALL) }
     var optionsExpanded by remember(state.course?.id) { mutableStateOf(false) }
     val canBuy = BuildConfig.BILLING_PROVIDER != "website"
+    var failedLayout by remember { mutableStateOf<String?>(null) }
     Column(Modifier.fillMaxSize().background(Paper).windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 16.dp)) {
         Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TextButton(onClick = onBack) { Text(if (state.course == null) "بازگشت" else "همهٔ دوره‌ها") }
@@ -110,7 +111,14 @@ internal fun TrainingContent(
         }
         val course = state.course
         if (course == null) {
-            Catalog(state, onSelect, Modifier.weight(1f))
+            val layout = state.catalogLayout
+            if (layout != null && layout.sha256 != failedLayout && state.courses.isNotEmpty()) {
+                key(layout.sha256) {
+                    RemoteCatalog(layout, state, onSelect, { failedLayout = layout.sha256 }, Modifier.weight(1f)) {
+                        Catalog(state, onSelect, Modifier.fillMaxSize())
+                    }
+                }
+            } else Catalog(state, onSelect, Modifier.weight(1f))
         } else BoxWithConstraints(Modifier.weight(1f).padding(bottom = 10.dp)) {
             // A single column remains usable with unusually large display scaling.
             val split = maxWidth >= 580.dp && maxHeight >= 240.dp * LocalDensity.current.fontScale

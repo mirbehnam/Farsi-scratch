@@ -17,7 +17,8 @@ data class TrainingState(
     val purchased: Boolean = false, val price: String? = null, val message: String? = null,
     val downloadingId: String? = null, val progress: Float = 0f, val downloaded: Set<String> = emptySet(),
     val courses: List<Course> = emptyList(), val purchasedIds: Set<String> = emptySet(), val prices: Map<String, String> = emptyMap(),
-    val loadingPrices: Set<String> = emptySet(), val priceErrors: Set<String> = emptySet()
+    val loadingPrices: Set<String> = emptySet(), val priceErrors: Set<String> = emptySet(),
+    val catalogLayout: CatalogLayout? = null
 )
 
 /** Catalog and per-course access stay separate. Store outages never block free previews. */
@@ -48,8 +49,15 @@ class TrainingController(
     private var activeJob: Job? = null
     private var storeJob: Job? = null
     private var pauseStoreSync = false
+    private var layoutJob: Job? = null
 
     fun load() = action {
+        layoutJob?.cancel()
+        mutable.update { it.copy(catalogLayout = null) }
+        layoutJob = scope.launch {
+            val layout = try { withTimeout(1800) { api.catalogLayout() } } catch (_: TimeoutCancellationException) { null }
+            mutable.update { it.copy(catalogLayout = layout) }
+        }
         val cached = withContext(Dispatchers.IO) { cache.loadCatalog() }
         if (cached.isNotEmpty()) showCatalog(cached)
         val courses = api.courses(if (billing.provider == "website") "cafebazaar" else billing.provider)

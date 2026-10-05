@@ -20,7 +20,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ir.behnamapps.fascratch.BuildConfig
@@ -132,17 +131,15 @@ private fun CourseCard(course: Course, state: TrainingState, onSelect: (Course) 
             if (course.instructor.isNotBlank()) Text(persian(course.instructor), style = MaterialTheme.typography.bodySmall, color = Muted)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Column(Modifier.weight(1f)) {
-                    if (!owned && state.prices[course.id] != null) DiscountPrice(course)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(persian(if (owned) "خریداری شده" else state.prices[course.id] ?: if (BuildConfig.BILLING_PROVIDER == "website") "نسخهٔ وب‌سایت" else if (course.id in state.priceErrors) "قیمت دریافت نشد" else "قیمت در حال دریافت"),
-                            modifier = Modifier.align(Alignment.CenterVertically), color = Ink, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        if (!owned && state.prices[course.id] != null) DiscountCountdown(course, Modifier.align(Alignment.CenterVertically))
-                    }
+                    if (owned) Text("✓ خریداری شده", color = PreviewGreen, fontWeight = FontWeight.Bold)
+                    else CourseOfferPrice(course, state.prices[course.id],
+                        if (BuildConfig.BILLING_PROVIDER == "website") "نسخهٔ وب‌سایت" else if (course.id in state.priceErrors) "قیمت دریافت نشد" else "قیمت در حال دریافت")
                 }
                 Button(onClick = { onSelect(course) }, enabled = !state.busy, shape = RoundedCornerShape(12.dp)) {
                     Text(if (owned) "ورود به دوره" else "مشاهده دوره")
                 }
             }
+            if (!owned && state.prices[course.id] != null) DiscountCountdown(course)
         }
         if (horizontal) Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
             CourseArtwork(course.coverUrl, course.title, Modifier.size(152.dp, 108.dp).clip(RoundedCornerShape(12.dp)))
@@ -159,15 +156,6 @@ private fun CourseMetadata(course: Course) {
     if (course.instructor.isNotBlank()) Text(persian("مدرس: ${course.instructor}"), style = MaterialTheme.typography.bodySmall, color = Muted)
     val facts = listOfNotNull(durationLabel(course.durationSeconds), course.confirmedPurchases?.takeIf { it > 0 }?.let { "${persian(it)} خرید تأییدشده" })
     if (facts.isNotEmpty()) Text(facts.joinToString("  ·  "), style = MaterialTheme.typography.labelMedium, color = Muted)
-}
-
-@Composable
-private fun DiscountPrice(course: Course) {
-    val clock = rememberDiscountClock(course)
-    if (CoursePolicy.discountVisible(course, clock)) {
-        Text(persian(java.text.NumberFormat.getIntegerInstance(Locale.US).format(course.compareAtToman) + " تومان"),
-            color = Muted, style = MaterialTheme.typography.bodySmall, textDecoration = TextDecoration.LineThrough)
-    }
 }
 
 @Composable
@@ -193,8 +181,7 @@ private fun PurchasePanel(course: Course, state: TrainingState, onPurchase: (Cou
                 if (state.purchased) {
                     Text("✓ خریداری شده", color = Ink, fontWeight = FontWeight.Bold)
                 } else if (canBuy) {
-                    if (price != null) DiscountPrice(course)
-                    Text(persian(price ?: if (course.id in state.loadingPrices) "دریافت قیمت…" else "قیمت در سرور ثبت نشده یا دریافت نشد"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Ink)
+                    CourseOfferPrice(course, price, if (course.id in state.loadingPrices) "دریافت قیمت…" else "قیمت در سرور ثبت نشده یا دریافت نشد", compact = true)
                     if (course.id !in state.loadingPrices) TextButton(onClick = onRefreshPrices, enabled = !state.busy, contentPadding = PaddingValues(0.dp)) { Text("تازه‌سازی قیمت", style = MaterialTheme.typography.labelMedium) }
                     Button(onClick = { onPurchase(course, false) }, enabled = !state.busy && price != null,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp), shape = RoundedCornerShape(14.dp),

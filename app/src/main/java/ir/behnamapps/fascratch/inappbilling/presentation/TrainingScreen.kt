@@ -46,7 +46,7 @@ internal fun TrainingScreen(state: TrainingState, controller: TrainingController
             if (purchaseNetworkAvailable(context)) controller.purchase(restore, course)
             else pendingPurchase = course to restore
         }, { controller.download(it) },
-        controller::cancelDownload, onPlay, controller::refreshPrices)
+        controller::cancelDownload, onPlay, controller::refreshPrices, controller::catalogReady, controller::catalogFailed)
     pendingPurchase?.let { pending ->
         AlertDialog(onDismissRequest = { pendingPurchase = null }, shape = RoundedCornerShape(24.dp),
             containerColor = Color.White,
@@ -68,7 +68,8 @@ internal fun TrainingScreen(state: TrainingState, controller: TrainingController
 internal fun TrainingContent(
     state: TrainingState, onBack: () -> Unit, onRefresh: () -> Unit, onSelect: (Course) -> Unit,
     onPurchase: (Course, Boolean) -> Unit, onDownload: (Lesson) -> Unit,
-    onCancelDownload: () -> Unit, onPlay: (Lesson) -> Unit, onRefreshPrices: () -> Unit = onRefresh
+    onCancelDownload: () -> Unit, onPlay: (Lesson) -> Unit, onRefreshPrices: () -> Unit = onRefresh,
+    onCatalogReady: (CatalogLayout) -> Unit = {}, onCatalogFailed: (CatalogLayout) -> Unit = {}
 ) {
     var filter by rememberSaveable(state.course?.id) { mutableStateOf(LessonFilter.ALL) }
     var optionsExpanded by remember(state.course?.id) { mutableStateOf(false) }
@@ -114,7 +115,8 @@ internal fun TrainingContent(
             val layout = state.catalogLayout
             if (layout != null && layout.sha256 != failedLayout && state.courses.isNotEmpty()) {
                 key(layout.sha256) {
-                    RemoteCatalog(layout, state, onSelect, { failedLayout = layout.sha256 }, Modifier.weight(1f)) {
+                    RemoteCatalog(layout, state, onSelect, { failedLayout = layout.sha256; onCatalogFailed(layout) },
+                        { onCatalogReady(layout) }, Modifier.weight(1f)) {
                         Catalog(state, onSelect, Modifier.fillMaxSize())
                     }
                 }

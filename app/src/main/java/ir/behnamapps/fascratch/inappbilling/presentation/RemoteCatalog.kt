@@ -35,12 +35,13 @@ import javax.net.ssl.HttpsURLConnection
 @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
 @Composable
 internal fun RemoteCatalog(layout: CatalogLayout, state: TrainingState, onSelect: (Course) -> Unit,
-    onFailure: () -> Unit, modifier: Modifier, native: @Composable () -> Unit) {
+    onFailure: () -> Unit, onReady: () -> Unit, modifier: Modifier, native: @Composable () -> Unit) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val latestState by rememberUpdatedState(state)
     val select by rememberUpdatedState(onSelect)
     val fail by rememberUpdatedState(onFailure)
+    val confirmReady by rememberUpdatedState(onReady)
     var ready by remember(layout.sha256) { mutableStateOf(false) }
     val handler = remember { Handler(Looper.getMainLooper()) }
     var web by remember(layout.sha256) { mutableStateOf<WebView?>(null) }
@@ -53,6 +54,16 @@ internal fun RemoteCatalog(layout: CatalogLayout, state: TrainingState, onSelect
             stopped = true; ready = false; fail()
         }
     }
+    fun checkHealth(view: WebView, failWhenUnhealthy: Boolean = true) {
+        runCatching {
+            view.evaluateJavascript("window.__scratchHealthy && window.__scratchHealthy() === true") { healthy ->
+                if (!disposed && !stopped && healthy == "true") {
+                    lastHeartbeat = SystemClock.elapsedRealtime()
+                    if (!ready) { ready = true; confirmReady() }
+                } else if (failWhenUnhealthy && healthy != "true") fallback()
+            }
+        }.onFailure { fallback() }
+    }
     fun update(view: WebView) {
         if (stopped || disposed) return
         val payload = catalogPayload(latestState).toString()
@@ -60,6 +71,7 @@ internal fun RemoteCatalog(layout: CatalogLayout, state: TrainingState, onSelect
         runCatching {
             view.evaluateJavascript("try{window.__scratchUpdate($payload);true}catch(e){false}") { result ->
                 if (result != "true") fallback()
+                else if (!disposed && !stopped) checkHealth(view, failWhenUnhealthy = false)
             }
         }.onFailure { fallback() }
     }
@@ -149,13 +161,7 @@ internal fun RemoteCatalog(layout: CatalogLayout, state: TrainingState, onSelect
                             val json = runCatching { message.data?.takeIf { it.length < 1024 }?.let(::JSONObject) }.getOrNull() ?: return@addWebMessageListener
                             when (json.optString("type")) {
                                 "error" -> fallback()
-                                "heartbeat" -> runCatching {
-                                    source.evaluateJavascript("window.__scratchHealthy && window.__scratchHealthy() === true") { healthy ->
-                                        if (!disposed && !stopped && healthy == "true") {
-                                            lastHeartbeat = SystemClock.elapsedRealtime(); ready = true
-                                        } else if (healthy != "true") fallback()
-                                    }
-                                }.onFailure { fallback() }.let { }
+                                "heartbeat" -> checkHealth(source)
                                 "view-course" -> CatalogLayoutPolicy.courseAction(json.optString("type"), json.optString("courseId"), mainFrame,
                                     origin.toString().trimEnd('/'), latestState.busy, latestState.courses)?.let(select)
                             }

@@ -14,14 +14,16 @@ class CourseApi : PurchaseBackend {
     private val base = BuildConfig.COURSE_API_BASE.trimEnd('/')
 
     /** Separate, short, anonymous request: layout failure never fails the actual catalog. */
-    suspend fun catalogLayout(): CatalogLayout? = withContext(Dispatchers.IO) {
+    suspend fun catalogLayout(): CatalogLayoutUpdate = withContext(Dispatchers.IO) {
         val connection = connection("catalog-layout").apply { connectTimeout = 1000; readTimeout = 1000 }
         try {
-            if (connection.responseCode != 200) return@withContext null
+            if (connection.responseCode != 200) return@withContext CatalogLayoutUpdate.Unavailable
             val json = JSONObject(connection.inputStream.use { String(it.readBytesBounded(512 * 1024), Charsets.UTF_8) }).getJSONObject("data")
+            if (json.optInt("schema") == 1 && json.optString("mode") == "native") return@withContext CatalogLayoutUpdate.Native
             CatalogLayoutPolicy.verified(json.optInt("schema"), json.optString("mode"), json.optString("revision"), json.optString("document"), json.optString("sha256"))
+                ?.let { CatalogLayoutUpdate.Html(it) } ?: CatalogLayoutUpdate.Unavailable
         } catch (error: kotlinx.coroutines.CancellationException) { throw error }
-        catch (_: Exception) { null }
+        catch (_: Exception) { CatalogLayoutUpdate.Unavailable }
         finally { connection.disconnect() }
     }
 

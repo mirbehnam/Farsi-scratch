@@ -50,16 +50,20 @@ class TrainingController(
     private var storeJob: Job? = null
     private var pauseStoreSync = false
     private var layoutJob: Job? = null
+    private val layoutCacheMutex = Mutex()
+    private var layoutGeneration = 0
 
     fun load() = action {
         layoutJob?.cancel()
-        mutable.update { it.copy(catalogLayout = null) }
-        layoutJob = scope.launch {
-            val layout = try { withTimeout(1800) { api.catalogLayout() } } catch (_: TimeoutCancellationException) { null }
-            mutable.update { it.copy(catalogLayout = layout) }
+        ++layoutGeneration
+        // Load both local snapshots before starting either network request. Refreshes keep
+        // the current layout visible; a timeout is not an instruction to disable HTML.
+        val cached = withContext(Dispatchers.IO) {
+            layoutCacheMutex.withLock { cache.loadCatalog() to cache.loadCatalogLayout() }
         }
-        val cached = withContext(Dispatchers.IO) { cache.loadCatalog() }
-        if (cached.isNotEmpty()) showCatalog(cached)
+        mutable.update { it.copy(catalogLayout = it.catalogLayout ?: cached.second) }
+        if (cached.first.isNotEmpty()) showCatalog(cached.first)
+        refreshCatalogLayout()
         val courses = api.courses(if (billing.provider == "website") "cafebazaar" else billing.provider)
         withContext(Dispatchers.IO) { cache.saveCatalog(courses) }
         showCatalog(courses)
@@ -68,6 +72,45 @@ class TrainingController(
                 ?: mutable.update { it.copy(course = null, lessons = emptyList(), downloaded = emptySet()) }
         }
         syncStores(courses)
+    }
+
+    private fun refreshCatalogLayout() {
+        layoutJob?.cancel()
+        val generation = ++layoutGeneration
+        layoutJob = scope.launch {
+            val update = try { withTimeout(1800) { api.catalogLayout() } }
+                catch (_: TimeoutCancellationException) { CatalogLayoutUpdate.Unavailable }
+            withContext(Dispatchers.IO) {
+                layoutCacheMutex.withLock {
+                    if (generation != layoutGeneration) return@withLock
+                    mutable.update { it.copy(catalogLayout = CatalogLayoutPolicy.resolve(it.catalogLayout, update)) }
+                    if (update == CatalogLayoutUpdate.Native) runCatching { cache.clearCatalogLayout() }
+                }
+            }
+        }
+    }
+
+    fun catalogReady(layout: CatalogLayout) {
+        scope.launch(Dispatchers.IO) {
+            layoutCacheMutex.withLock {
+                // Serialize with server-native removal: a late readiness callback must not
+                // write a revoked/stale template back into persistent storage.
+                if (mutable.value.catalogLayout?.sha256 == layout.sha256) runCatching {
+                    if (cache.loadCatalogLayout()?.sha256 != layout.sha256) cache.saveCatalogLayout(layout)
+                }
+            }
+        }
+    }
+
+    fun catalogFailed(layout: CatalogLayout) {
+        scope.launch(Dispatchers.IO) {
+            layoutCacheMutex.withLock {
+                if (mutable.value.catalogLayout?.sha256 == layout.sha256) mutable.update { it.copy(catalogLayout = null) }
+                runCatching {
+                    if (cache.loadCatalogLayout()?.sha256 == layout.sha256) cache.clearCatalogLayout()
+                }
+            }
+        }
     }
 
     private fun showCatalog(courses: List<Course>) {
@@ -134,6 +177,7 @@ class TrainingController(
         if (state.value.course == null) return false
         if (state.value.busy) return true
         mutable.update { it.copy(course = null, lessons = emptyList(), downloaded = emptySet(), message = null) }
+        refreshCatalogLayout()
         return true
     }
 

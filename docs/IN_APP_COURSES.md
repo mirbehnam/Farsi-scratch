@@ -12,6 +12,15 @@ Display discounts use optional `compare_at_toman` and UTC `discount_ends_at` fro
 
 The catalog optionally uses a published HTML/CSS/JS template from anonymous
 `GET /scratch/v1/catalog-layout` (schema 1, revision, UTF-8 document and SHA-256).
+The last successfully rendered HTML document is stored atomically in private
+no-backup storage, keyed by flavor and checked against the API base and SHA-256.
+On entry, cached courses and layout are read together before network requests;
+HTML starts from the cache, and config is checked in the background (also when
+returning from course details). A timeout, HTTP failure or invalid response retains
+the last good cache; an explicit schema-1 native response removes it and switches
+the screen to native. New HTML is displayed immediately but persisted only after
+successful rendering. Failed cached templates are removed; state/cache changes
+share a mutex so late readiness cannot resurrect a server-disabled template.
 Native is default and stays visible until a healthy WebView renders. Separate
 layout fetch, short timeout, hash/size checks and a 1.8-second heartbeat protect
 catalog usability; JS/render errors or unsupported WebView return to native.

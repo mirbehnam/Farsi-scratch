@@ -4,10 +4,21 @@ import java.security.MessageDigest
 
 data class CatalogLayout(val revision: String, val document: String, val sha256: String)
 
+sealed interface CatalogLayoutUpdate {
+    data object Native : CatalogLayoutUpdate
+    data object Unavailable : CatalogLayoutUpdate
+    data class Html(val layout: CatalogLayout) : CatalogLayoutUpdate
+}
+
 /** A display-only payload. Never contains receipts, access tokens or SDK credentials. */
 object CatalogLayoutPolicy {
     const val MAX_BYTES = 262144
     const val ORIGIN = "https://catalog.scratch.invalid"
+    fun resolve(cached: CatalogLayout?, update: CatalogLayoutUpdate): CatalogLayout? = when (update) {
+        CatalogLayoutUpdate.Native -> null
+        CatalogLayoutUpdate.Unavailable -> cached
+        is CatalogLayoutUpdate.Html -> update.layout
+    }
     fun verified(schema: Int, mode: String, revision: String, document: String, hash: String): CatalogLayout? {
         if (schema != 1 || mode != "html" || !revision.matches(Regex("[0-9]{1,10}"))) return null
         val bytes = document.toByteArray(Charsets.UTF_8)

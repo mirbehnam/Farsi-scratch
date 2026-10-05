@@ -12,6 +12,21 @@ class CourseCache(context: Context) {
     private val root = context.noBackupFilesDir
     private val legacyFile = AtomicFile(File(root, "course-catalog-${BuildConfig.FLAVOR}.json"))
     private val catalog = AtomicFile(File(root, "course-list-${BuildConfig.FLAVOR}.json"))
+    private val layoutFile = AtomicFile(File(root, "course-layout-${BuildConfig.FLAVOR}.json"))
+    fun loadCatalogLayout(): CatalogLayout? = runCatching {
+        val data = JSONObject(layoutFile.openRead().use { String(it.readBytesBounded(2 * CatalogLayoutPolicy.MAX_BYTES + 16384), Charsets.UTF_8) })
+        require(data.getString("api_base") == BuildConfig.COURSE_API_BASE)
+        CatalogLayoutPolicy.verified(data.getInt("schema"), "html", data.getString("revision"), data.getString("document"), data.getString("sha256"))
+    }.getOrNull()
+    fun saveCatalogLayout(layout: CatalogLayout) {
+        require(CatalogLayoutPolicy.verified(1, "html", layout.revision, layout.document, layout.sha256) != null)
+        val data = JSONObject().put("schema", 1).put("api_base", BuildConfig.COURSE_API_BASE)
+            .put("revision", layout.revision).put("document", layout.document).put("sha256", layout.sha256)
+        val output = layoutFile.startWrite()
+        try { output.write(data.toString().toByteArray(Charsets.UTF_8)); layoutFile.finishWrite(output) }
+        catch (error: Exception) { layoutFile.failWrite(output); throw error }
+    }
+    fun clearCatalogLayout() { layoutFile.delete() }
     private fun courseFile(id: String) = AtomicFile(File(root, "course-${BuildConfig.FLAVOR}-${CoursePolicy.uuid(id)}.json"))
     private fun encode(course: Course) = JSONObject().put("id", course.id).put("title", course.title).put("description", course.description)
         .put("sku", course.sku).put("instructor", course.instructor).put("difficulty", course.difficulty)

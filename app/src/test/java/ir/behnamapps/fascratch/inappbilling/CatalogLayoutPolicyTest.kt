@@ -29,4 +29,16 @@ class CatalogLayoutPolicyTest {
         assertNull(action(type = "purchase")); assertNull(action(id = "unknown"))
         assertNull(action(main = false)); assertNull(action(origin = "https://evil.test")); assertNull(action(busy = true))
     }
+    @Test fun unavailableServerDoesNotDeleteKnownGoodCache() {
+        val cached = CatalogLayout("1", doc, hash(doc))
+        assertSame(cached, CatalogLayoutPolicy.resolve(cached, CatalogLayoutUpdate.Unavailable))
+        assertNull(CatalogLayoutPolicy.resolve(null, CatalogLayoutUpdate.Unavailable))
+    }
+    @Test fun explicitNativeDeletesCachedSelectionAndNewHtmlReplacesIt() {
+        val cached = CatalogLayout("1", doc, hash(doc))
+        val fresh = CatalogLayout("2", doc + "new", hash(doc + "new"))
+        assertNull(CatalogLayoutPolicy.resolve(cached, CatalogLayoutUpdate.Native))
+        assertSame(fresh, CatalogLayoutPolicy.resolve(cached, CatalogLayoutUpdate.Html(fresh)))
+        assertSame(cached, CatalogLayoutPolicy.resolve(null, CatalogLayoutUpdate.Html(cached)))
+    }
 }

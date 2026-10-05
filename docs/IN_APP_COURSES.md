@@ -19,8 +19,10 @@ Only public course/price/ownership data reaches JS. Origin-scoped main-frame mes
 can select known course UUIDs, never purchase or read tokens/files. File/storage/
 popups/navigation are disabled; only anonymous same-origin Scratch images load.
 Course details, billing, lessons and player remain native. Server admin UI is
-اسکرچ فارسی → طراحی فروشگاه, with drafts, isolated previews and Authenticator-protected
-publication. Full contract/deployment/acceptance checklist is in the server repo's
+اسکرچ فارسی → طراحی فروشگاه, with drafts, isolated previews and authenticated-admin
+publication (no additional Authenticator prompt). Panel login security is unchanged.
+The panel also offers a copyable Persian instruction for template-design agents.
+Full contract/deployment/acceptance checklist is in the server repo's
 `docs/SCRATCH_CATALOG_LAYOUT.md`. Physical device acceptance remains necessary.
 
 `app/src/main/java/ir/behnamapps/fascratch/inappbilling/` is the independent feature directory:

@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.util.Base64
 import android.webkit.*
 import android.widget.FrameLayout
 import androidx.compose.foundation.layout.Box
@@ -22,6 +23,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import ir.behnamapps.fascratch.BuildConfig
+import ir.behnamapps.fascratch.R
 import ir.behnamapps.fascratch.inappbilling.data.readBytesBounded
 import ir.behnamapps.fascratch.inappbilling.domain.*
 import org.json.JSONArray
@@ -37,6 +39,13 @@ import javax.net.ssl.HttpsURLConnection
 internal fun RemoteCatalog(layout: CatalogLayout, state: TrainingState, onSelect: (Course) -> Unit,
     onFailure: () -> Unit, onReady: () -> Unit, modifier: Modifier, native: @Composable () -> Unit) {
     val context = LocalContext.current
+    val fontBootstrap = remember {
+        runCatching {
+            context.resources.openRawResource(R.font.shabnam).use { source ->
+                CatalogFont.bootstrap(Base64.encodeToString(source.readBytesBounded(384 * 1024), Base64.NO_WRAP))
+            }
+        }.getOrNull()
+    }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val latestState by rememberUpdatedState(state)
     val select by rememberUpdatedState(onSelect)
@@ -56,7 +65,7 @@ internal fun RemoteCatalog(layout: CatalogLayout, state: TrainingState, onSelect
     }
     fun checkHealth(view: WebView, failWhenUnhealthy: Boolean = true) {
         runCatching {
-            view.evaluateJavascript("window.__scratchHealthy && window.__scratchHealthy() === true") { healthy ->
+            view.evaluateJavascript("window.__scratchFontReady === true && window.__scratchHealthy && window.__scratchHealthy() === true") { healthy ->
                 if (!disposed && !stopped && healthy == "true") {
                     lastHeartbeat = SystemClock.elapsedRealtime()
                     if (!ready) { ready = true; confirmReady() }
@@ -113,7 +122,7 @@ internal fun RemoteCatalog(layout: CatalogLayout, state: TrainingState, onSelect
         AndroidView(modifier = Modifier.fillMaxSize().alpha(if (ready) 1f else 0f), factory = { ctx ->
             FrameLayout(ctx).also { host ->
                 try {
-                    if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+                    if (fontBootstrap == null || !WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
                         handler.post { fallback() }
                     } else {
                         val view = WebView(context)
@@ -149,7 +158,14 @@ internal fun RemoteCatalog(layout: CatalogLayout, state: TrainingState, onSelect
                             }
                             override fun onPageFinished(view: WebView, url: String?) {
                                 if (url?.trimEnd('/') != CatalogLayoutPolicy.ORIGIN) { fallback(); return }
-                                pageLoaded = true; update(view)
+                                if (pageLoaded) return
+                                pageLoaded = true
+                                runCatching {
+                                    view.evaluateJavascript(fontBootstrap) { initialized ->
+                                        if (initialized != "true") fallback()
+                                        else if (!disposed && !stopped) update(view)
+                                    }
+                                }.onFailure { fallback() }
                             }
                             override fun onReceivedError(view: WebView?, request: WebResourceRequest, error: WebResourceError?) { if (request.isForMainFrame) fallback() }
                             override fun onReceivedHttpError(view: WebView?, request: WebResourceRequest, response: WebResourceResponse?) { if (request.isForMainFrame) fallback() }

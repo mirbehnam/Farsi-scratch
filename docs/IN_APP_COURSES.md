@@ -34,6 +34,14 @@ The panel also offers a copyable Persian instruction for template-design agents.
 Full contract/deployment/acceptance checklist is in the server repo's
 `docs/SCRATCH_CATALOG_LAYOUT.md`. Physical device acceptance remains necessary.
 
+The catalog's default HTML font is the existing bundled `res/font/shabnam.ttf`.
+Native code supplies its bytes to a binary-source FontFace named `Shabnam`, without
+network/file-URL access or relaxing CSP. Body and form controls default to Shabnam;
+custom element-specific typography remains possible. Readiness waits for the font,
+so cached/remote templates do not briefly appear in another font. A font load failure
+uses the normal native fallback. Browser preview may use Tahoma if Shabnam is not
+installed there; the Android font is loaded from its own APK.
+
 `app/src/main/java/ir/behnamapps/fascratch/inappbilling/` is the independent feature directory:
 
 - domain: models, billing/backend/storage interfaces, BuyCourse use case, metadata/URL policy.

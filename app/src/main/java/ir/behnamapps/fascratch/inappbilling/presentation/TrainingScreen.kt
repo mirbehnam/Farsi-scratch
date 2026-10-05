@@ -163,36 +163,48 @@ private fun PurchasePanel(course: Course, state: TrainingState, onPurchase: (Cou
     val canBuy = BuildConfig.BILLING_PROVIDER != "website"
     val price = state.prices[course.id]
     val store = if (BuildConfig.BILLING_PROVIDER == "myket") "مایکت" else "کافه‌بازار"
+    val panelScroll = rememberScrollState()
+    LaunchedEffect(course.id) { panelScroll.scrollTo(0) }
     Surface(modifier, shape = RoundedCornerShape(20.dp), color = Color.White, border = BorderStroke(1.dp, Line)) {
         Column {
-            // Only the summary scrolls; price and purchase remain anchored in landscape.
-            val summaryModifier = if (pinned) Modifier.weight(1f).verticalScroll(rememberScrollState()) else Modifier
-            Column(summaryModifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(persian(course.title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Ink)
-                CourseMetadata(course)
-                if (course.description.isNotBlank()) {
-                    var showDescription by rememberSaveable(course.id) { mutableStateOf(false) }
-                    TextButton(onClick = { showDescription = !showDescription }, contentPadding = PaddingValues(0.dp)) { Text(if (showDescription) "بستن توضیحات" else "دربارهٔ دوره", style = MaterialTheme.typography.labelMedium) }
-                    if (showDescription) Text(persian(course.description), style = MaterialTheme.typography.bodySmall, color = Muted)
+            // Reserve only the primary CTA. All variable-height content shares one bounded
+            // scroll viewport, so prices/restore controls can never squeeze the summary to zero.
+            // Inline panels already belong to the curriculum's scrolling grid: do not nest
+            // an unbounded vertical scroller there.
+            val bodyModifier = if (pinned) Modifier.weight(1f).verticalScroll(panelScroll) else Modifier
+            Column(bodyModifier.fillMaxWidth()) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(persian(course.title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Ink)
+                    CourseMetadata(course)
+                    if (course.description.isNotBlank()) {
+                        var showDescription by rememberSaveable(course.id) { mutableStateOf(false) }
+                        TextButton(onClick = { showDescription = !showDescription }, contentPadding = PaddingValues(0.dp)) { Text(if (showDescription) "بستن توضیحات" else "دربارهٔ دوره", style = MaterialTheme.typography.labelMedium) }
+                        if (showDescription) Text(persian(course.description), style = MaterialTheme.typography.bodySmall, color = Muted)
+                    }
+                }
+                HorizontalDivider(color = Line)
+                Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (state.purchased) {
+                        Text("✓ خریداری شده", color = Ink, fontWeight = FontWeight.Bold)
+                    } else if (canBuy) {
+                        CourseOfferPrice(course, price, if (course.id in state.loadingPrices) "دریافت قیمت…" else "قیمت در سرور ثبت نشده یا دریافت نشد", compact = true)
+                        if (course.id !in state.loadingPrices) TextButton(onClick = onRefreshPrices, enabled = !state.busy, contentPadding = PaddingValues(0.dp)) { Text("تازه‌سازی قیمت", style = MaterialTheme.typography.labelMedium) }
+                        Text("پرداخت از طریق $store", modifier = Modifier.align(Alignment.CenterHorizontally), style = MaterialTheme.typography.labelSmall, color = Muted)
+                        TextButton(onClick = { onPurchase(course, true) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(0.dp)) { Text("بازیابی خرید", style = MaterialTheme.typography.labelMedium) }
+                    } else {
+                        Text("خرید در نسخهٔ فروشگاهی", color = Ink, fontWeight = FontWeight.Bold)
+                        Text("برای خرید، نسخهٔ مایکت یا کافه‌بازار برنامه را نصب کنید.", style = MaterialTheme.typography.bodySmall, color = Muted)
+                    }
                 }
             }
-            HorizontalDivider(color = Line)
-            Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                if (state.purchased) {
-                    Text("✓ خریداری شده", color = Ink, fontWeight = FontWeight.Bold)
-                } else if (canBuy) {
-                    CourseOfferPrice(course, price, if (course.id in state.loadingPrices) "دریافت قیمت…" else "قیمت در سرور ثبت نشده یا دریافت نشد", compact = true)
-                    if (course.id !in state.loadingPrices) TextButton(onClick = onRefreshPrices, enabled = !state.busy, contentPadding = PaddingValues(0.dp)) { Text("تازه‌سازی قیمت", style = MaterialTheme.typography.labelMedium) }
+            if (!state.purchased && canBuy) {
+                HorizontalDivider(color = Line)
+                Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
                     Button(onClick = { onPurchase(course, false) }, enabled = !state.busy && price != null,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp), shape = RoundedCornerShape(14.dp),
                         elevation = ButtonDefaults.buttonElevation(defaultElevation = 3.dp, pressedElevation = 0.dp)) {
                         Text("خرید دوره", fontWeight = FontWeight.Bold, fontSize = 19.sp)
                     }
-                    Text("پرداخت از طریق $store", modifier = Modifier.align(Alignment.CenterHorizontally), style = MaterialTheme.typography.labelSmall, color = Muted)
-                    TextButton(onClick = { onPurchase(course, true) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(0.dp)) { Text("بازیابی خرید", style = MaterialTheme.typography.labelMedium) }
-                } else {
-                    Text("خرید در نسخهٔ فروشگاهی", color = Ink, fontWeight = FontWeight.Bold)
-                    Text("برای خرید، نسخهٔ مایکت یا کافه‌بازار برنامه را نصب کنید.", style = MaterialTheme.typography.bodySmall, color = Muted)
                 }
             }
         }

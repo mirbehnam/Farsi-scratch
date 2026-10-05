@@ -18,6 +18,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -69,13 +71,35 @@ internal fun TrainingContent(
     onCancelDownload: () -> Unit, onPlay: (Lesson) -> Unit, onRefreshPrices: () -> Unit = onRefresh
 ) {
     var filter by rememberSaveable(state.course?.id) { mutableStateOf(LessonFilter.ALL) }
+    var optionsExpanded by remember(state.course?.id) { mutableStateOf(false) }
+    val canBuy = BuildConfig.BILLING_PROVIDER != "website"
     Column(Modifier.fillMaxSize().background(Paper).windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 16.dp)) {
         Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TextButton(onClick = onBack) { Text(if (state.course == null) "بازگشت" else "همهٔ دوره‌ها") }
             Text(persian(state.course?.title ?: "آکادمی اسکرچ فارسی"), Modifier.weight(1f), fontWeight = FontWeight.Bold,
                 color = Ink, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (state.busy && state.downloadingId == null) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-            TextButton(onClick = onRefresh, enabled = !state.busy) { Text("تازه‌سازی") }
+            Box {
+                IconButton(onClick = { optionsExpanded = true }, modifier = Modifier.semantics { contentDescription = "گزینه‌های بیشتر" }) {
+                    Text("⋮", fontSize = 28.sp, color = Ink)
+                }
+                DropdownMenu(expanded = optionsExpanded, onDismissRequest = { optionsExpanded = false }) {
+                    DropdownMenuItem(text = { Text("تازه‌سازی") }, enabled = !state.busy,
+                        onClick = { optionsExpanded = false; onRefresh() })
+                    if (canBuy) {
+                        DropdownMenuItem(text = { Text("تازه‌سازی قیمت") }, enabled = !state.busy,
+                            onClick = { optionsExpanded = false; onRefreshPrices() })
+                        val selectedCourse = state.course
+                        if (selectedCourse != null && !state.purchased) {
+                            DropdownMenuItem(text = { Text("بازیابی خرید") }, enabled = !state.busy,
+                                onClick = { optionsExpanded = false; onPurchase(selectedCourse, true) })
+                        }
+                        HorizontalDivider(color = Line)
+                        DropdownMenuItem(text = { Text("پرداخت از طریق " + if (BuildConfig.BILLING_PROVIDER == "myket") "مایکت" else "کافه‌بازار") },
+                            enabled = false, onClick = {})
+                    }
+                }
+            }
         }
         // Bound long server messages so retry/details remain reachable on short displays.
         state.message?.let { message ->
@@ -94,10 +118,10 @@ internal fun TrainingContent(
             val curriculum: @Composable (Modifier) -> Unit = { modifier ->
                 Curriculum(course, state, filter, { filter = it }, modifier,
                     onDownload, onCancelDownload, onPlay,
-                    if (split) null else { { PurchasePanel(course, state, onPurchase, onRefreshPrices) } })
+                    if (split) null else { { PurchasePanel(course, state, onPurchase) } })
             }
             if (split) Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                PurchasePanel(course, state, onPurchase, onRefreshPrices,
+                PurchasePanel(course, state, onPurchase,
                     Modifier.width(panelWidth).fillMaxHeight(), pinned = true)
                 curriculum(Modifier.weight(1f).fillMaxHeight())
             } else curriculum(Modifier.fillMaxSize())
@@ -154,21 +178,19 @@ private fun CourseCard(course: Course, state: TrainingState, onSelect: (Course) 
 @Composable
 private fun CourseMetadata(course: Course) {
     if (course.instructor.isNotBlank()) Text(persian("مدرس: ${course.instructor}"), style = MaterialTheme.typography.bodySmall, color = Muted)
-    val facts = listOfNotNull(durationLabel(course.durationSeconds), course.confirmedPurchases?.takeIf { it > 0 }?.let { "${persian(it)} خرید تأییدشده" })
-    if (facts.isNotEmpty()) Text(facts.joinToString("  ·  "), style = MaterialTheme.typography.labelMedium, color = Muted)
+    durationLabel(course.durationSeconds)?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = Muted) }
 }
 
 @Composable
-private fun PurchasePanel(course: Course, state: TrainingState, onPurchase: (Course, Boolean) -> Unit, onRefreshPrices: () -> Unit, modifier: Modifier = Modifier, pinned: Boolean = false) {
+private fun PurchasePanel(course: Course, state: TrainingState, onPurchase: (Course, Boolean) -> Unit, modifier: Modifier = Modifier, pinned: Boolean = false) {
     val canBuy = BuildConfig.BILLING_PROVIDER != "website"
     val price = state.prices[course.id]
-    val store = if (BuildConfig.BILLING_PROVIDER == "myket") "مایکت" else "کافه‌بازار"
     val panelScroll = rememberScrollState()
     LaunchedEffect(course.id) { panelScroll.scrollTo(0) }
     Surface(modifier, shape = RoundedCornerShape(20.dp), color = Color.White, border = BorderStroke(1.dp, Line)) {
         Column {
             // Reserve only the primary CTA. All variable-height content shares one bounded
-            // scroll viewport, so prices/restore controls can never squeeze the summary to zero.
+            // scroll viewport, so variable-height prices never squeeze the summary to zero.
             // Inline panels already belong to the curriculum's scrolling grid: do not nest
             // an unbounded vertical scroller there.
             val bodyModifier = if (pinned) Modifier.weight(1f).verticalScroll(panelScroll) else Modifier
@@ -188,9 +210,6 @@ private fun PurchasePanel(course: Course, state: TrainingState, onPurchase: (Cou
                         Text("✓ خریداری شده", color = Ink, fontWeight = FontWeight.Bold)
                     } else if (canBuy) {
                         CourseOfferPrice(course, price, if (course.id in state.loadingPrices) "دریافت قیمت…" else "قیمت در سرور ثبت نشده یا دریافت نشد", compact = true)
-                        if (course.id !in state.loadingPrices) TextButton(onClick = onRefreshPrices, enabled = !state.busy, contentPadding = PaddingValues(0.dp)) { Text("تازه‌سازی قیمت", style = MaterialTheme.typography.labelMedium) }
-                        Text("پرداخت از طریق $store", modifier = Modifier.align(Alignment.CenterHorizontally), style = MaterialTheme.typography.labelSmall, color = Muted)
-                        TextButton(onClick = { onPurchase(course, true) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(0.dp)) { Text("بازیابی خرید", style = MaterialTheme.typography.labelMedium) }
                     } else {
                         Text("خرید در نسخهٔ فروشگاهی", color = Ink, fontWeight = FontWeight.Bold)
                         Text("برای خرید، نسخهٔ مایکت یا کافه‌بازار برنامه را نصب کنید.", style = MaterialTheme.typography.bodySmall, color = Muted)

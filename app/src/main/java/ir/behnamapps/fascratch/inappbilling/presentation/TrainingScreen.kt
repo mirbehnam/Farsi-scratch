@@ -17,8 +17,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ir.behnamapps.fascratch.BuildConfig
@@ -36,9 +38,28 @@ private enum class LessonFilter { ALL, PREVIEW, DOWNLOADED }
 
 @Composable
 internal fun TrainingScreen(state: TrainingState, controller: TrainingController, onBack: () -> Unit, onPlay: (Lesson) -> Unit) {
+    val context = LocalContext.current
+    var pendingPurchase by remember { mutableStateOf<Pair<Course, Boolean>?>(null) }
     TrainingContent(state, onBack, { controller.load() }, { controller.select(it) },
-        { course, restore -> controller.purchase(restore, course) }, { controller.download(it) },
+        { course, restore ->
+            if (purchaseNetworkAvailable(context)) controller.purchase(restore, course)
+            else pendingPurchase = course to restore
+        }, { controller.download(it) },
         controller::cancelDownload, onPlay, controller::refreshPrices)
+    pendingPurchase?.let { pending ->
+        AlertDialog(onDismissRequest = { pendingPurchase = null }, shape = RoundedCornerShape(24.dp),
+            containerColor = Color.White,
+            icon = { Surface(shape = RoundedCornerShape(18.dp), color = Mint) { Text("🌐", Modifier.padding(14.dp), fontSize = 28.sp) } },
+            title = { Text("اتصال اینترنت برقرار نیست", color = Ink, fontWeight = FontWeight.Bold) },
+            text = { Text("برای خرید یا بازیابی دوره، اینترنت را روشن کنید و دوباره تلاش کنید. هیچ پرداختی شروع نشده است.", color = Muted) },
+            confirmButton = { Button(onClick = {
+                if (purchaseNetworkAvailable(context)) {
+                    pendingPurchase = null
+                    controller.purchase(pending.second, pending.first)
+                }
+            }, enabled = !state.busy, shape = RoundedCornerShape(12.dp)) { Text("تلاش دوباره") } },
+            dismissButton = { TextButton(onClick = { pendingPurchase = null }) { Text("بستن") } })
+    }
 }
 
 /** Callbacks keep layout previews independent of billing, downloads and Android storage. */
@@ -111,6 +132,7 @@ private fun CourseCard(course: Course, state: TrainingState, onSelect: (Course) 
             if (course.instructor.isNotBlank()) Text(persian(course.instructor), style = MaterialTheme.typography.bodySmall, color = Muted)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Column(Modifier.weight(1f)) {
+                    if (!owned && state.prices[course.id] != null) DiscountPrice(course)
                     Text(persian(if (owned) "خریداری شده" else state.prices[course.id] ?: if (BuildConfig.BILLING_PROVIDER == "website") "نسخهٔ وب‌سایت" else if (course.id in state.priceErrors) "قیمت دریافت نشد" else "قیمت در حال دریافت"),
                         color = Ink, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 }
@@ -137,6 +159,22 @@ private fun CourseMetadata(course: Course) {
 }
 
 @Composable
+private fun DiscountPrice(course: Course) {
+    var clock by remember(course.id, course.discountEndsAtMillis) { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(course.id, course.discountEndsAtMillis) {
+        clock = System.currentTimeMillis()
+        course.discountEndsAtMillis?.let { end ->
+            if (end > clock) kotlinx.coroutines.delay(end - clock)
+            clock = System.currentTimeMillis()
+        }
+    }
+    if (CoursePolicy.discountVisible(course, clock)) {
+        Text(persian(java.text.NumberFormat.getIntegerInstance(Locale.US).format(course.compareAtToman) + " تومان"),
+            color = Muted, style = MaterialTheme.typography.bodySmall, textDecoration = TextDecoration.LineThrough)
+    }
+}
+
+@Composable
 private fun PurchasePanel(course: Course, state: TrainingState, onPurchase: (Course, Boolean) -> Unit, onRefreshPrices: () -> Unit, modifier: Modifier = Modifier, pinned: Boolean = false) {
     val canBuy = BuildConfig.BILLING_PROVIDER != "website"
     val price = state.prices[course.id]
@@ -159,7 +197,8 @@ private fun PurchasePanel(course: Course, state: TrainingState, onPurchase: (Cou
                 if (state.purchased) {
                     Text("✓ خریداری شده", color = Ink, fontWeight = FontWeight.Bold)
                 } else if (canBuy) {
-                    Text(persian(price ?: if (course.id in state.loadingPrices) "دریافت قیمت…" else "قیمت دریافت نشد"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Ink)
+                    if (price != null) DiscountPrice(course)
+                    Text(persian(price ?: if (course.id in state.loadingPrices) "دریافت قیمت…" else "قیمت در سرور ثبت نشده یا دریافت نشد"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Ink)
                     if (course.id !in state.loadingPrices) TextButton(onClick = onRefreshPrices, enabled = !state.busy, contentPadding = PaddingValues(0.dp)) { Text("تازه‌سازی قیمت", style = MaterialTheme.typography.labelMedium) }
                     Button(onClick = { onPurchase(course, false) }, enabled = !state.busy && price != null,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp), shape = RoundedCornerShape(14.dp),

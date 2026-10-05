@@ -1,12 +1,10 @@
 package ir.behnamapps.fascratch.inappbilling.domain
 
 import kotlinx.coroutines.*
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 
-/** Main-thread coordinator: queue refreshes instead of dropping them or cancelling SDK inventory. */
-class StorePriceRefresher(
-    private val scope: CoroutineScope, private val billing: BillingGateway, private val mutex: Mutex,
+/** Main-thread coordinator for server prices; never calls a store SDK. */
+class CoursePriceRefresher(
+    private val scope: CoroutineScope, private val fetch: suspend (Course) -> String?,
     private val onLoading: (Course) -> Unit, private val onResult: (Course, String?) -> Unit
 ) {
     private data class Query(val course: Course, val revision: Long)
@@ -25,13 +23,11 @@ class StorePriceRefresher(
         worker = scope.launch {
             while (pending.isNotEmpty()) {
                 val query = pending.remove(pending.keys.first()) ?: continue
-                val price = mutex.withLock {
+                val price = run {
                     try {
-                        // Rebind the store connection before reading current details, under the same SDK lock.
-                        billing.close()
-                        withTimeout(20_000) { billing.price(query.course.sku) }?.takeIf { it.isNotBlank() }
+                        withTimeout(20_000) { fetch(query.course) }?.takeIf { it.isNotBlank() }
                     }
-                    catch (_: TimeoutCancellationException) { runCatching { billing.close() }; null }
+                    catch (_: TimeoutCancellationException) { null }
                     catch (error: CancellationException) { throw error }
                     catch (_: Exception) { null }
                 }

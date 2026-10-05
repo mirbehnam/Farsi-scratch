@@ -77,8 +77,9 @@ class CourseApi : PurchaseBackend {
                         row.optString("short_description").takeIf { it.isNotBlank() } ?: row.optString("description"), sku,
                         row.optString("instructor_name"), row.optInt("difficulty"), stats?.optDouble("duration_seconds", 0.0) ?: 0.0,
                         posterUrl(row.optJSONObject("cover")) ?: row.optString("banner_url").takeIf { it.startsWith("https://") },
-                        if (stats != null && stats.has("confirmed_purchases") && !stats.isNull("confirmed_purchases")) stats.optInt("confirmed_purchases").coerceAtLeast(0) else null)
-                    courses[course.id] = course
+                        if (stats != null && stats.has("confirmed_purchases") && !stats.isNull("confirmed_purchases")) stats.optInt("confirmed_purchases").coerceAtLeast(0) else null,
+                        serverPrice(row, provider, sku))
+                    courses[course.id] = withPricing(row, provider, course)
                 }
             }
             if (response.optJSONObject("meta")?.optBoolean("has_more") != true) return courses.values.toList()
@@ -104,6 +105,32 @@ class CourseApi : PurchaseBackend {
                 }
             }
         }
+    }
+
+    suspend fun coursePrice(course: Course, provider: String): Long? {
+        return coursePricing(course, provider).serverPriceToman
+    }
+
+    suspend fun coursePricing(course: Course, provider: String): Course {
+        val row = request("courses/${CoursePolicy.uuid(course.id)}").getJSONObject("data")
+        if (row.optJSONObject("products")?.optString(provider) != course.sku) throw CourseFailure("محصول دوره تغییر کرده؛ فهرست را تازه‌سازی کنید.")
+        return withPricing(row, provider, course)
+    }
+
+    private fun withPricing(row: JSONObject, provider: String, course: Course): Course {
+        val price = row.optJSONObject("product_prices")?.optJSONObject(provider)
+        val amount = serverPrice(row, provider, course.sku)
+        val before = if (price?.optBoolean("discount_active") == true)
+            CoursePolicy.serverPrice(course.sku, price.optString("sku"), price.opt("compare_at_toman").takeUnless { it == JSONObject.NULL }) else null
+        val end = price?.optString("discount_ends_at")?.takeUnless { it.isBlank() || it == "null" }?.let {
+            java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", java.util.Locale.US).apply { isLenient = false }.parse(it)?.time
+        }
+        return course.copy(serverPriceToman = amount, compareAtToman = before, discountEndsAtMillis = end)
+    }
+
+    private fun serverPrice(row: JSONObject, provider: String, sku: String): Long? {
+        val price = row.optJSONObject("product_prices")?.optJSONObject(provider) ?: return null
+        return CoursePolicy.serverPrice(sku, price.optString("sku"), price.opt("amount_toman").takeUnless { it == JSONObject.NULL })
     }
 
     override suspend fun verify(course: Course, provider: String, receipt: Receipt, restore: Boolean): CourseAccess {

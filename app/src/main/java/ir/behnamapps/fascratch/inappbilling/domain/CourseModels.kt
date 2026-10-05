@@ -5,7 +5,8 @@ import java.util.UUID
 
 data class Course(val id: String, val title: String, val description: String, val sku: String,
     val instructor: String = "", val difficulty: Int = 0, val durationSeconds: Double = 0.0,
-    val coverUrl: String? = null, val confirmedPurchases: Int? = null)
+    val coverUrl: String? = null, val confirmedPurchases: Int? = null, val serverPriceToman: Long? = null,
+    val compareAtToman: Long? = null, val discountEndsAtMillis: Long? = null)
 data class Lesson(val id: String, val courseId: String, val section: String, val title: String,
     val version: Int, val bytes: Long, val sha256: String, val difficulty: Int = 0,
     val durationSeconds: Double = 0.0, val coverUrl: String? = null, val description: String = "",
@@ -19,7 +20,6 @@ class CourseFailure(val userMessage: String, val status: Int = 0, val code: Stri
 interface BillingGateway {
     val provider: String
     suspend fun owned(sku: String): Receipt?
-    suspend fun price(sku: String): String?
     suspend fun purchase(sku: String): Receipt
     fun close()
 }
@@ -52,6 +52,18 @@ class BuyCourse(private val backend: PurchaseBackend, private val receipts: Rece
 }
 
 object CoursePolicy {
+    fun discountVisible(course: Course, now: Long): Boolean = course.serverPriceToman != null &&
+        course.compareAtToman != null && course.compareAtToman > course.serverPriceToman &&
+        (course.discountEndsAtMillis == null || now < course.discountEndsAtMillis)
+    fun serverPrice(sku: String, priceSku: String?, amount: Any?): Long? {
+        if (priceSku == null) return null
+        require(priceSku == sku)
+        if (amount == null) return null
+        val value = when (amount) { is Long -> amount; is Int -> amount.toLong(); else -> throw IllegalArgumentException("Invalid server price") }
+        require(value in 0..1_000_000_000_000L)
+        return value
+    }
+    fun purchaseNetworkAvailable(internet: Boolean, validated: Boolean) = internet && validated
     fun canLearn(lesson: Lesson, purchased: Boolean) = lesson.isPreview || purchased
     fun previewUrl(base: String, lesson: Lesson): String {
         require(lesson.isPreview)

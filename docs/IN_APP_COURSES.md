@@ -1,5 +1,7 @@
 # Farsi Scratch: in-app courses
 
+Display discounts use optional `compare_at_toman` and UTC `discount_ends_at` from the backend. Prices are exclusively Toman (`currency: IRT`). A struck-through price appears only above the main price and before expiry; expiry removes only that display, even on an open/cached screen. Store checkout amounts remain store-controlled.
+
 ## Structure
 
 `app/src/main/java/ir/behnamapps/fascratch/inappbilling/` is the independent feature directory:
@@ -24,7 +26,9 @@ Existing project/editor features are unchanged except the HomeScreen آموزش 
 
 ## Purchase flow
 
-Opening آموزش loads the course grid; a single course is a horizontal card. Store price/ownership checks run in the background without blocking previews. Selecting a course opens a two-column lesson grid without a sidebar. Only lesson difficulty badges are displayed. Existing owned purchases are submitted to `/purchases/restore`. Clicking خرید queries ownership **before** opening payment; a failed query never means "unowned" and never starts a second payment. بازیابی خرید does not launch payment if ownership is missing.
+Display prices now come exclusively from backend `product_prices[provider].amount_toman`, matched to the course SKU. Store SDK price queries have been removed. Missing price is not zero; fresh course-price metadata is required before starting a new purchase. Panel amounts are Toman (750,000 Rial = 75,000 Toman); actual checkout amounts remain controlled by the store and must be configured consistently. Android checks validated Internet before purchase/restore and displays a retry/dismiss dialog offline. See SCRATCH_BACKEND_API.md for the updated contract.
+
+Opening آموزش loads a responsive course catalog; a single course uses a horizontal card on wide screens. Cards show real metadata and server prices and lead to course details before payment. Price refresh and store ownership checks do not block previews. Selecting a course opens a landscape purchase/summary pane beside the curriculum. Only lesson difficulty badges are displayed. Existing owned purchases are submitted to `/purchases/restore`. Clicking خرید queries ownership **before** opening payment; a failed query never means "unowned" and never starts a second payment. بازیابی خرید does not launch payment if ownership is missing.
 
 Published free-preview lessons download through fresh signed same-origin URLs without a purchase token. Cached signed URLs are not reused. Free-preview files are playable without paid entitlement; paid lessons still require course-specific verified access. Catalog cache is multi-course and lesson caches are isolated by course UUID, with a fallback for the old single-course cache.
 
@@ -46,7 +50,11 @@ Completed lessons play inside the app via MediaPlayer/TextureView with fullscree
 
 ## Landscape course UI and fullscreen player
 
-The whole training activity is immersive landscape, not just the video. System bars remain temporarily reachable by swiping from an edge. Purchase/summary and curriculum are independent scrolling panes on short landscape devices. RTL Persian typography, section headers, all/downloaded filters, cover/poster artwork, instructor, difficulty, duration, download progress and delete confirmation are provided. Tap a lesson row to expand its description. Empty/error/loading states are distinct; missing artwork uses a neutral placeholder. Public HTTPS artwork is same-origin, bounded, sampled to at most 1024px, and memory-cached (8 MiB); credentials are never sent with it. Course/lesson metadata is cached for offline display.
+The whole training activity is immersive landscape, not just the video. System bars remain temporarily reachable by swiping from an edge. The UI uses warm ivory, forest green, Shabnam typography and RTL reading order. Catalog cards are compact, with a small cover, title, instructor, price and مشاهده دوره action; promotional headings and repeated benefit copy are omitted. Details open directly on the curriculum without a large cover. Course descriptions are behind دربارهٔ دوره. Purchase/summary and curriculum scroll independently; the store price, prominent 60 dp minimum خرید دوره button and restore action remain anchored below the summary. Below 580 dp width, or when height is less than 240 dp multiplied by system font scale, the purchase panel moves into the scrolling content so controls remain reachable. The curriculum uses one column on phones and two when its own pane is at least 740 dp wide.
+
+All/free/downloaded filters, section headers, cover/poster artwork, instructor, lesson difficulty, duration, download progress and delete confirmation are provided. The preview filter appears only when actual free lessons exist, and downloading a preview never opens payment. Lesson descriptions have explicit expand/collapse controls. Download counts describe files, not learning completion. Purchase stays disabled until a store price is available; refresh retries fetching prices. Website builds explain that purchase requires a store version. Owned courses show access status instead of another purchase CTA. No fabricated discounts, countdowns, ratings, guarantees or enrollment claims are displayed.
+
+Empty/error/loading states are distinct; missing artwork uses locally drawn abstract programming blocks. Public HTTPS artwork is same-origin, bounded, sampled to at most 1024px, and memory-cached (8 MiB); credentials are never sent with it. Course/lesson metadata is cached for offline display.
 
 `stats.confirmed_purchases` from the server is explicitly labeled **confirmed purchases**, not unique students. Receipt restoration does not increment it; refunded/rejected purchases are excluded. No invented enrollment/review/rating data is shown. Real unique student totals need student accounts/identity linkage in a future phase.
 

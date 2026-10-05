@@ -52,15 +52,6 @@ private class BazaarBilling(private val activity: ComponentActivity) : BillingGa
             }
         }
     }
-    override suspend fun price(sku: String): String? {
-        connect()
-        return suspendCancellableCoroutine { continuation ->
-            payment.getInAppSkuDetails(listOf(sku)) {
-                getSkuDetailsSucceed { rows -> if (continuation.isActive) continuation.resume(rows.firstOrNull { it.sku == sku && it.type == "inapp" }?.price?.takeIf { it.isNotBlank() }) }
-                getSkuDetailsFailed { if (continuation.isActive) continuation.resume(null) }
-            }
-        }
-    }
     override suspend fun purchase(sku: String): Receipt {
         connect()
         return suspendCancellableCoroutine { continuation ->

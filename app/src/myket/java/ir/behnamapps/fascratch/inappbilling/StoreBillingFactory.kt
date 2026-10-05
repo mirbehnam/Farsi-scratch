@@ -50,17 +50,6 @@ private class MyketBilling(private val activity: ComponentActivity) : BillingGat
             }
         }
     }
-    override suspend fun price(sku: String): String? {
-        val client = connect()
-        return suspendCancellableCoroutine { continuation ->
-            client.queryInventoryAsync(true, listOf(sku)) { result, inventory ->
-                if (continuation.isActive) {
-                    val details = if (result.isSuccess) inventory.getSkuDetails(sku) else null
-                    continuation.resume(details?.takeIf { it.sku == sku && it.type == "inapp" }?.price?.takeIf { it.isNotBlank() })
-                }
-            }
-        }
-    }
     override suspend fun purchase(sku: String): Receipt {
         val client = connect()
         return suspendCancellableCoroutine { continuation ->

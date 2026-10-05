@@ -50,7 +50,6 @@ class FreePreviewPolicyTest {
         val gateway = object : BillingGateway {
             override val provider = "cafebazaar"
             override suspend fun owned(sku: String): Receipt? = null
-            override suspend fun price(sku: String): String? = null
             override suspend fun purchase(sku: String): Receipt { requested += sku; return Receipt(sku, "receipt-$sku") }
             override fun close() = Unit
         }

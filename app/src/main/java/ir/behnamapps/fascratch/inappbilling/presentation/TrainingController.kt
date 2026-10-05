@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
+import java.text.NumberFormat
+import java.util.Locale
 
 data class TrainingState(
     val course: Course? = null, val lessons: List<Lesson> = emptyList(), val busy: Boolean = false,
@@ -27,7 +29,14 @@ class TrainingController(
     val state = mutable.asStateFlow()
     private val buy = BuyCourse(api, vault)
     private val storeMutex = Mutex()
-    private val priceRefresher = StorePriceRefresher(scope, billing, storeMutex,
+    private fun provider() = if (billing.provider == "website") "cafebazaar" else billing.provider
+    private fun priceLabel(amount: Long?) = amount?.let { NumberFormat.getIntegerInstance(Locale.US).format(it) + " تومان" }
+    private val priceRefresher = CoursePriceRefresher(scope, { course ->
+        val fresh = api.coursePricing(course, provider())
+        mutable.update { state -> state.copy(courses = state.courses.map { if (it.id == fresh.id && it.sku == fresh.sku) fresh else it },
+            course = if (state.course?.id == fresh.id && state.course.sku == fresh.sku) fresh else state.course) }
+        priceLabel(fresh.serverPriceToman)
+    },
         onLoading = { course -> mutable.update { it.copy(prices = it.prices - course.id, loadingPrices = it.loadingPrices + course.id,
             priceErrors = it.priceErrors - course.id, price = if (it.course?.id == course.id) null else it.price) } },
         onResult = { course, price -> mutable.update {
@@ -54,7 +63,9 @@ class TrainingController(
     }
 
     private fun showCatalog(courses: List<Course>) {
-        mutable.update { it.copy(courses = courses, purchasedIds = courses.filter { c -> vault.wasVerified(c.id) }.map { c -> c.id }.toSet()) }
+        mutable.update { it.copy(courses = courses, purchasedIds = courses.filter { c -> vault.wasVerified(c.id) }.map { c -> c.id }.toSet(),
+            prices = courses.mapNotNull { c -> priceLabel(c.serverPriceToman)?.let { label -> c.id to label } }.toMap(),
+            priceErrors = courses.filter { c -> c.serverPriceToman == null }.map { c -> c.id }.toSet(), loadingPrices = emptySet()) }
     }
 
     private fun updateAccess(course: Course, enabled: Boolean) {
@@ -64,8 +75,8 @@ class TrainingController(
 
     // Serial SDK access prevents competing inventory/payment callbacks. No global UI/download lock.
     private fun syncStores(courses: List<Course>) {
+        // The catalog already contains fresh server prices; do not request every course twice.
         if (billing.provider == "website") return
-        priceRefresher.refresh(courses)
         // Re-render/refresh must not interrupt a pending Myket SDK inventory operation.
         if (storeJob?.isActive == true) return
         pauseStoreSync = false
@@ -90,12 +101,12 @@ class TrainingController(
     }
 
     fun select(course: Course) = action(course.id) {
-        if (billing.provider != "website") priceRefresher.refresh(listOf(course))
+        priceRefresher.refresh(listOf(course))
         open(course)
     }
 
     fun refreshPrices() {
-        if (billing.provider != "website") priceRefresher.refresh(state.value.course?.let { listOf(it) } ?: state.value.courses)
+        priceRefresher.refresh(state.value.course?.let { listOf(it) } ?: state.value.courses)
     }
 
     private suspend fun open(course: Course) {
@@ -121,6 +132,11 @@ class TrainingController(
     fun purchase(restoreOnly: Boolean, target: Course? = state.value.course) {
         val course = target ?: return
         action(course.id) {
+            if (!restoreOnly) {
+                val fresh = priceLabel(api.coursePrice(course, provider()))
+                    ?: throw CourseFailure("قیمت این دوره در سرور تنظیم نشده است.")
+                mutable.update { it.copy(prices = it.prices + (course.id to fresh), price = if (it.course?.id == course.id) fresh else it.price) }
+            }
             // Let the current SDK inventory callback finish; cancelling it can leave Myket busy.
             pauseStoreSync = true
             storeMutex.withLock { withTimeout(180_000) { buy.execute(course, billing, restoreOnly) } }

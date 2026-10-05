@@ -35,7 +35,6 @@ class PurchaseFlowTest {
             if (queryFails) throw CourseFailure("Store unavailable")
             return existing
         }
-        override suspend fun price(sku: String) = "100"
         override suspend fun purchase(sku: String): Receipt { purchaseCalls++; return Receipt(sku, "new-receipt") }
         override fun close() = Unit
     }

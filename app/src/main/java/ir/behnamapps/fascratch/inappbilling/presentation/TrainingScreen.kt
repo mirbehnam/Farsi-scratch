@@ -133,8 +133,11 @@ private fun CourseCard(course: Course, state: TrainingState, onSelect: (Course) 
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Column(Modifier.weight(1f)) {
                     if (!owned && state.prices[course.id] != null) DiscountPrice(course)
-                    Text(persian(if (owned) "خریداری شده" else state.prices[course.id] ?: if (BuildConfig.BILLING_PROVIDER == "website") "نسخهٔ وب‌سایت" else if (course.id in state.priceErrors) "قیمت دریافت نشد" else "قیمت در حال دریافت"),
-                        color = Ink, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(persian(if (owned) "خریداری شده" else state.prices[course.id] ?: if (BuildConfig.BILLING_PROVIDER == "website") "نسخهٔ وب‌سایت" else if (course.id in state.priceErrors) "قیمت دریافت نشد" else "قیمت در حال دریافت"),
+                            modifier = Modifier.align(Alignment.CenterVertically), color = Ink, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        if (!owned && state.prices[course.id] != null) DiscountCountdown(course, Modifier.align(Alignment.CenterVertically))
+                    }
                 }
                 Button(onClick = { onSelect(course) }, enabled = !state.busy, shape = RoundedCornerShape(12.dp)) {
                     Text(if (owned) "ورود به دوره" else "مشاهده دوره")
@@ -160,14 +163,7 @@ private fun CourseMetadata(course: Course) {
 
 @Composable
 private fun DiscountPrice(course: Course) {
-    var clock by remember(course.id, course.discountEndsAtMillis) { mutableStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(course.id, course.discountEndsAtMillis) {
-        clock = System.currentTimeMillis()
-        course.discountEndsAtMillis?.let { end ->
-            if (end > clock) kotlinx.coroutines.delay(end - clock)
-            clock = System.currentTimeMillis()
-        }
-    }
+    val clock = rememberDiscountClock(course)
     if (CoursePolicy.discountVisible(course, clock)) {
         Text(persian(java.text.NumberFormat.getIntegerInstance(Locale.US).format(course.compareAtToman) + " تومان"),
             color = Muted, style = MaterialTheme.typography.bodySmall, textDecoration = TextDecoration.LineThrough)

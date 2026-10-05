@@ -1,5 +1,7 @@
 # Farsi Scratch: in-app courses
 
+The first-page course cards show a compact red countdown badge beside the discounted price, with Persian digits and a clock icon. It uses the server's absolute `discount_ends_at`, only for valid, unowned discounts with a deadline; no deadline means no invented countdown. It updates once per minute while visible, refreshes on resume, and disappears at expiry. Days/hours are shown first, then hours/minutes in the final day. On narrow cards it wraps rather than clipping or squeezing the purchase button. This is display-only and makes no periodic API requests.
+
 Display discounts use optional `compare_at_toman` and UTC `discount_ends_at` from the backend. Prices are exclusively Toman (`currency: IRT`). A struck-through price appears only above the main price and before expiry; expiry removes only that display, even on an open/cached screen. Store checkout amounts remain store-controlled.
 
 ## Structure

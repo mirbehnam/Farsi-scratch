@@ -295,7 +295,12 @@ private fun LessonCard(lesson: Lesson, state: TrainingState, onDownload: (Lesson
                         DifficultyBadge(lesson.difficulty)
                         if (lesson.isPreview) Badge("مشاهده رایگان", PreviewGreen, Color.White)
                     }
-                    Text(listOfNotNull(durationLabel(lesson.durationSeconds), "${persian(String.format(Locale.US, "%.1f", lesson.bytes / (1024.0 * 1024))).replace('.', '٫')} مگابایت").joinToString(" · "), style = MaterialTheme.typography.labelSmall, color = Muted)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(listOfNotNull(durationLabel(lesson.durationSeconds), "${persian(String.format(Locale.US, "%.1f", lesson.bytes / (1024.0 * 1024))).replace('.', '٫')} مگابایت").joinToString(" · "), modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = Muted)
+                        if (lesson.description.isNotBlank()) TextButton(onClick = { expanded = !expanded }, modifier = Modifier.height(32.dp), contentPadding = PaddingValues(horizontal = 4.dp)) {
+                            Text(if (expanded) "بستن توضیحات" else "توضیحات", style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                        }
+                    }
                 }
                 if (downloaded) {
                     Button(onClick = onPlay, enabled = accessible, shape = RoundedCornerShape(10.dp),
@@ -304,7 +309,6 @@ private fun LessonCard(lesson: Lesson, state: TrainingState, onDownload: (Lesson
                 else if (accessible) OutlinedButton(onClick = { onDownload(lesson) }, enabled = !state.busy, shape = RoundedCornerShape(10.dp)) { Text(if (lesson.isPreview) "دانلود رایگان" else "دانلود درس") }
                 else Text("نیاز به خرید", Modifier.padding(vertical = 12.dp), style = MaterialTheme.typography.labelMedium, color = Muted)
             }
-            if (lesson.description.isNotBlank()) TextButton(onClick = { expanded = !expanded }, contentPadding = PaddingValues(0.dp)) { Text(if (expanded) "بستن توضیحات" else "توضیحات درس", style = MaterialTheme.typography.labelMedium) }
             if (expanded) Text(persian(lesson.description), style = MaterialTheme.typography.bodySmall, color = Muted)
             if (downloading) {
                 LinearProgressIndicator(progress = { state.progress }, modifier = Modifier.fillMaxWidth())

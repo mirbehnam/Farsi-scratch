@@ -296,7 +296,7 @@ private fun LessonCard(lesson: Lesson, state: TrainingState, onDownload: (Lesson
                         if (lesson.isPreview) Badge("مشاهده رایگان", PreviewGreen, Color.White)
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(listOfNotNull(durationLabel(lesson.durationSeconds), "${persian(String.format(Locale.US, "%.1f", lesson.bytes / (1024.0 * 1024))).replace('.', '٫')} مگابایت").joinToString(" · "), modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = Muted)
+                        Text(listOfNotNull(durationLabel(lesson.durationSeconds), "${persian(String.format(Locale.US, "%.1f", lesson.bytes / (1024.0 * 1024))).replace('.', '٫')} مگابایت").joinToString(" · "), modifier = Modifier.weight(1f, fill = false), style = MaterialTheme.typography.labelSmall, color = Muted)
                         if (lesson.description.isNotBlank()) TextButton(onClick = { expanded = !expanded }, modifier = Modifier.height(32.dp), contentPadding = PaddingValues(horizontal = 4.dp)) {
                             Text(if (expanded) "بستن توضیحات" else "توضیحات", style = MaterialTheme.typography.labelSmall, maxLines = 1)
                         }

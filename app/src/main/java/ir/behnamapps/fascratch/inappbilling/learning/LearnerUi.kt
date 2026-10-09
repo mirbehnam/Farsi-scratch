@@ -146,6 +146,7 @@ import kotlinx.coroutines.launch
 
 @Composable fun LearnerDialog(course: Course?, profile: LearnerProfile, repository: LearningRepository, onClose: () -> Unit) {
     var editing by remember(profile.uuid) { mutableStateOf(false) }
+    var showPointsGuide by remember(profile.uuid) { mutableStateOf(false) }
     val syncStatus by repository.status.collectAsState()
     val height = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp - 32).coerceAtLeast(180).dp
     androidx.compose.ui.window.Dialog(onDismissRequest = onClose,
@@ -186,6 +187,9 @@ import kotlinx.coroutines.launch
                     }
                 }
                 if (!profile.nameSet && !profile.nameBlocked) Text("برای حضور در رتبه‌بندی، نام نمایشی ثبت کنید.", style = MaterialTheme.typography.bodySmall)
+                FilledTonalButton(onClick = { showPointsGuide = true }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+                    Text("✨ راهنمای کسب امتیاز", fontWeight = FontWeight.Bold)
+                }
                 val purchased = profile.courses.filter { it.purchased }
                 if (purchased.isNotEmpty()) {
                     Text("دوره‌های خریداری‌شده", fontWeight = FontWeight.Bold)
@@ -205,6 +209,7 @@ import kotlinx.coroutines.launch
         }
     }
     if (editing) EditLearnerNameDialog(course, profile, repository) { editing = false }
+    if (showPointsGuide) LearnerPointsGuideDialog { showPointsGuide = false }
 }
 
 @Composable private fun ScratchLevelProgress(profile: LearnerProfile) {

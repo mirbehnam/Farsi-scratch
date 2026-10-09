@@ -43,7 +43,6 @@ import ir.behnamapps.fascratch.inappbilling.domain.Course
 import ir.behnamapps.fascratch.R
 import ir.behnamapps.fascratch.inappbilling.presentation.persianDisplay
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 /** Native vector artwork stays sharp on tablets without downloading any avatar asset. */
 @Composable private fun CatAvatar(modifier: Modifier = Modifier) {
@@ -126,7 +125,7 @@ import kotlinx.coroutines.launch
 }
 
 /** Artwork contains no baked-in text: every level, including zero, stays dynamic and Persian. */
-@Composable private fun LearnerLevelBadge(level: Int, modifier: Modifier = Modifier) {
+@Composable internal fun LearnerLevelBadge(level: Int, modifier: Modifier = Modifier) {
     BoxWithConstraints(modifier, contentAlignment = Alignment.TopCenter) {
         // The plaque has fixed artwork dimensions. Do not inherit the button's much
         // taller line-height/font padding, which clips the glyphs in this small slot.
@@ -145,13 +144,17 @@ import kotlinx.coroutines.launch
 }
 
 @Composable fun LearnerDialog(course: Course?, profile: LearnerProfile, repository: LearningRepository, onClose: () -> Unit) {
+    LearnerDialogTheme { LearnerProfileDialog(course, profile, repository, onClose) }
+}
+
+@Composable private fun LearnerProfileDialog(course: Course?, profile: LearnerProfile, repository: LearningRepository, onClose: () -> Unit) {
     var editing by remember(profile.uuid) { mutableStateOf(false) }
     var showPointsGuide by remember(profile.uuid) { mutableStateOf(false) }
     val syncStatus by repository.status.collectAsState()
     val height = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp - 32).coerceAtLeast(180).dp
     androidx.compose.ui.window.Dialog(onDismissRequest = onClose,
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxWidth(.94f).widthIn(max = 940.dp).heightIn(max = height),
+        Surface(Modifier.widthIn(max = 940.dp).fillMaxWidth(.94f).heightIn(max = height),
             shape = RoundedCornerShape(28.dp), color = Color(0xFFFAF8FF), tonalElevation = 6.dp) {
             Column(Modifier.padding(20.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -255,38 +258,10 @@ import kotlinx.coroutines.launch
 }
 
 @Composable private fun EditLearnerNameDialog(course: Course?, profile: LearnerProfile, repository: LearningRepository, onClose: () -> Unit) {
-    var name by remember { mutableStateOf(if (profile.nameSet) profile.name else "") }
-    var fullName by remember { mutableStateOf(profile.fullName.orEmpty()) }
-    var busy by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
-    AlertDialog(onDismissRequest = { if (!busy) onClose() }, title = { Text(if (profile.nameSet) "ویرایش نام نمایشی" else "ثبت نام نمایشی") },
-        text = { Column(Modifier.heightIn(max = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp - 180).coerceAtLeast(120).dp)
-            .verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("انتخاب نام نمایشی نامناسب، بی‌ادبانه، توهین‌آمیز یا سیاسی باعث مسدود شدن نام شما و حذف موقت از رتبه‌بندی می‌شود. پیشرفت و خریدهای شما تغییر نمی‌کند.",
-                style = MaterialTheme.typography.bodySmall, color = Color(0xFF9B382D))
-            if (profile.nameBlocked) NameRestrictionNotice(profile)
-            Text("نام نمایشی حداکثر سه بار در هر ۳۰ روز قابل تغییر است. تغییرهای باقی‌مانده: " +
-                persianDisplay(profile.nameChangesLeft.toString()), style = MaterialTheme.typography.bodySmall)
-            OutlinedTextField(name, { if (it.length <= 30) name = it }, label = { Text("نام نمایشی") }, singleLine = true, enabled = !profile.nameBlocked)
-            OutlinedTextField(fullName, { if (it.length <= 100) fullName = it }, label = { Text("نام و نام خانوادگی (اختیاری)") }, singleLine = true)
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        } },
-        confirmButton = { Button(enabled = !busy && name.trim().length in 2..30 &&
-            (!profile.nameBlocked || name.trim() == profile.name) &&
-            (!profile.nameSet || profile.nameChangesLeft > 0 || name.trim() == profile.name), onClick = {
-            busy = true
-            scope.launch {
-                try { repository.name(course, name, fullName); onClose() }
-                catch (e: kotlinx.coroutines.CancellationException) { throw e }
-                catch (e: Exception) { error = e.message ?: "ذخیره نشد؛ اتصال اینترنت را بررسی کنید." }
-                finally { busy = false }
-            }
-        }) { Text(if (busy) "در حال ذخیره…" else "ذخیره") } },
-        dismissButton = { TextButton(enabled = !busy, onClick = onClose) { Text("انصراف") } })
+    LearnerNameEditorDialog(course, profile, repository, onClose)
 }
 
-@Composable private fun NameRestrictionNotice(profile: LearnerProfile) {
+@Composable internal fun NameRestrictionNotice(profile: LearnerProfile) {
     Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), color = Color(0xFFFFE9E7), border = BorderStroke(1.dp, Color(0xFFE5AAA4))) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Text("⛔ نام نمایشی شما مسدود است", fontWeight = FontWeight.Bold, color = Color(0xFFAC2924))

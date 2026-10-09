@@ -54,7 +54,7 @@ internal fun TrainingScreen(state: TrainingState, controller: TrainingController
             else pendingPurchase = course to restore
         }, { controller.download(it) },
         controller::cancelDownload, onPlay, controller::refreshPrices, controller::catalogReady, controller::catalogFailed,
-        learnerHeader = { selectedProfile?.let { LearnerChip(it) { learning?.refreshProfile(); showProfile = true } } },
+        learnerHeader = { DelayedLearnerChip(selectedProfile, state.course?.id ?: "catalog") { learning?.refreshProfile(); showProfile = true } },
         learnerCelebration = { if (state.course != null && selectedProfile != null && learning != null) LevelCelebration(state.course.id, selectedProfile, learning) })
     if (showProfile && selectedProfile != null && learning != null)
         LearnerDialog(state.course, selectedProfile, learning) { showProfile = false }

@@ -21,6 +21,11 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
@@ -50,10 +55,47 @@ import kotlinx.coroutines.launch
     }
 }
 
-@Composable fun LearnerChip(profile: LearnerProfile, onClick: () -> Unit) {
-    TextButton(onClick = onClick, contentPadding = PaddingValues(0.dp)) {
-        LearnerLevelBadge(profile.level, Modifier.size(64.dp))
+@Composable fun LearnerChip(profile: LearnerProfile, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    TextButton(onClick = onClick, modifier = modifier, contentPadding = PaddingValues(0.dp)) {
+        LearnerLevelBadge(profile.level, Modifier.size(76.dp))
     }
+}
+
+/** Reserve the slot before revealing: delayed appearance never moves neighbouring controls. */
+@Composable fun DelayedLearnerChip(profile: LearnerProfile?, screenKey: String, onClick: () -> Unit) {
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    var resumed by remember(lifecycle) { mutableStateOf(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) }
+    var delayFinished by remember(screenKey) { mutableStateOf(false) }
+    DisposableEffect(lifecycle, screenKey) {
+        val observer = LifecycleEventObserver { _, _ ->
+            resumed = lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+            if (!resumed) delayFinished = false
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
+    LaunchedEffect(screenKey, resumed) {
+        delayFinished = false
+        if (resumed) { delay(2_000); delayFinished = true }
+    }
+    val visible = resumed && delayFinished && profile != null
+    val opacity by androidx.compose.animation.core.animateFloatAsState(
+        if (visible) 1f else 0f, animationSpec = androidx.compose.animation.core.tween(450), label = "learner-badge-fade")
+    Box(Modifier.size(76.dp), contentAlignment = Alignment.Center) {
+        // No invisible focus target or click handler during the two-second delay.
+        if (visible) LearnerChip(profile, Modifier.graphicsLayer { alpha = opacity }, onClick)
+    }
+}
+
+@Composable fun HomeLearnerBadge() {
+    val context = LocalContext.current
+    val repository = remember(context) { LearningRepository.get(context) }
+    val profiles by repository.profiles.collectAsState()
+    val profile = profiles[LearningIdentity.KEY]
+    var showProfile by remember { mutableStateOf(false) }
+    LaunchedEffect(repository) { repository.visit() }
+    DelayedLearnerChip(profile, "home") { repository.refreshProfile(); showProfile = true }
+    if (showProfile && profile != null) LearnerDialog(null, profile, repository) { showProfile = false }
 }
 
 /** Artwork contains no baked-in text: every level, including zero, stays dynamic and Persian. */
@@ -83,7 +125,7 @@ import kotlinx.coroutines.launch
     var editingName by remember(profile.uuid) { mutableStateOf(false) }
     AlertDialog(onDismissRequest = onClose, shape = RoundedCornerShape(28.dp), containerColor = Color(0xFFFAFCF9),
         title = { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            LearnerLevelBadge(profile.level, Modifier.size(80.dp))
+            LearnerLevelBadge(profile.level, Modifier.size(92.dp))
             Column { Text(profile.name, fontWeight = FontWeight.Bold); Text("هنرجو · لول ${persianDisplay(profile.level.toString())}", color = Color(0xFF26795A), style = MaterialTheme.typography.titleMedium) }
         } },
         text = { Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {

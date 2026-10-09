@@ -166,8 +166,13 @@ fun HomeScreen(
                     verticalArrangement = Arrangement.Center
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        ir.behnamapps.fascratch.inappbilling.learning.HomeLearnerBadge()
+                        Spacer(Modifier.width(10.dp))
                         Text(
                             "اسکرچ فارسی",
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                             color = Color.White,
                             fontWeight = FontWeight.Black,
                             fontSize = when {

@@ -5,6 +5,7 @@ import ir.behnamapps.fascratch.inappbilling.domain.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -53,6 +54,20 @@ class TrainingController(
     private var layoutJob: Job? = null
     private val layoutCacheMutex = Mutex()
     private var layoutGeneration = 0
+
+    private fun ownsCourse(id: String): Boolean {
+        val profile = learning?.profiles?.value?.get(ir.behnamapps.fascratch.inappbilling.learning.LearningIdentity.KEY)
+        return if (profile?.registered == true) profile.courses.any { it.uuid == id && it.purchased && it.enabled } else vault.wasVerified(id)
+    }
+
+    init {
+        scope.launch {
+            learning?.profiles?.collect {
+                mutable.update { current -> current.copy(purchasedIds = current.courses.filter { ownsCourse(it.id) }.map { it.id }.toSet(),
+                    purchased = current.course?.let { ownsCourse(it.id) } ?: false) }
+            }
+        }
+    }
 
     fun load() = action {
         layoutJob?.cancel()
@@ -116,7 +131,7 @@ class TrainingController(
     }
 
     private fun showCatalog(courses: List<Course>) {
-        mutable.update { it.copy(courses = courses, purchasedIds = courses.filter { c -> vault.wasVerified(c.id) }.map { c -> c.id }.toSet(),
+        mutable.update { it.copy(courses = courses, purchasedIds = courses.filter { c -> ownsCourse(c.id) }.map { c -> c.id }.toSet(),
             prices = courses.mapNotNull { c -> priceLabel(c.serverPriceToman)?.let { label -> c.id to label } }.toMap(),
             priceErrors = courses.filter { c -> c.serverPriceToman == null }.map { c -> c.id }.toSet(), loadingPrices = emptySet()) }
     }
@@ -137,6 +152,8 @@ class TrainingController(
         storeJob = scope.launch {
             for (course in courses) {
                 if (pauseStoreSync) break
+                // An explicitly signed-in account is authoritative. Automatic inventory must not switch it.
+                if (learning?.profiles?.value?.get(ir.behnamapps.fascratch.inappbilling.learning.LearningIdentity.KEY)?.registered == true) continue
                 try {
                     storeMutex.withLock {
                         withTimeout(60_000) { buy.execute(course, billing, restoreOnly = true) }
@@ -174,7 +191,7 @@ class TrainingController(
 
     private fun show(course: Course, lessons: List<Lesson>) {
         learning?.prepare(course)
-        mutable.update { it.copy(course = course, lessons = lessons, purchased = vault.wasVerified(course.id), price = it.prices[course.id],
+        mutable.update { it.copy(course = course, lessons = lessons, purchased = ownsCourse(course.id), price = it.prices[course.id],
             downloaded = lessons.filter { lesson -> downloads.completed(lesson) != null }.map { lesson -> lesson.id }.toSet()) }
     }
 
@@ -204,6 +221,8 @@ class TrainingController(
     }
 
     private suspend fun access(course: Course, force: Boolean = false): CourseAccess {
+        if (learning?.profiles?.value?.get(ir.behnamapps.fascratch.inappbilling.learning.LearningIdentity.KEY)?.registered == true)
+            return api.accountAccess(course, force)
         val saved = vault.access(course.id)
         if (!force && saved != null && saved.expiresAtMillis > System.currentTimeMillis() + 60_000) return saved
         return storeMutex.withLock { withTimeout(60_000) { buy.execute(course, billing, restoreOnly = true) } }
@@ -212,7 +231,7 @@ class TrainingController(
     fun download(lesson: Lesson) = action(lesson.courseId) {
         val course = state.value.course ?: throw CourseFailure("دوره در دسترس نیست.")
         require(lesson.courseId == course.id && state.value.lessons.any { it.id == lesson.id })
-        if (!CoursePolicy.canLearn(lesson, vault.wasVerified(course.id))) throw CourseFailure("برای دانلود ابتدا دوره را خریداری یا بازیابی کنید.")
+        if (!CoursePolicy.canLearn(lesson, ownsCourse(course.id))) throw CourseFailure("برای دانلود ابتدا دوره را خریداری یا بازیابی کنید.")
         mutable.update { it.copy(downloadingId = lesson.id, progress = 0f, message = null) }
         val progress: (Float) -> Unit = { value -> mutable.update { it.copy(progress = value) } }
         if (lesson.isPreview) {

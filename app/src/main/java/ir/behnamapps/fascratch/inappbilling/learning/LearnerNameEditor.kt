@@ -30,7 +30,7 @@ import ir.behnamapps.fascratch.inappbilling.presentation.persianDisplay
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
-@Composable internal fun LearnerNameEditorDialog(course: Course?, profile: LearnerProfile, repository: LearningRepository, onClose: () -> Unit) {
+@Composable internal fun LearnerNameEditorDialog(course: Course?, profile: LearnerProfile, repository: LearningRepository, onClose: () -> Unit, onSaved: () -> Unit = onClose) {
     var name by remember(profile.uuid) { mutableStateOf(if (profile.nameSet) profile.name else "") }
     var fullName by remember(profile.uuid) { mutableStateOf(profile.fullName.orEmpty()) }
     var busy by remember { mutableStateOf(false) }
@@ -117,7 +117,7 @@ import kotlinx.coroutines.launch
                     Button(enabled = canSave, shape = RoundedCornerShape(14.dp), onClick = {
                         focus.clearFocus(); busy = true; error = null
                         scope.launch {
-                            try { repository.name(course, name, fullName); onClose() }
+                            try { repository.name(course, name, fullName); onSaved() }
                             catch (e: CancellationException) { throw e }
                             catch (e: Exception) { error = e.message ?: "ذخیره نشد؛ اتصال اینترنت را بررسی کن." }
                             finally { busy = false }

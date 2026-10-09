@@ -76,7 +76,7 @@ internal class LearningStore(context: Context) : SQLiteOpenHelper(context,
     }
     @Synchronized fun clearCurrentGrants() {
         // Archived capabilities and pending events belong to their original accounts and survive recovery.
-        writableDatabase.update("accounts", ContentValues().apply { putNull("grant_data"); put("celebration", 0) },
+        writableDatabase.update("accounts", ContentValues().apply { putNull("grant_data"); putNull("profile"); put("celebration", 0) },
             "course NOT LIKE 'grant:%' AND course<>?", arrayOf("@identity"))
     }
     @Synchronized fun celebration(course: String): Int = readableDatabase.rawQuery("SELECT celebration FROM accounts WHERE course=?", arrayOf(course)).use {

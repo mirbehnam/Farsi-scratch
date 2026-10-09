@@ -21,7 +21,8 @@ data class LearnerCourse(val uuid: String, val title: String, val watchMs: Long,
 data class LearnerProfile(val uuid: String, val name: String, val level: Int, val watchMs: Long,
     val xpIntoLevel: Double, val xpForNext: Double, val rank: Int?, val enabled: Boolean,
     val nameSet: Boolean = false, val nameChangesLeft: Int = 3, val courses: List<LearnerCourse> = emptyList(), val codingMs: Long = 0, val fullName: String? = null,
-    val nameBlocked: Boolean = false, val nameBlockedDays: Int = 0, val nameBlockReason: String? = null) {
+    val nameBlocked: Boolean = false, val nameBlockedDays: Int = 0, val nameBlockReason: String? = null,
+    val registered: Boolean = false, val username: String? = null, val googleLinked: Boolean = false) {
     companion object {
         fun parse(json: JSONObject) = LearnerProfile(json.getString("uuid"), json.getString("display_name"),
             json.getInt("level"), json.getLong("watch_ms"), json.getDouble("xp_into_level"), json.getDouble("xp_for_next_level"),
@@ -33,7 +34,9 @@ data class LearnerProfile(val uuid: String, val name: String, val level: Int, va
             } } } ?: emptyList(), json.optLong("coding_ms"), json.optString("full_name").takeUnless { it.isBlank() || it == "null" },
             json.optJSONObject("name_moderation")?.optBoolean("is_blocked") ?: false,
             (json.optJSONObject("name_moderation")?.optInt("remaining_days") ?: 0).coerceAtLeast(0),
-            json.optJSONObject("name_moderation")?.optString("reason")?.takeUnless { it.isBlank() || it == "null" })
+            json.optJSONObject("name_moderation")?.optString("reason")?.takeUnless { it.isBlank() || it == "null" },
+            json.optBoolean("registered"), json.optJSONObject("sign_in")?.optString("username")?.takeUnless { it.isBlank() || it == "null" },
+            json.optJSONObject("sign_in")?.optBoolean("google") ?: false)
     }
 }
 
@@ -75,6 +78,7 @@ class LearningRepository private constructor(context: Context) {
     fun refreshProfile() { visit(); flushNow() }
 
     private suspend fun access(course: Course, force: Boolean = false): String {
+        if (identity.profile()?.registered == true) return api.accountAccess(course, force).token
         val vault = PurchaseVault(app)
         require(vault.wasVerified(course.id))
         val current = vault.access(course.id)
@@ -84,7 +88,7 @@ class LearningRepository private constructor(context: Context) {
         return api.verify(course, BuildConfig.BILLING_PROVIDER, receipt, true).token
     }
     private suspend fun authorized(course: Course, path: String, body: JSONObject? = null): JSONObject {
-        if (!PurchaseVault(app).wasVerified(course.id)) return api.learning(path, body = body)
+        if (!ownsCourse(course.id)) return api.learning(path, body = body)
         return try { api.learning(path, access(course), body) }
         catch (failure: CourseFailure) {
             if (failure.status != 401) throw failure
@@ -132,11 +136,16 @@ class LearningRepository private constructor(context: Context) {
             elapsed - anchor else System.currentTimeMillis() - grant.getLong("anchor_wall")
     }
     fun tracker(course: Course, lesson: Lesson): WatchTracker? {
-        if (!PurchaseVault(app).wasVerified(course.id) && !lesson.isPreview) return null
+        if (!ownsCourse(course.id) && !lesson.isPreview) return null
         if (mutable.value[course.id]?.enabled == false) return null
         val current = grant(course.id)
         if (current?.optJSONObject("lesson_versions")?.optInt(lesson.id, -1) != lesson.version) prepare(course, true)
         return WatchTracker(this, course.id, lesson)
+    }
+    private fun ownsCourse(id: String): Boolean {
+        val profile = identity.profile()
+        return if (profile?.registered == true) profile.courses.any { it.uuid == id && it.purchased && it.enabled }
+            else PurchaseVault(app).wasVerified(id)
     }
     internal fun retryPreparation(course: String, lesson: Lesson) {
         val grant = grant(course)
@@ -167,6 +176,40 @@ class LearningRepository private constructor(context: Context) {
             val result = api.learning("profile", body = JSONObject().put("display_name", value.trim())
                 .put("full_name", fullName?.trim()?.takeIf { it.isNotEmpty() } ?: JSONObject.NULL))
             store.saveProfile(LearningIdentity.KEY, result); mutable.value = store.profiles()
+        }
+    }
+    suspend fun authOptions(): JSONObject = api.auth("options")
+    suspend fun authenticate(register: Boolean, username: String, password: String, confirmation: String, secret: String, expectedUuid: String) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            require(identity.profile()?.uuid == expectedUuid) { "حساب تغییر کرده؛ فرم را دوباره باز کن." }
+            val result = api.auth(if (register) "register" else "login", JSONObject().put("username", username.trim())
+                .put("password", password).put("password_confirmation", confirmation).put("session_secret", secret))
+            identity.accept(result.getJSONObject("account")); mutable.value = store.profiles(); mutableStatus.value = null
+        }
+    }
+    suspend fun startGoogle(mode: String, expectedUuid: String): JSONObject = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            require(identity.profile()?.uuid == expectedUuid) { "حساب تغییر کرده؛ فرم را دوباره باز کن." }
+            val secret = AccountAuthPolicy.secret()
+            api.auth("google/start", JSONObject().put("mode", mode).put("poll_secret", secret)).also {
+                it.put("poll_secret", secret).put("source_uuid", expectedUuid).put("created_at", System.currentTimeMillis())
+                store.saveGrant("@google-sign-in", it)
+            }
+        }
+    }
+    fun pendingGoogle(): JSONObject? = store.grant("@google-sign-in")?.takeIf {
+        it.optString("source_uuid") == identity.profile()?.uuid && System.currentTimeMillis() - it.optLong("created_at") < 600_000
+    }
+    suspend fun pollGoogle(): String = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val flow = pendingGoogle() ?: return@withLock "expired"
+            val result = api.auth("google/poll", JSONObject().put("flow_uuid", flow.getString("flow_uuid")).put("poll_secret", flow.getString("poll_secret")))
+            val status = result.getString("status")
+            if (status == "ready") {
+                identity.accept(result.getJSONObject("account")); mutable.value = store.profiles(); mutableStatus.value = null
+            }
+            if (status != "pending") store.saveGrant("@google-sign-in", JSONObject())
+            status
         }
     }
     suspend fun sync(): Boolean = withContext(Dispatchers.IO) {

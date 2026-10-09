@@ -65,6 +65,12 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
                 val code = json?.optJSONObject("error")?.optString("code").orEmpty()
                 throw CourseFailure(when {
                     status == 429 -> "درخواست‌های زیادی ارسال شده؛ یک دقیقه صبر کنید."
+                    path.startsWith("accounts/auth/") && code == "validation_failed" ->
+                        json?.optJSONObject("error")?.optJSONObject("fields")?.let { fields ->
+                            fields.keys().asSequence().mapNotNull { fields.optJSONArray(it)?.optString(0) }.firstOrNull()
+                        } ?: "اطلاعات ورود درست نیست."
+                    path.startsWith("accounts/auth/") && status == 503 -> "ورود فعلاً در دسترس نیست؛ کمی بعد دوباره تلاش کن."
+                    path.startsWith("accounts/auth/") && status == 409 -> "حساب هم‌زمان تغییر کرده؛ فرم را دوباره باز کن."
                     code == "validation_failed" && json?.optJSONObject("error")?.optJSONObject("fields")?.optJSONArray("display_name") != null ->
                         json.getJSONObject("error").getJSONObject("fields").getJSONArray("display_name").optString(0, "نام معتبر نیست.")
                     code == "access_disabled" -> "دسترسی این خرید توسط مدیر غیرفعال شده است؛ با پشتیبانی تماس بگیرید."
@@ -167,11 +173,31 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
     suspend fun learning(path: String, token: String? = null, body: JSONObject? = null): JSONObject =
         request("learning/$path", token, body).getJSONObject("data")
 
+    suspend fun auth(path: String, body: JSONObject? = null): JSONObject = request("accounts/auth/$path", body = body).getJSONObject("data")
+
+    suspend fun accountAccess(course: Course, force: Boolean = false): CourseAccess {
+        val uuid = identity?.profile()?.uuid ?: throw CourseFailure("ابتدا وارد حساب خودت شو.")
+        val key = "$uuid:${course.id}"
+        val old = accountAccessCache[key]
+        if (!force && old != null && old.expiresAtMillis > System.currentTimeMillis() + 60_000) return old
+        val result = auth("course-access", JSONObject().put("course_uuid", course.id))
+        require(result.getString("course_uuid") == course.id && identity.profile()?.uuid == uuid)
+        val expiry = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US).apply { isLenient = false }.parse(result.getString("expires_at"))
+            ?: throw CourseFailure("پاسخ دسترسی معتبر نیست.")
+        return CourseAccess(course.id, result.getString("access_token"), expiry.time).also { accountAccessCache[key] = it }
+    }
+
+    companion object {
+        private val accountAccessCache = java.util.concurrent.ConcurrentHashMap<String, CourseAccess>()
+    }
+
     suspend fun account(): JSONObject {
         val id = identity ?: error("Account context is required")
         val profile = try { request("accounts/me").getJSONObject("data") }
         catch (failure: CourseFailure) {
             if (failure.status != 401) throw failure
+            // Expiry must not silently replace a registered learner with a new guest.
+            if (id.profile()?.registered == true) throw CourseFailure("برای ادامه همگام‌سازی، دوباره وارد حساب خودت شو یا خریدت را بازیابی کن.", 401)
             request("accounts/register", body = JSONObject().put("secret", id.secret())).getJSONObject("data")
         }
         id.accept(JSONObject().put("profile", profile))

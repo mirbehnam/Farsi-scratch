@@ -150,6 +150,7 @@ import kotlinx.coroutines.delay
 @Composable private fun LearnerProfileDialog(course: Course?, profile: LearnerProfile, repository: LearningRepository, onClose: () -> Unit) {
     var editing by remember(profile.uuid) { mutableStateOf(false) }
     var showPointsGuide by remember(profile.uuid) { mutableStateOf(false) }
+    var showAccount by remember(profile.uuid) { mutableStateOf(false) }
     val syncStatus by repository.status.collectAsState()
     val height = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp - 32).coerceAtLeast(180).dp
     androidx.compose.ui.window.Dialog(onDismissRequest = onClose,
@@ -189,6 +190,10 @@ import kotlinx.coroutines.delay
                     }
                 }
                 ScratchLevelProgress(profile)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(if (profile.registered) "🔐 حساب قابل بازیابی" else "حساب مهمان", style = MaterialTheme.typography.labelMedium)
+                    TextButton(onClick = { showAccount = true }) { Text(if (profile.registered) "مدیریت ورود" else "ذخیره حساب / ورود") }
+                }
                 if (profile.nameBlocked) NameRestrictionNotice(profile)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     ProfileStat("زمان مشاهده آموزش", persianDisplay(learningDuration(profile.watchMs)), Modifier.weight(1f))
@@ -221,7 +226,11 @@ import kotlinx.coroutines.delay
             }
         }
     }
-    if (editing) EditLearnerNameDialog(course, profile, repository) { editing = false }
+    if (editing) LearnerNameEditorDialog(course, profile, repository, onClose = { editing = false }, onSaved = {
+        editing = false
+        if (!profile.registered) showAccount = true
+    })
+    if (showAccount) LearnerAccountDialog(profile, repository) { showAccount = false }
     if (showPointsGuide) LearnerPointsGuideDialog { showPointsGuide = false }
 }
 
@@ -255,10 +264,6 @@ import kotlinx.coroutines.delay
                 " امتیاز تا سطح بعد", style = MaterialTheme.typography.labelMedium, color = Color(0xFF7044BC))
         }
     }
-}
-
-@Composable private fun EditLearnerNameDialog(course: Course?, profile: LearnerProfile, repository: LearningRepository, onClose: () -> Unit) {
-    LearnerNameEditorDialog(course, profile, repository, onClose)
 }
 
 @Composable internal fun NameRestrictionNotice(profile: LearnerProfile) {

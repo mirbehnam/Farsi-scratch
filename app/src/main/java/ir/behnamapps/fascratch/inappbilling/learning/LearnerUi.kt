@@ -19,6 +19,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
@@ -57,12 +59,15 @@ import kotlinx.coroutines.launch
 /** Artwork contains no baked-in text: every level, including zero, stays dynamic and Persian. */
 @Composable private fun LearnerLevelBadge(level: Int, modifier: Modifier = Modifier) {
     BoxWithConstraints(modifier, contentAlignment = Alignment.TopCenter) {
-        val badgeFontSize = (maxWidth.value * if (level < 1000) .15f else .12f).sp
+        // The plaque has fixed artwork dimensions. Do not inherit the button's much
+        // taller line-height/font padding, which clips the glyphs in this small slot.
+        val badgeFontSize = (maxWidth.value * (if (level < 1000) .15f else .12f) / LocalDensity.current.fontScale).sp
         Image(painterResource(R.drawable.learner_level_badge), contentDescription = null, modifier = Modifier.fillMaxSize())
-        Box(Modifier.padding(top = maxHeight * .735f).width(maxWidth * .68f).height(maxHeight * .15f),
+        Box(Modifier.offset(y = maxHeight * .72f).width(maxWidth * .68f).height(maxHeight * .20f),
             contentAlignment = Alignment.Center) {
             Text("سطح ${persianDisplay(level.toString())}", color = Color(0xFFFFD44F), fontWeight = FontWeight.Black,
-                fontSize = badgeFontSize,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = badgeFontSize,
+                    lineHeight = badgeFontSize * 1.15f, platformStyle = PlatformTextStyle(includeFontPadding = false)),
                 textAlign = TextAlign.Center, maxLines = 1)
         }
     }

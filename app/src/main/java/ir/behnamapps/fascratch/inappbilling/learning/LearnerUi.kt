@@ -71,6 +71,9 @@ import kotlinx.coroutines.launch
         .semantics { contentDescription = "پروفایل برنامه‌نویس، سطح ${persianDisplay(profile.level.toString())}" }
         .clickable(role = Role.Button, onClick = onClick).padding(4.dp), contentAlignment = Alignment.Center) {
         LearnerLevelBadge(profile.level, Modifier.fillMaxSize())
+        if (profile.nameBlocked) Surface(Modifier.align(Alignment.TopEnd).size(16.dp), shape = CircleShape, color = Color(0xFFBA2525)) {
+            Box(contentAlignment = Alignment.Center) { Text("!", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp) }
+        }
     }
 }
 
@@ -156,6 +159,7 @@ import kotlinx.coroutines.launch
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(if (profile.name == "هنرجو") "برنامه‌نویس" else profile.name,
                                 fontWeight = FontWeight.Bold, style = MaterialTheme.typography.headlineSmall)
+                            if (profile.nameBlocked) Text(" ⛔", color = Color(0xFFBA2525), modifier = Modifier.semantics { contentDescription = "نام نمایشی مسدود است" })
                             IconButton(onClick = { editing = true }, modifier = Modifier.semantics { contentDescription = "ویرایش نام نمایشی" }) {
                                 Text("✎", fontSize = 26.sp, color = Color(0xFF855CD6))
                             }
@@ -168,6 +172,7 @@ import kotlinx.coroutines.launch
                     }
                 }
                 ScratchLevelProgress(profile)
+                if (profile.nameBlocked) NameRestrictionNotice(profile)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     ProfileStat("زمان مشاهده آموزش", persianDisplay(learningDuration(profile.watchMs)), Modifier.weight(1f))
                     ProfileStat("زمان برنامه‌نویسی", persianDisplay(learningDuration(profile.codingMs)), Modifier.weight(1f))
@@ -180,6 +185,7 @@ import kotlinx.coroutines.launch
                             fontWeight = FontWeight.Black, fontSize = 26.sp, color = Color(0xFF7044BC))
                     }
                 }
+                if (!profile.nameSet && !profile.nameBlocked) Text("برای حضور در رتبه‌بندی، نام نمایشی ثبت کنید.", style = MaterialTheme.typography.bodySmall)
                 val purchased = profile.courses.filter { it.purchased }
                 if (purchased.isNotEmpty()) {
                     Text("دوره‌های خریداری‌شده", fontWeight = FontWeight.Bold)
@@ -240,14 +246,19 @@ import kotlinx.coroutines.launch
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     AlertDialog(onDismissRequest = { if (!busy) onClose() }, title = { Text(if (profile.nameSet) "ویرایش نام نمایشی" else "ثبت نام نمایشی") },
-        text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        text = { Column(Modifier.heightIn(max = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp - 180).coerceAtLeast(120).dp)
+            .verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("انتخاب نام نمایشی نامناسب، بی‌ادبانه، توهین‌آمیز یا سیاسی باعث مسدود شدن نام شما و حذف موقت از رتبه‌بندی می‌شود. پیشرفت و خریدهای شما تغییر نمی‌کند.",
+                style = MaterialTheme.typography.bodySmall, color = Color(0xFF9B382D))
+            if (profile.nameBlocked) NameRestrictionNotice(profile)
             Text("نام نمایشی حداکثر سه بار در هر ۳۰ روز قابل تغییر است. تغییرهای باقی‌مانده: " +
                 persianDisplay(profile.nameChangesLeft.toString()), style = MaterialTheme.typography.bodySmall)
-            OutlinedTextField(name, { if (it.length <= 30) name = it }, label = { Text("نام نمایشی") }, singleLine = true)
+            OutlinedTextField(name, { if (it.length <= 30) name = it }, label = { Text("نام نمایشی") }, singleLine = true, enabled = !profile.nameBlocked)
             OutlinedTextField(fullName, { if (it.length <= 100) fullName = it }, label = { Text("نام و نام خانوادگی (اختیاری)") }, singleLine = true)
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         } },
         confirmButton = { Button(enabled = !busy && name.trim().length in 2..30 &&
+            (!profile.nameBlocked || name.trim() == profile.name) &&
             (!profile.nameSet || profile.nameChangesLeft > 0 || name.trim() == profile.name), onClick = {
             busy = true
             scope.launch {
@@ -258,6 +269,17 @@ import kotlinx.coroutines.launch
             }
         }) { Text(if (busy) "در حال ذخیره…" else "ذخیره") } },
         dismissButton = { TextButton(enabled = !busy, onClick = onClose) { Text("انصراف") } })
+}
+
+@Composable private fun NameRestrictionNotice(profile: LearnerProfile) {
+    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), color = Color(0xFFFFE9E7), border = BorderStroke(1.dp, Color(0xFFE5AAA4))) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text("⛔ نام نمایشی شما مسدود است", fontWeight = FontWeight.Bold, color = Color(0xFFAC2924))
+            Text(persianDisplay(profile.nameBlockedDays.toString()) + " روز تا رفع محدودیت", color = Color(0xFFAC2924))
+            profile.nameBlockReason?.let { Text("دلیل: " + it, style = MaterialTheme.typography.bodySmall, color = Color(0xFF823530)) }
+            Text("این محدودیت بر امتیاز، پیشرفت و خریدهای شما تأثیری ندارد.", style = MaterialTheme.typography.labelSmall, color = Color(0xFF823530))
+        }
+    }
 }
 
 @Composable private fun ProfileStat(title: String, value: String, modifier: Modifier) {

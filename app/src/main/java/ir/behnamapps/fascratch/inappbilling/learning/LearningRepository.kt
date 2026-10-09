@@ -20,7 +20,8 @@ import org.json.JSONObject
 data class LearnerCourse(val uuid: String, val title: String, val watchMs: Long, val purchased: Boolean, val enabled: Boolean)
 data class LearnerProfile(val uuid: String, val name: String, val level: Int, val watchMs: Long,
     val xpIntoLevel: Double, val xpForNext: Double, val rank: Int?, val enabled: Boolean,
-    val nameSet: Boolean = false, val nameChangesLeft: Int = 3, val courses: List<LearnerCourse> = emptyList(), val codingMs: Long = 0, val fullName: String? = null) {
+    val nameSet: Boolean = false, val nameChangesLeft: Int = 3, val courses: List<LearnerCourse> = emptyList(), val codingMs: Long = 0, val fullName: String? = null,
+    val nameBlocked: Boolean = false, val nameBlockedDays: Int = 0, val nameBlockReason: String? = null) {
     companion object {
         fun parse(json: JSONObject) = LearnerProfile(json.getString("uuid"), json.getString("display_name"),
             json.getInt("level"), json.getLong("watch_ms"), json.getDouble("xp_into_level"), json.getDouble("xp_for_next_level"),
@@ -29,7 +30,10 @@ data class LearnerProfile(val uuid: String, val name: String, val level: Int, va
             json.optJSONObject("name_policy")?.optInt("remaining_changes", 3) ?: 3,
             json.optJSONArray("courses")?.let { rows -> (0 until rows.length()).map { i -> rows.getJSONObject(i).let {
                 LearnerCourse(it.getString("uuid"), it.getString("title"), it.optLong("watch_ms"), it.optBoolean("purchased"), it.optBoolean("access_enabled"))
-            } } } ?: emptyList(), json.optLong("coding_ms"), json.optString("full_name").takeUnless { it.isBlank() || it == "null" })
+            } } } ?: emptyList(), json.optLong("coding_ms"), json.optString("full_name").takeUnless { it.isBlank() || it == "null" },
+            json.optJSONObject("name_moderation")?.optBoolean("is_blocked") ?: false,
+            (json.optJSONObject("name_moderation")?.optInt("remaining_days") ?: 0).coerceAtLeast(0),
+            json.optJSONObject("name_moderation")?.optString("reason")?.takeUnless { it.isBlank() || it == "null" })
     }
 }
 

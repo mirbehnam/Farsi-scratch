@@ -87,9 +87,14 @@ internal fun TrainingContent(
     var optionsExpanded by remember(state.course?.id) { mutableStateOf(false) }
     val canBuy = BuildConfig.BILLING_PROVIDER != "website"
     var failedLayout by remember { mutableStateOf<String?>(null) }
+    val courseOptions: @Composable () -> Unit = {
+        CourseOptions(state, optionsExpanded, { optionsExpanded = it }, onRefresh, onRefreshPrices, onPurchase)
+    }
     Column(Modifier.fillMaxSize().background(Paper).windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 16.dp)) {
         Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TextButton(onClick = onBack) { Text(if (state.course == null) "بازگشت" else "همهٔ دوره‌ها") }
+            Text(persian(state.course?.title ?: "آکادمی اسکرچ فارسی"), Modifier.weight(1f), fontWeight = FontWeight.Bold,
+                color = Ink, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (state.course != null) {
                 Row(Modifier.widthIn(max = 340.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     FilterChip(selected = filter == LessonFilter.ALL, onClick = { filter = LessonFilter.ALL }, label = { Text("همهٔ درس‌ها") })
@@ -99,29 +104,7 @@ internal fun TrainingContent(
             }
             if (state.busy && state.downloadingId == null) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
             learnerHeader()
-            Text(persian(state.course?.title ?: "آکادمی اسکرچ فارسی"), Modifier.weight(1f), fontWeight = FontWeight.Bold,
-                color = Ink, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Box {
-                IconButton(onClick = { optionsExpanded = true }, modifier = Modifier.semantics { contentDescription = "گزینه‌های بیشتر" }) {
-                    Text("⋮", fontSize = 28.sp, color = Ink)
-                }
-                DropdownMenu(expanded = optionsExpanded, onDismissRequest = { optionsExpanded = false }) {
-                    DropdownMenuItem(text = { Text("تازه‌سازی") }, enabled = !state.busy,
-                        onClick = { optionsExpanded = false; onRefresh() })
-                    if (canBuy) {
-                        DropdownMenuItem(text = { Text("تازه‌سازی قیمت") }, enabled = !state.busy,
-                            onClick = { optionsExpanded = false; onRefreshPrices() })
-                        val selectedCourse = state.course
-                        if (selectedCourse != null && !state.purchased) {
-                            DropdownMenuItem(text = { Text("بازیابی خرید") }, enabled = !state.busy,
-                                onClick = { optionsExpanded = false; onPurchase(selectedCourse, true) })
-                        }
-                        HorizontalDivider(color = Line)
-                        DropdownMenuItem(text = { Text("پرداخت از طریق " + if (BuildConfig.BILLING_PROVIDER == "myket") "مایکت" else "کافه‌بازار") },
-                            enabled = false, onClick = {})
-                    }
-                }
-            }
+            if (state.course == null) courseOptions()
         }
         learnerCelebration()
         // Bound long server messages so retry/details remain reachable on short displays.
@@ -151,11 +134,11 @@ internal fun TrainingContent(
             val curriculum: @Composable (Modifier) -> Unit = { modifier ->
                 Curriculum(course, state, filter, modifier,
                     onDownload, onCancelDownload, onPlay,
-                    if (split) null else { { PurchasePanel(course, state, onPurchase) } })
+                    if (split) null else { { PurchasePanel(course, state, onPurchase, courseOptions = courseOptions) } })
             }
             if (split) Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 PurchasePanel(course, state, onPurchase,
-                    Modifier.width(panelWidth).fillMaxHeight(), pinned = true)
+                    Modifier.width(panelWidth).fillMaxHeight(), pinned = true, courseOptions = courseOptions)
                 curriculum(Modifier.weight(1f).fillMaxHeight())
             } else curriculum(Modifier.fillMaxSize())
         }
@@ -215,7 +198,29 @@ private fun CourseMetadata(course: Course) {
 }
 
 @Composable
-private fun PurchasePanel(course: Course, state: TrainingState, onPurchase: (Course, Boolean) -> Unit, modifier: Modifier = Modifier, pinned: Boolean = false) {
+private fun CourseOptions(state: TrainingState, expanded: Boolean, onExpanded: (Boolean) -> Unit,
+    onRefresh: () -> Unit, onRefreshPrices: () -> Unit, onPurchase: (Course, Boolean) -> Unit) {
+    Box {
+        IconButton(onClick = { onExpanded(true) }, modifier = Modifier.semantics { contentDescription = "گزینه‌های بیشتر" }) {
+            Text("⋮", fontSize = 28.sp, color = Ink)
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { onExpanded(false) }) {
+            DropdownMenuItem(text = { Text("تازه‌سازی") }, enabled = !state.busy, onClick = { onExpanded(false); onRefresh() })
+            if (BuildConfig.BILLING_PROVIDER != "website") {
+                DropdownMenuItem(text = { Text("تازه‌سازی قیمت") }, enabled = !state.busy, onClick = { onExpanded(false); onRefreshPrices() })
+                state.course?.takeIf { !state.purchased }?.let { course ->
+                    DropdownMenuItem(text = { Text("بازیابی خرید") }, enabled = !state.busy, onClick = { onExpanded(false); onPurchase(course, true) })
+                }
+                HorizontalDivider(color = Line)
+                DropdownMenuItem(text = { Text("پرداخت از طریق " + if (BuildConfig.BILLING_PROVIDER == "myket") "مایکت" else "کافه‌بازار") }, enabled = false, onClick = {})
+            }
+        }
+    }
+}
+
+@Composable
+private fun PurchasePanel(course: Course, state: TrainingState, onPurchase: (Course, Boolean) -> Unit, modifier: Modifier = Modifier, pinned: Boolean = false,
+    courseOptions: @Composable () -> Unit = {}) {
     val canBuy = BuildConfig.BILLING_PROVIDER != "website"
     val price = state.prices[course.id]
     val panelScroll = rememberScrollState()
@@ -229,7 +234,10 @@ private fun PurchasePanel(course: Course, state: TrainingState, onPurchase: (Cou
             val bodyModifier = if (pinned) Modifier.weight(1f).verticalScroll(panelScroll) else Modifier
             Column(bodyModifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(persian(course.title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Ink)
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(persian(course.title), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Ink)
+                        courseOptions()
+                    }
                     CourseMetadata(course)
                     if (course.description.isNotBlank()) {
                         var showDescription by rememberSaveable(course.id) { mutableStateOf(false) }

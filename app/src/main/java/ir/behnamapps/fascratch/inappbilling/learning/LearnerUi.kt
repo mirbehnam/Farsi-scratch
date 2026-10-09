@@ -3,6 +3,7 @@ package ir.behnamapps.fascratch.inappbilling.learning
 import androidx.compose.animation.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -18,9 +19,12 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ir.behnamapps.fascratch.inappbilling.domain.Course
+import ir.behnamapps.fascratch.R
 import ir.behnamapps.fascratch.inappbilling.presentation.persianDisplay
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -45,15 +49,21 @@ import kotlinx.coroutines.launch
 }
 
 @Composable fun LearnerChip(profile: LearnerProfile, onClick: () -> Unit) {
-    TextButton(onClick = onClick, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Surface(shape = CircleShape, border = BorderStroke(2.dp, Color(0xFF26795A)), color = Color.White) {
-                CatAvatar(Modifier.padding(3.dp).size(32.dp))
-            }
-            Surface(shape = RoundedCornerShape(7.dp), color = Color(0xFF26795A), shadowElevation = 2.dp) {
-                Text(persianDisplay(profile.level.toString()), Modifier.padding(horizontal = 10.dp, vertical = 1.dp),
-                    color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-            }
+    TextButton(onClick = onClick, contentPadding = PaddingValues(0.dp)) {
+        LearnerLevelBadge(profile.level, Modifier.size(64.dp))
+    }
+}
+
+/** Artwork contains no baked-in text: every level, including zero, stays dynamic and Persian. */
+@Composable private fun LearnerLevelBadge(level: Int, modifier: Modifier = Modifier) {
+    BoxWithConstraints(modifier, contentAlignment = Alignment.TopCenter) {
+        val badgeFontSize = (maxWidth.value * if (level < 1000) .15f else .12f).sp
+        Image(painterResource(R.drawable.learner_level_badge), contentDescription = null, modifier = Modifier.fillMaxSize())
+        Box(Modifier.padding(top = maxHeight * .735f).width(maxWidth * .68f).height(maxHeight * .15f),
+            contentAlignment = Alignment.Center) {
+            Text("سطح ${persianDisplay(level.toString())}", color = Color(0xFFFFD44F), fontWeight = FontWeight.Black,
+                fontSize = badgeFontSize,
+                textAlign = TextAlign.Center, maxLines = 1)
         }
     }
 }
@@ -68,9 +78,7 @@ import kotlinx.coroutines.launch
     var editingName by remember(profile.uuid) { mutableStateOf(false) }
     AlertDialog(onDismissRequest = onClose, shape = RoundedCornerShape(28.dp), containerColor = Color(0xFFFAFCF9),
         title = { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Surface(shape = CircleShape, border = BorderStroke(2.dp, Color(0xFF26795A)), color = Color.White) {
-                CatAvatar(Modifier.padding(5.dp).size(52.dp))
-            }
+            LearnerLevelBadge(profile.level, Modifier.size(80.dp))
             Column { Text(profile.name, fontWeight = FontWeight.Bold); Text("هنرجو · لول ${persianDisplay(profile.level.toString())}", color = Color(0xFF26795A), style = MaterialTheme.typography.titleMedium) }
         } },
         text = { Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -78,6 +86,7 @@ import kotlinx.coroutines.launch
                 ProfileStat("مشاهده واقعی", "${persianDisplay((profile.watchMs / 3600000).toString())} ساعت و ${persianDisplay((profile.watchMs / 60000 % 60).toString())} دقیقه", Modifier.weight(1f))
                 ProfileStat("آخرین رتبه ثبت‌شده", profile.rank?.let { persianDisplay(it.toString()) } ?: "—", Modifier.weight(1f))
             }
+            ProfileStat("زمان برنامه‌نویسی", "${persianDisplay((profile.codingMs / 3600000).toString())} ساعت و ${persianDisplay((profile.codingMs / 60000 % 60).toString())} دقیقه", Modifier.fillMaxWidth())
             Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.primaryContainer) {
                 Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {

@@ -660,6 +660,7 @@ private fun FarsiScratchApp(activity: MainActivity) {
     var permissionRequestInProgress by remember { mutableStateOf(false) }
     var permissionResult by remember { mutableStateOf<Boolean?>(null) }
     var isExpired by remember { mutableStateOf(System.currentTimeMillis() >= BuildConfig.EXPIRATION_TIME_MILLIS) }
+    ir.behnamapps.fascratch.inappbilling.learning.CodingTimeEffect(activity, screen == AppScreen.Scratch && !isExpired && !showNotificationPermission)
 
     LaunchedEffect(permissionResult) {
         val granted = permissionResult ?: return@LaunchedEffect

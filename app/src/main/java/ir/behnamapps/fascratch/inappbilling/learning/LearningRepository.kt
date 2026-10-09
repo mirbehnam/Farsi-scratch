@@ -20,7 +20,7 @@ import org.json.JSONObject
 data class LearnerCourse(val uuid: String, val title: String, val watchMs: Long, val purchased: Boolean, val enabled: Boolean)
 data class LearnerProfile(val uuid: String, val name: String, val level: Int, val watchMs: Long,
     val xpIntoLevel: Double, val xpForNext: Double, val rank: Int?, val enabled: Boolean,
-    val nameSet: Boolean = false, val nameChangesLeft: Int = 3, val courses: List<LearnerCourse> = emptyList()) {
+    val nameSet: Boolean = false, val nameChangesLeft: Int = 3, val courses: List<LearnerCourse> = emptyList(), val codingMs: Long = 0) {
     companion object {
         fun parse(json: JSONObject) = LearnerProfile(json.getString("uuid"), json.getString("display_name"),
             json.getInt("level"), json.getLong("watch_ms"), json.getDouble("xp_into_level"), json.getDouble("xp_for_next_level"),
@@ -29,7 +29,7 @@ data class LearnerProfile(val uuid: String, val name: String, val level: Int, va
             json.optJSONObject("name_policy")?.optInt("remaining_changes", 3) ?: 3,
             json.optJSONArray("courses")?.let { rows -> (0 until rows.length()).map { i -> rows.getJSONObject(i).let {
                 LearnerCourse(it.getString("uuid"), it.getString("title"), it.optLong("watch_ms"), it.optBoolean("purchased"), it.optBoolean("access_enabled"))
-            } } } ?: emptyList())
+            } } } ?: emptyList(), json.optLong("coding_ms"))
     }
 }
 
@@ -49,6 +49,8 @@ class LearningRepository private constructor(context: Context) {
     private var foregroundSync: Job? = null
     private var lastSyncAttempt = -10_000L
     private var lastProfileAttempt = -10_000L
+    private var codingJob: Job? = null
+    private var codingStop: java.util.concurrent.atomic.AtomicLong? = null
     private val mutableStatus = MutableStateFlow<String?>(null)
     val status = mutableStatus.asStateFlow()
     private fun failure(error: Exception) {
@@ -176,7 +178,7 @@ class LearningRepository private constructor(context: Context) {
                     val rows = store.batch(course, grantId)
                     if (rows.isEmpty()) break
                     val body = JSONObject().put("grant_uuid", grantId).put("secret", grant.getString("secret")).put("events", JSONArray(rows))
-                    val result = try { api.learning("events/batch", body = body) }
+                    val result = try { api.learning(if (course == CODING) "coding/events/batch" else "events/batch", body = body) }
                     catch (failure: CourseFailure) {
                         if (failure.status == 410 || failure.status == 401) {
                             // Expired capabilities or a pruned guest cannot be recovered by retrying.
@@ -210,7 +212,65 @@ class LearningRepository private constructor(context: Context) {
             .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setMinimumLatency(120_000).setPersisted(true)
             .setBackoffCriteria(120_000, JobInfo.BACKOFF_POLICY_EXPONENTIAL).build())
     }
+    /** The editor lifecycle owns this lightweight IO coroutine; never hooks WebView execution. */
+    @Synchronized fun codingActive(active: Boolean) {
+        if (!active) {
+            codingStop?.compareAndSet(0L, SystemClock.elapsedRealtime())
+            codingJob?.cancel(); codingJob = null; return
+        }
+        if (codingJob?.isActive == true) return
+        val stoppedAt = java.util.concurrent.atomic.AtomicLong(0L)
+        codingStop = stoppedAt
+        codingJob = scope.launch {
+            var last = SystemClock.elapsedRealtime()
+            var preparedAt = -30_000L
+            var recordingGrant: JSONObject? = null
+            try {
+                while (isActive) {
+                    var grant = store.grant(CODING)
+                    if ((grant == null || serverNow(grant) > grant.getLong("valid_until_ms") ||
+                            serverNow(grant) - grant.getLong("issued_ms") > 86400000) &&
+                        SystemClock.elapsedRealtime() - preparedAt >= 30_000) {
+                        preparedAt = SystemClock.elapsedRealtime()
+                        recordingGrant = null
+                        try {
+                            mutex.withLock {
+                                api.account()
+                                val result = api.learning("coding/grants", body = JSONObject())
+                                grant = result.getJSONObject("grant").put("anchor_elapsed", SystemClock.elapsedRealtime())
+                                    .put("anchor_wall", System.currentTimeMillis()).put("boot_count", bootCount())
+                                saveCapability(CODING, grant!!); store.saveGrant(CODING, grant!!)
+                                store.saveProfile(LearningIdentity.KEY, result.getJSONObject("profile")); mutable.value = store.profiles()
+                            }
+                        } catch (e: CancellationException) { throw e } catch (e: Exception) { failure(e) }
+                        last = SystemClock.elapsedRealtime() // Do not guess time during preparation.
+                    }
+                    recordingGrant = grant
+                    delay(5_000)
+                    val end = SystemClock.elapsedRealtime()
+                    val start = last
+                    last = end
+                    recordCoding(grant, start, end)
+                }
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) { failure(e) }
+            finally {
+                runCatching { recordCoding(recordingGrant, last, stoppedAt.get().takeIf { it > 0 } ?: SystemClock.elapsedRealtime()) }
+                flushNow()
+            }
+        }
+    }
+    private fun recordCoding(grant: JSONObject?, start: Long, end: Long) {
+        val ms = end - start
+        grant?.takeIf { serverAt(it, end) <= it.getLong("valid_until_ms") && ms in 1..15_000 }?.let {
+            store.add(CODING, it.getString("uuid"), JSONObject().put("uuid", java.util.UUID.randomUUID().toString())
+                .put("lesson_uuid", CODING).put("version", 1).put("started_ms", serverAt(it, start))
+                .put("ended_ms", serverAt(it, end)).put("watch_ms", ms).put("from_ms", start).put("to_ms", end))
+            recorded()
+        }
+    }
     companion object {
+        private const val CODING = "@coding"
         const val JOB_ID = 7312
         @Volatile private var instance: LearningRepository? = null
         fun get(context: Context) = instance ?: synchronized(this) { instance ?: LearningRepository(context).also { instance = it } }

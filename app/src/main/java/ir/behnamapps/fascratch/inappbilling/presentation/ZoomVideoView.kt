@@ -7,11 +7,13 @@ import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.PlaybackParams
+import android.os.Build
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.Surface
 import android.view.TextureView
+import android.view.ViewConfiguration
 import java.io.File
 
 /** TextureView (not SurfaceView) supports an actual transformed video with untransformed controls. */
@@ -32,6 +34,14 @@ internal class ZoomVideoView(context: Context, private val file: File, private v
     private var panY = 0f
     private var playbackSpeed = 1f
     private var multiTouchSequence = false
+    private var doubleTapSequence = false
+    private var secondTapX = 0f
+    private var secondTapY = 0f
+    private var fingers = 0
+    private var lastFocusX = 0f
+    private var lastFocusY = 0f
+    private val tapSlop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
+    private val seeks = PlayerSeekQueue()
     private val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val focus = AudioManager.OnAudioFocusChangeListener { change -> if (change < 0) pause() }
     private val scaler = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
@@ -40,8 +50,8 @@ internal class ZoomVideoView(context: Context, private val file: File, private v
             scale = PlayerViewport.zoom(scale * detector.scaleFactor)
             // Keep the point between the two fingers stationary while zooming.
             val ratio = scale / oldScale
-            panX = (panX - (detector.focusX - width / 2f)) * ratio + detector.focusX - width / 2f
-            panY = (panY - (detector.focusY - height / 2f)) * ratio + detector.focusY - height / 2f
+            panX = PlayerViewport.anchoredPan(panX, detector.focusX, detector.focusX, width / 2f, ratio)
+            panY = PlayerViewport.anchoredPan(panY, detector.focusY, detector.focusY, height / 2f, ratio)
             transform(); onZoom(scale)
             return true
         }
@@ -50,8 +60,23 @@ internal class ZoomVideoView(context: Context, private val file: File, private v
         override fun onDown(event: MotionEvent) = true
         override fun onSingleTapConfirmed(event: MotionEvent): Boolean { performClick(); onTap(); return true }
         override fun onDoubleTap(event: MotionEvent): Boolean {
-            if (!multiTouchSequence && event.pointerCount == 1 && !scaler.isInProgress)
+            // Wait for the SECOND finger-up: onDoubleTap receives the first tap's
+            // coordinates and fires before a pinch/drag on the second touch is known.
+            doubleTapSequence = true
+            return true
+        }
+        override fun onDoubleTapEvent(event: MotionEvent): Boolean {
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { secondTapX = event.x; secondTapY = event.y }
+                MotionEvent.ACTION_MOVE -> if (kotlin.math.abs(event.x - secondTapX) > tapSlop ||
+                    kotlin.math.abs(event.y - secondTapY) > tapSlop) doubleTapSequence = false
+                MotionEvent.ACTION_CANCEL -> doubleTapSequence = false
+            }
+            if (event.actionMasked == MotionEvent.ACTION_UP && doubleTapSequence &&
+                !multiTouchSequence && event.pointerCount == 1 && !scaler.isInProgress) {
                 onDoubleTapSeek(LessonPlayerPolicy.doubleTapDelta(event.x, width))
+                doubleTapSequence = false
+            }
             return true
         }
         override fun onScroll(first: MotionEvent?, current: MotionEvent, dx: Float, dy: Float): Boolean {
@@ -59,7 +84,13 @@ internal class ZoomVideoView(context: Context, private val file: File, private v
             return true
         }
     })
-    init { surfaceTextureListener = this; contentDescription = "ویدئوی درس؛ زوم با دو انگشت؛ دو ضربه سمت راست جلو و سمت چپ عقب" }
+    init {
+        // ScaleGestureDetector also recognises double-tap-and-drag by default.
+        // Pinch owns zoom here; reserve double taps exclusively for seeking.
+        scaler.isQuickScaleEnabled = false
+        surfaceTextureListener = this
+        contentDescription = "ویدئوی درس؛ زوم با دو انگشت؛ دو ضربه سمت راست جلو و سمت چپ عقب"
+    }
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (event.actionMasked == MotionEvent.ACTION_DOWN) multiTouchSequence = false
         if (event.pointerCount > 1) {
@@ -68,7 +99,21 @@ internal class ZoomVideoView(context: Context, private val file: File, private v
                 gestures.onTouchEvent(cancel); cancel.recycle()
             }
             multiTouchSequence = true
+            doubleTapSequence = false
         }
+        // ScaleGestureDetector may not emit onScale when finger spacing stays
+        // constant. Track centroid translation separately, even while paused.
+        if (event.pointerCount >= 2 && event.actionMasked != MotionEvent.ACTION_POINTER_UP &&
+            event.actionMasked != MotionEvent.ACTION_CANCEL) {
+            var x = 0f; var y = 0f
+            for (index in 0 until event.pointerCount) { x += event.getX(index); y += event.getY(index) }
+            x /= event.pointerCount; y /= event.pointerCount
+            if (event.actionMasked == MotionEvent.ACTION_MOVE && fingers == event.pointerCount && scale > 1f) {
+                panX += x - lastFocusX; panY += y - lastFocusY
+                transform(); onZoom(scale)
+            }
+            fingers = event.pointerCount; lastFocusX = x; lastFocusY = y
+        } else fingers = 0
         scaler.onTouchEvent(event)
         if (!multiTouchSequence) gestures.onTouchEvent(event)
         return true
@@ -86,12 +131,15 @@ internal class ZoomVideoView(context: Context, private val file: File, private v
                     if (!released) {
                         ready = true; videoWidth = it.videoWidth.toFloat(); videoHeight = it.videoHeight.toFloat()
                         transform()
-                        if (resumePosition > 0) it.seekTo(resumePosition.coerceAtMost(it.duration))
+                        if (resumePosition > 0) seek(resumePosition)
                         play(); onReady()
                     }
                 }
                 media.setOnVideoSizeChangedListener { _, w, h -> videoWidth = w.toFloat(); videoHeight = h.toFloat(); transform() }
                 media.setOnCompletionListener { if (!released) onCompleted() }
+                media.setOnSeekCompleteListener {
+                    if (!released && it === player) seeks.complete()?.let { next -> dispatchSeek(next) }
+                }
                 media.setOnErrorListener { _, _, _ -> ready = false; onError(); true }
                 media.prepareAsync()
             }
@@ -113,11 +161,16 @@ internal class ZoomVideoView(context: Context, private val file: File, private v
             postTranslate(panX, panY)
         }
         setTransform(matrix)
+        // A paused decoder produces no new frames. Request a UI redraw of its
+        // retained TextureView image instead of starting playback to refresh it.
+        postInvalidateOnAnimation()
     }
     fun resetZoom() { scale = 1f; panX = 0f; panY = 0f; transform(); onZoom(scale) }
     fun position() = if (ready) runCatching { player?.currentPosition ?: 0 }.getOrDefault(0) else resumePosition
     fun duration() = if (ready) runCatching { player?.duration ?: 0 }.getOrDefault(0) else 0
     fun isPlaying() = ready && runCatching { player?.isPlaying == true }.getOrDefault(false)
+    fun seekPosition() = seeks.target ?: position()
+    fun isSeeking() = seeks.active
     @Suppress("DEPRECATION")
     fun play() {
         if (ready && foreground && audio.requestAudioFocus(focus, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
@@ -126,7 +179,18 @@ internal class ZoomVideoView(context: Context, private val file: File, private v
     }
     fun pause() { if (ready) runCatching { player?.pause() } }
     fun setForeground(value: Boolean) { foreground = value; if (!value) pause() }
-    fun seek(position: Int) { if (ready) runCatching { player?.seekTo(position.coerceIn(0, duration())) } }
+    fun seek(position: Int): Boolean {
+        if (!ready || player == null) return false
+        val next = seeks.request(position.coerceIn(0, duration())) ?: return true
+        return dispatchSeek(next)
+    }
+    private fun dispatchSeek(position: Int): Boolean = runCatching {
+        val media = player ?: return false.also { seeks.reset() }
+        // Legacy seekTo(int) snaps to a sync frame; a long GOP can swallow a 5s jump.
+        if (Build.VERSION.SDK_INT >= 26) media.seekTo(position.toLong(), MediaPlayer.SEEK_CLOSEST)
+        else media.seekTo(position)
+        true
+    }.getOrElse { seeks.reset(); false }
     fun toggle() { if (isPlaying()) pause() else play() }
     fun setSpeed(value: Float): Boolean {
         if (!ready || value !in LessonPlayerPolicy.speeds) return false
@@ -144,7 +208,8 @@ internal class ZoomVideoView(context: Context, private val file: File, private v
     @Suppress("DEPRECATION")
     private fun releaseMedia() {
         ready = false
-        player?.let { runCatching { it.setOnPreparedListener(null); it.setOnErrorListener(null); it.setOnCompletionListener(null); it.release() } }; player = null
+        seeks.reset()
+        player?.let { runCatching { it.setOnPreparedListener(null); it.setOnErrorListener(null); it.setOnCompletionListener(null); it.setOnSeekCompleteListener(null); it.release() } }; player = null
         surface?.release(); surface = null
         audio.abandonAudioFocus(focus)
     }

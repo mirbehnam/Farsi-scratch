@@ -11,6 +11,8 @@ internal object PlayerViewport {
         return Fit(videoWidth * ratio, videoHeight * ratio)
     }
     fun zoom(value: Float) = if (value.isFinite()) value.coerceIn(1f, 4f) else 1f
+    fun anchoredPan(pan: Float, previousFocus: Float, currentFocus: Float, center: Float, ratio: Float): Float =
+        (pan - (previousFocus - center)) * ratio + currentFocus - center
     fun pan(value: Float, content: Float, viewport: Float, zoom: Float): Float {
         val limit = ((content * zoom - viewport) / 2f).coerceAtLeast(0f)
         return if (value.isFinite()) value.coerceIn(-limit, limit) else 0f

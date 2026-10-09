@@ -11,7 +11,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
@@ -50,13 +50,16 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
     var seekHintSequence by remember(file) { mutableIntStateOf(0) }
     val currentNextTitle by rememberUpdatedState(nextLessonTitle)
     val currentPlayNext by rememberUpdatedState(onPlayNext)
-    fun seekBy(delta: Int) {
-        if (!prepared) return
+    fun seekBy(delta: Int): Boolean {
+        if (!prepared) return false
         watchTracker?.discontinuity()
         val currentDuration = video?.duration()?.takeIf { it > 0 } ?: duration
-        val target = LessonPlayerPolicy.seek(video?.position() ?: position, delta, currentDuration)
-        video?.seek(target); position = target; interaction++
+        val base = video?.seekPosition() ?: position
+        val target = LessonPlayerPolicy.seek(base, delta, currentDuration)
+        if (target == base || video?.seek(target) != true) return false
+        position = target; interaction++
         completed = false; nextPrompt = false
+        return true
     }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(window, file) {
@@ -86,9 +89,11 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
     }
     LaunchedEffect(video, prepared) {
         while (prepared) {
-            position = video?.position() ?: 0; duration = video?.duration() ?: 0; playing = video?.isPlaying() == true
-            watchTracker?.sample(position, playing && seeking == null && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
-            if (!playing) controls = true
+            val previouslyPlaying = playing
+            val actualPosition = video?.position() ?: 0
+            position = video?.seekPosition() ?: actualPosition; duration = video?.duration() ?: 0; playing = video?.isPlaying() == true
+            watchTracker?.sample(actualPosition, playing && video?.isSeeking() != true && seeking == null && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
+            if (previouslyPlaying && !playing) controls = true
             delay(300)
         }
     }
@@ -96,7 +101,7 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
         if (controls && playing && seeking == null && !speedMenu && !nextPrompt) { delay(4_000); controls = false }
     }
     LaunchedEffect(seekHintSequence) {
-        if (seekHint != null) { delay(900); seekHint = null }
+        if (seekHint != null) { delay(1100); seekHint = null }
     }
     val playerColors = darkColorScheme(primary = Color(0xFFFFBC72), onPrimary = Color(0xFF39220D), surface = Color(0xFF182235))
     MaterialTheme(colorScheme = playerColors, typography = MaterialTheme.typography) {
@@ -104,8 +109,14 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
             AndroidView(modifier = Modifier.fillMaxSize(), factory = { context ->
                 ZoomVideoView(context, file, position,
                     onReady = { prepared = true; video?.setSpeed(speed) }, onError = { error = true; controls = true },
-                    onTap = { controls = !controls; interaction++ }, onZoom = { zoom = it },
-                    onDoubleTapSeek = { delta -> seekBy(delta); seekHint = delta; seekHintSequence++ },
+                    onTap = { controls = !controls; interaction++ }, onZoom = { zoom = it; controls = false; interaction++ },
+                    onDoubleTapSeek = { delta ->
+                        if (seekBy(delta)) {
+                            seekHint = if (seekHint != null && (seekHint!! > 0) == (delta > 0))
+                                (seekHint!!.toLong() + delta).coerceIn(-3600000, 3600000).toInt() else delta
+                            seekHintSequence++
+                        }
+                    },
                     onCompleted = {
                         position = video?.duration() ?: duration
                         playing = false; completed = true; controls = true
@@ -116,9 +127,9 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
                     }
             })
             seekHint?.let { delta ->
-                Surface(Modifier.align(if (delta > 0) androidx.compose.ui.AbsoluteAlignment.CenterRight else androidx.compose.ui.AbsoluteAlignment.CenterLeft).padding(horizontal = 48.dp),
-                    color = Color(0xCC182235), shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)) {
-                    Text(if (delta > 0) "۵ ثانیه جلو »" else "« ۵ ثانیه عقب", Modifier.padding(18.dp), color = Color.White)
+                key(seekHintSequence) {
+                    PlayerSeekFeedback(delta, Modifier.align(if (delta > 0) androidx.compose.ui.AbsoluteAlignment.CenterRight else androidx.compose.ui.AbsoluteAlignment.CenterLeft)
+                        .fillMaxWidth(.5f).fillMaxHeight())
                 }
             }
             if (!prepared && !error) CircularProgressIndicator(Modifier.align(Alignment.Center))

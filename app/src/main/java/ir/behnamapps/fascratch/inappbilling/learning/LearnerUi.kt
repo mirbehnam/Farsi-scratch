@@ -103,9 +103,10 @@ import kotlinx.coroutines.launch
     BoxWithConstraints(modifier, contentAlignment = Alignment.TopCenter) {
         // The plaque has fixed artwork dimensions. Do not inherit the button's much
         // taller line-height/font padding, which clips the glyphs in this small slot.
-        val badgeFontSize = (maxWidth.value * (if (level < 1000) .15f else .12f) / LocalDensity.current.fontScale).sp
+        val badgeFontSize = (maxWidth.value * (if (level < 1000) .20f else .16f) / LocalDensity.current.fontScale).sp
         Image(painterResource(R.drawable.learner_level_badge), contentDescription = null, modifier = Modifier.fillMaxSize())
-        Box(Modifier.offset(y = maxHeight * .72f).width(maxWidth * .68f).height(maxHeight * .20f),
+        // Updated artwork has a taller plaque spanning roughly 60–90% of the badge.
+        Box(Modifier.offset(y = maxHeight * .60f).width(maxWidth * .80f).height(maxHeight * .30f),
             contentAlignment = Alignment.Center) {
             Text("سطح ${persianDisplay(level.toString())}", color = Color(0xFFFFD44F), fontWeight = FontWeight.Black,
                 style = MaterialTheme.typography.labelSmall.copy(fontSize = badgeFontSize,

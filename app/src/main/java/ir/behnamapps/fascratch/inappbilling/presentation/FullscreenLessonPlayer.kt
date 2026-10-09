@@ -28,7 +28,8 @@ import java.io.File
 import java.util.Locale
 
 @Composable
-internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, onClose: () -> Unit) {
+internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, onClose: () -> Unit,
+    watchTracker: ir.behnamapps.fascratch.inappbilling.learning.WatchTracker? = null) {
     var video by remember(file) { mutableStateOf<ZoomVideoView?>(null) }
     var prepared by remember(file) { mutableStateOf(false) }
     var error by remember(file) { mutableStateOf(false) }
@@ -49,6 +50,7 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
         bars.hide(WindowInsetsCompat.Type.systemBars())
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         onDispose {
+            watchTracker?.finish()
             video?.release()
             bars.systemBarsBehavior = oldBehavior
             if (barsWereVisible) bars.show(WindowInsetsCompat.Type.systemBars())
@@ -58,7 +60,7 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
     }
     DisposableEffect(lifecycle) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_PAUSE) { video?.setForeground(false); playing = false; controls = true }
+            if (event == Lifecycle.Event.ON_PAUSE) { watchTracker?.discontinuity(); video?.setForeground(false); playing = false; controls = true }
             if (event == Lifecycle.Event.ON_RESUME) video?.setForeground(true)
         }
         lifecycle.addObserver(observer)
@@ -67,6 +69,7 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
     LaunchedEffect(video, prepared) {
         while (prepared) {
             position = video?.position() ?: 0; duration = video?.duration() ?: 0; playing = video?.isPlaying() == true
+            watchTracker?.sample(position, playing && seeking == null && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
             if (!playing) controls = true
             delay(300)
         }
@@ -104,14 +107,14 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
                     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                         Slider(value = seeking ?: position.toFloat().coerceIn(0f, duration.coerceAtLeast(1).toFloat()),
                             onValueChange = { seeking = it; interaction++ }, onValueChangeFinished = {
-                                seeking?.let { video?.seek(it.toInt()); position = it.toInt() }; seeking = null; interaction++
+                                watchTracker?.discontinuity(); seeking?.let { video?.seek(it.toInt()); position = it.toInt() }; seeking = null; interaction++
                             }, valueRange = 0f..duration.coerceAtLeast(1).toFloat(), enabled = prepared && duration > 0,
                             modifier = Modifier.fillMaxWidth().height(32.dp))
                     }
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                        TextButton(onClick = { video?.seek(position - 10_000); interaction++ }, enabled = prepared) { Text("۱۰ ثانیه عقب") }
+                        TextButton(onClick = { watchTracker?.discontinuity(); video?.seek(position - 10_000); interaction++ }, enabled = prepared) { Text("۱۰ ثانیه عقب") }
                         FilledTonalButton(onClick = { video?.toggle(); playing = video?.isPlaying() == true; interaction++ }, enabled = prepared) { Text(if (playing) "توقف" else "پخش") }
-                        TextButton(onClick = { video?.seek(position + 10_000); interaction++ }, enabled = prepared) { Text("۱۰ ثانیه جلو") }
+                        TextButton(onClick = { watchTracker?.discontinuity(); video?.seek(position + 10_000); interaction++ }, enabled = prepared) { Text("۱۰ ثانیه جلو") }
                         Spacer(Modifier.width(16.dp))
                         Text(persianDisplay("${playbackTime(position)} / ${playbackTime(duration)}"), color = Color.White, style = MaterialTheme.typography.labelMedium)
                     }

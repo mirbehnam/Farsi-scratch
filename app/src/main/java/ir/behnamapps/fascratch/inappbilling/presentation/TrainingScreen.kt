@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import ir.behnamapps.fascratch.BuildConfig
 import ir.behnamapps.fascratch.inappbilling.domain.*
 import java.util.Locale
+import ir.behnamapps.fascratch.inappbilling.learning.*
 
 private val Ink = Color(0xFF183F38)
 private val Muted = Color(0xFF5D6C65)
@@ -42,12 +43,20 @@ private enum class LessonFilter { ALL, PREVIEW, DOWNLOADED }
 internal fun TrainingScreen(state: TrainingState, controller: TrainingController, onBack: () -> Unit, onPlay: (Lesson) -> Unit) {
     val context = LocalContext.current
     var pendingPurchase by remember { mutableStateOf<Pair<Course, Boolean>?>(null) }
+    var showProfile by remember { mutableStateOf(false) }
+    val learning = controller.learning
+    val profiles by learning?.profiles?.collectAsState() ?: remember { mutableStateOf(emptyMap<String, LearnerProfile>()) }
+    val selectedProfile = profiles[LearningIdentity.KEY]
     TrainingContent(state, onBack, { controller.load() }, { controller.select(it) },
         { course, restore ->
             if (purchaseNetworkAvailable(context)) controller.purchase(restore, course)
             else pendingPurchase = course to restore
         }, { controller.download(it) },
-        controller::cancelDownload, onPlay, controller::refreshPrices, controller::catalogReady, controller::catalogFailed)
+        controller::cancelDownload, onPlay, controller::refreshPrices, controller::catalogReady, controller::catalogFailed,
+        learnerHeader = { selectedProfile?.let { LearnerChip(it) { showProfile = true } } },
+        learnerCelebration = { if (state.course != null && selectedProfile != null && learning != null) LevelCelebration(state.course.id, selectedProfile, learning) })
+    if (showProfile && selectedProfile != null && learning != null)
+        LearnerDialog(state.course, selectedProfile, learning) { showProfile = false }
     pendingPurchase?.let { pending ->
         AlertDialog(onDismissRequest = { pendingPurchase = null }, shape = RoundedCornerShape(24.dp),
             containerColor = Color.White,
@@ -70,7 +79,8 @@ internal fun TrainingContent(
     state: TrainingState, onBack: () -> Unit, onRefresh: () -> Unit, onSelect: (Course) -> Unit,
     onPurchase: (Course, Boolean) -> Unit, onDownload: (Lesson) -> Unit,
     onCancelDownload: () -> Unit, onPlay: (Lesson) -> Unit, onRefreshPrices: () -> Unit = onRefresh,
-    onCatalogReady: (CatalogLayout) -> Unit = {}, onCatalogFailed: (CatalogLayout) -> Unit = {}
+    onCatalogReady: (CatalogLayout) -> Unit = {}, onCatalogFailed: (CatalogLayout) -> Unit = {},
+    learnerHeader: @Composable () -> Unit = {}, learnerCelebration: @Composable () -> Unit = {}
 ) {
     var filter by rememberSaveable(state.course?.id) { mutableStateOf(LessonFilter.ALL) }
     var optionsExpanded by remember(state.course?.id) { mutableStateOf(false) }
@@ -89,6 +99,7 @@ internal fun TrainingContent(
                 }
             }
             if (state.busy && state.downloadingId == null) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+            learnerHeader()
             Box {
                 IconButton(onClick = { optionsExpanded = true }, modifier = Modifier.semantics { contentDescription = "گزینه‌های بیشتر" }) {
                     Text("⋮", fontSize = 28.sp, color = Ink)
@@ -111,6 +122,7 @@ internal fun TrainingContent(
                 }
             }
         }
+        learnerCelebration()
         // Bound long server messages so retry/details remain reachable on short displays.
         state.message?.let { message ->
             Surface(Modifier.fillMaxWidth().padding(bottom = 8.dp), shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.errorContainer) {

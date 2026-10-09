@@ -24,7 +24,8 @@ data class TrainingState(
 /** Catalog and per-course access stay separate. Store outages never block free previews. */
 class TrainingController(
     private val scope: CoroutineScope, private val billing: BillingGateway, private val api: CourseApi,
-    private val vault: PurchaseVault, private val cache: CourseCache, private val downloads: LessonDownloads
+    private val vault: PurchaseVault, private val cache: CourseCache, private val downloads: LessonDownloads,
+    val learning: ir.behnamapps.fascratch.inappbilling.learning.LearningRepository? = null
 ) {
     private val mutable = MutableStateFlow(TrainingState(catalogCacheLoaded = false))
     val state = mutable.asStateFlow()
@@ -121,6 +122,7 @@ class TrainingController(
     }
 
     private fun updateAccess(course: Course, enabled: Boolean) {
+        if (enabled) learning?.prepare(course)
         mutable.update { it.copy(purchasedIds = if (enabled) it.purchasedIds + course.id else it.purchasedIds - course.id,
             purchased = if (it.course?.id == course.id) enabled else it.purchased) }
     }
@@ -170,6 +172,7 @@ class TrainingController(
     }
 
     private fun show(course: Course, lessons: List<Lesson>) {
+        learning?.prepare(course)
         mutable.update { it.copy(course = course, lessons = lessons, purchased = vault.wasVerified(course.id), price = it.prices[course.id],
             downloaded = lessons.filter { lesson -> downloads.completed(lesson) != null }.map { lesson -> lesson.id }.toSet()) }
     }
@@ -230,6 +233,7 @@ class TrainingController(
     }
     fun playable(lesson: Lesson): File? = if (lesson.courseId == state.value.course?.id &&
         CoursePolicy.canLearn(lesson, state.value.purchased)) downloads.completed(lesson) else null
+    fun watchTracker(lesson: Lesson) = state.value.course?.let { learning?.tracker(it, lesson) }
     fun cancelDownload() { if (state.value.downloadingId != null) activeJob?.cancel() }
 
     private fun action(courseId: String? = state.value.course?.id, block: suspend () -> Unit) {

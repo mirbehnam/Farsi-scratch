@@ -10,7 +10,8 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import javax.net.ssl.HttpsURLConnection
 
-class CourseApi : PurchaseBackend {
+class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
+    private val identity = context?.let { ir.behnamapps.fascratch.inappbilling.learning.LearningIdentity.get(it) }
     private val base = BuildConfig.COURSE_API_BASE.trimEnd('/')
 
     /** Separate, short, anonymous request: layout failure never fails the actual catalog. */
@@ -38,6 +39,7 @@ class CourseApi : PurchaseBackend {
             connectTimeout = 15_000; readTimeout = 30_000; instanceFollowRedirects = false
             useCaches = false
             setRequestProperty("Accept", "application/json")
+            identity?.let { setRequestProperty("X-Scratch-Account", it.secret()) }
             if (token != null) {
                 require(token.matches(Regex("[a-f0-9]{64}")))
                 setRequestProperty("Authorization", "Bearer $token")
@@ -152,11 +154,26 @@ class CourseApi : PurchaseBackend {
         val response = request("purchases/${if (restore) "restore" else "verify"}", body = JSONObject()
             .put("provider", provider).put("sku", receipt.sku).put("purchase_token", receipt.token)).getJSONObject("data")
         if (response.optString("status") != "verified" || !response.optBoolean("has_access")) throw CourseFailure("خرید هنوز تأیید نشده است.")
+        identity?.accept(response.optJSONObject("account"))
         val token = response.getString("access_token")
         require(token.matches(Regex("[a-f0-9]{64}")))
         val expiry = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US).apply { isLenient = false }.parse(response.getString("expires_at"))
             ?: throw CourseFailure("زمان اعتبار پاسخ معتبر نیست.")
         return CourseAccess(CoursePolicy.uuid(response.getString("course_uuid")), token, expiry.time)
+    }
+
+    suspend fun learning(path: String, token: String? = null, body: JSONObject? = null): JSONObject =
+        request("learning/$path", token, body).getJSONObject("data")
+
+    suspend fun account(): JSONObject {
+        val id = identity ?: error("Account context is required")
+        val profile = try { request("accounts/me").getJSONObject("data") }
+        catch (failure: CourseFailure) {
+            if (failure.status != 401) throw failure
+            request("accounts/register", body = JSONObject().put("secret", id.secret())).getJSONObject("data")
+        }
+        id.accept(JSONObject().put("profile", profile))
+        return profile
     }
 }
 

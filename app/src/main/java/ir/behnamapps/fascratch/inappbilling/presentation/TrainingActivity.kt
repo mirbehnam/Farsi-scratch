@@ -30,8 +30,10 @@ class TrainingActivity : ComponentActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         hideSystemBars()
         billing = StoreBillingFactory.create(this)
-        val api = CourseApi()
-        val controller = TrainingController(lifecycleScope, billing, api, PurchaseVault(this), CourseCache(this), LessonDownloads(this, api))
+        val api = CourseApi(this)
+        ir.behnamapps.fascratch.inappbilling.learning.LearningRepository.get(this).visit()
+        val controller = TrainingController(lifecycleScope, billing, api, PurchaseVault(this), CourseCache(this), LessonDownloads(this, api),
+            ir.behnamapps.fascratch.inappbilling.learning.LearningRepository.get(this))
         setContent {
             val state by controller.state.collectAsState()
             var playing by remember { mutableStateOf<PlayingLesson?>(null) }
@@ -55,9 +57,9 @@ class TrainingActivity : ComponentActivity() {
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl, LocalTextStyle provides LocalTextStyle.current.copy(fontFamily = font)) {
                     BackHandler(playing != null) { playing = null }
                     BackHandler(playing == null && state.course != null) { controller.backToCatalog() }
-                    if (playing != null) FullscreenLessonPlayer(playing!!.file, playing!!.title, window, onClose = { playing = null })
+                    if (playing != null) FullscreenLessonPlayer(playing!!.file, playing!!.title, window, onClose = { playing = null }, watchTracker = playing!!.tracker)
                     else TrainingScreen(state, controller, onBack = { if (!controller.backToCatalog()) finish() }, onPlay = { lesson ->
-                        controller.playable(lesson)?.let { playing = PlayingLesson(it, lesson.title) }
+                        controller.playable(lesson)?.let { playing = PlayingLesson(it, lesson.title, controller.watchTracker(lesson)) }
                     })
                 }
             }
@@ -77,4 +79,4 @@ class TrainingActivity : ComponentActivity() {
     }
 }
 
-private data class PlayingLesson(val file: File, val title: String)
+private data class PlayingLesson(val file: File, val title: String, val tracker: ir.behnamapps.fascratch.inappbilling.learning.WatchTracker?)

@@ -213,6 +213,11 @@ class MainActivity : ComponentActivity() {
         setContent { FarsiScratchApp(this) }
     }
 
+    override fun onStart() {
+        super.onStart()
+        ir.behnamapps.fascratch.inappbilling.learning.LearningRepository.get(this).visit()
+    }
+
     fun requestNotificationPermission(onResult: (Boolean) -> Unit) {
         val needsPermission =
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&

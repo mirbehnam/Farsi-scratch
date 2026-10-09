@@ -4,6 +4,7 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.CAMERA" />
@@ -23,6 +24,7 @@
         android:supportsRtl="true"
         android:hardwareAccelerated="true"
         android:theme="@style/Theme.FarsiScratch">
+        <service android:name=".inappbilling.learning.LearningSyncJob" android:permission="android.permission.BIND_JOB_SERVICE" android:exported="false" />
 
         <activity android:name=".inappbilling.presentation.TrainingActivity"
             android:exported="false" android:screenOrientation="landscape" />

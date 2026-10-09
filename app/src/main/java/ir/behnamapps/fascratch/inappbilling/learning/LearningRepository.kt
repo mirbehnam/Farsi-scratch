@@ -47,6 +47,8 @@ class LearningRepository private constructor(context: Context) {
     private val knownCourses = java.util.concurrent.ConcurrentHashMap<String, Course>()
     private val lastPrepare = java.util.concurrent.ConcurrentHashMap<String, Long>()
     private var foregroundSync: Job? = null
+    private var lastSyncAttempt = -10_000L
+    private var lastProfileAttempt = -10_000L
     private val mutableStatus = MutableStateFlow<String?>(null)
     val status = mutableStatus.asStateFlow()
     private fun failure(error: Exception) {
@@ -55,7 +57,13 @@ class LearningRepository private constructor(context: Context) {
     }
     init { scope.launch { mutex.withLock { mutable.value = store.profiles() }; if (store.pending().isNotEmpty()) schedule() } }
     fun visit() { scope.launch {
-        mutex.withLock { try { api.account(); mutableStatus.value = null } catch (e: CancellationException) { throw e } catch (e: Exception) { failure(e) }; mutable.value = store.profiles() }
+        mutex.withLock {
+            if (SystemClock.elapsedRealtime() - lastProfileAttempt >= 10_000) {
+                lastProfileAttempt = SystemClock.elapsedRealtime()
+                try { api.account(); mutableStatus.value = null } catch (e: CancellationException) { throw e } catch (e: Exception) { failure(e) }
+            }
+            mutable.value = store.profiles()
+        }
         if (store.pending().isNotEmpty()) flushNow()
     } }
     fun refreshProfile() { visit(); flushNow() }
@@ -133,7 +141,7 @@ class LearningRepository private constructor(context: Context) {
     internal fun recorded() {
         schedule()
         synchronized(this) {
-            if (foregroundSync?.isActive != true) foregroundSync = scope.launch { delay(30_000); sendPending() }
+            if (foregroundSync?.isActive != true) foregroundSync = scope.launch { delay(120_000); sendPending() }
         }
     }
     private suspend fun sendPending() {
@@ -156,9 +164,14 @@ class LearningRepository private constructor(context: Context) {
     }
     suspend fun sync(): Boolean = withContext(Dispatchers.IO) {
         mutex.withLock {
+            // Lifecycle actions sync immediately, but near-simultaneous callbacks share a cooldown.
+            if (store.pending().isEmpty()) return@withLock false
+            val elapsed = SystemClock.elapsedRealtime()
+            if (elapsed - lastSyncAttempt < 10_000) return@withLock true
+            lastSyncAttempt = elapsed
             var sent = 0
             for ((course, grantId) in store.pending()) {
-                while (sent < 6) {
+                while (sent < 1) {
                     val grant = store.grant("grant:$grantId:$course") ?: break
                     val rows = store.batch(course, grantId)
                     if (rows.isEmpty()) break
@@ -194,8 +207,8 @@ class LearningRepository private constructor(context: Context) {
         val scheduler = app.getSystemService(JobScheduler::class.java)
         if (scheduler.getPendingJob(JOB_ID) != null) return
         scheduler.schedule(JobInfo.Builder(JOB_ID, ComponentName(app, LearningSyncJob::class.java))
-            .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setMinimumLatency(30_000).setPersisted(true)
-            .setBackoffCriteria(30_000, JobInfo.BACKOFF_POLICY_EXPONENTIAL).build())
+            .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setMinimumLatency(120_000).setPersisted(true)
+            .setBackoffCriteria(120_000, JobInfo.BACKOFF_POLICY_EXPONENTIAL).build())
     }
     companion object {
         const val JOB_ID = 7312

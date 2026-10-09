@@ -160,6 +160,7 @@ class TrainingController(
     }
 
     fun refreshPrices() {
+        learning?.refreshProfile()
         priceRefresher.refresh(state.value.course?.let { listOf(it) } ?: state.value.courses)
     }
 
@@ -182,6 +183,7 @@ class TrainingController(
         if (state.value.busy) return true
         mutable.update { it.copy(course = null, lessons = emptyList(), downloaded = emptySet(), message = null) }
         refreshCatalogLayout()
+        learning?.refreshProfile()
         return true
     }
 
@@ -254,7 +256,10 @@ class TrainingController(
                 mutable.update { it.copy(message = error.userMessage) }
             }
             catch (_: Exception) { mutable.update { it.copy(message = "عملیات کامل نشد؛ اینترنت، فضای ذخیره‌سازی و تنظیمات دوره را بررسی کنید.") } }
-            finally { mutable.update { it.copy(busy = false, downloadingId = null, progress = 0f) } }
+            finally {
+                mutable.update { it.copy(busy = false, downloadingId = null, progress = 0f) }
+                learning?.refreshProfile()
+            }
         }
     }
 }

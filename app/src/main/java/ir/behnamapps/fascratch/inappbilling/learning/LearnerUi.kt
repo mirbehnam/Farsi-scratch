@@ -2,6 +2,7 @@ package ir.behnamapps.fascratch.inappbilling.learning
 
 import androidx.compose.animation.*
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -46,8 +47,13 @@ import kotlinx.coroutines.launch
 @Composable fun LearnerChip(profile: LearnerProfile, onClick: () -> Unit) {
     TextButton(onClick = onClick, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            CatAvatar(Modifier.size(30.dp))
-            Text(persianDisplay(profile.level.toString()), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Surface(shape = CircleShape, border = BorderStroke(2.dp, Color(0xFF26795A)), color = Color.White) {
+                CatAvatar(Modifier.padding(3.dp).size(32.dp))
+            }
+            Surface(shape = RoundedCornerShape(7.dp), color = Color(0xFF26795A), shadowElevation = 2.dp) {
+                Text(persianDisplay(profile.level.toString()), Modifier.padding(horizontal = 10.dp, vertical = 1.dp),
+                    color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
         }
     }
 }
@@ -60,11 +66,14 @@ import kotlinx.coroutines.launch
     val counts = repository.allCounts()
     val syncStatus by repository.status.collectAsState()
     var editingName by remember(profile.uuid) { mutableStateOf(false) }
-    AlertDialog(onDismissRequest = onClose, shape = RoundedCornerShape(24.dp),
+    AlertDialog(onDismissRequest = onClose, shape = RoundedCornerShape(28.dp), containerColor = Color(0xFFFAFCF9),
         title = { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            CatAvatar(Modifier.size(52.dp)); Column { Text("پروفایل یادگیری", fontWeight = FontWeight.Bold); Text("لول ${persianDisplay(profile.level.toString())}", style = MaterialTheme.typography.titleMedium) }
+            Surface(shape = CircleShape, border = BorderStroke(2.dp, Color(0xFF26795A)), color = Color.White) {
+                CatAvatar(Modifier.padding(5.dp).size(52.dp))
+            }
+            Column { Text(profile.name, fontWeight = FontWeight.Bold); Text("هنرجو · لول ${persianDisplay(profile.level.toString())}", color = Color(0xFF26795A), style = MaterialTheme.typography.titleMedium) }
         } },
-        text = { Column(Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        text = { Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 ProfileStat("مشاهده واقعی", "${persianDisplay((profile.watchMs / 3600000).toString())} ساعت و ${persianDisplay((profile.watchMs / 60000 % 60).toString())} دقیقه", Modifier.weight(1f))
                 ProfileStat("آخرین رتبه ثبت‌شده", profile.rank?.let { persianDisplay(it.toString()) } ?: "—", Modifier.weight(1f))
@@ -83,12 +92,11 @@ import kotlinx.coroutines.launch
                 }
             }
             Text("${persianDisplay(kotlin.math.ceil(profile.xpForNext - profile.xpIntoLevel).toInt().toString())} امتیاز تا لول بعد", style = MaterialTheme.typography.bodySmall)
-            Text(profile.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             OutlinedButton(onClick = { editingName = true; error = null }, modifier = Modifier.fillMaxWidth()) {
                 Text(if (profile.nameSet) "تغییر نام کاربری" else "ثبت نام کاربری")
             }
             if (editingName) {
-                Text("ثبت اولیه رایگان است؛ در هر ۳۰ روز فقط سه بار می‌توانید نام را تغییر دهید. " +
+                Text("در هر ۳۰ روز فقط سه بار می‌توانید نام را تغییر دهید. " +
                     "تغییرهای باقی‌مانده: " + persianDisplay(profile.nameChangesLeft.toString()),
                     color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
                 OutlinedTextField(value = name, onValueChange = { if (it.length <= 30) name = it },

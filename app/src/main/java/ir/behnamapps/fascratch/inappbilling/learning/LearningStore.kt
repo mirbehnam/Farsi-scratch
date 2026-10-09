@@ -18,13 +18,16 @@ import javax.crypto.spec.GCMParameterSpec
 
 /** Private, excluded from backup; the grant capability is encrypted with a per-install key. */
 internal class LearningStore(context: Context) : SQLiteOpenHelper(context,
-    File(context.noBackupFilesDir, "learning-${BuildConfig.FLAVOR}.sqlite").absolutePath, null, 1) {
+    File(context.noBackupFilesDir, "learning-${BuildConfig.FLAVOR}.sqlite").absolutePath, null, 2) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE accounts(course TEXT PRIMARY KEY, profile TEXT, grant_data TEXT, celebration INTEGER DEFAULT 0)")
-        db.execSQL("CREATE TABLE events(id TEXT PRIMARY KEY, course TEXT NOT NULL, grant_id TEXT NOT NULL, payload TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', reason TEXT)")
+        db.execSQL("CREATE TABLE events(id TEXT PRIMARY KEY, course TEXT NOT NULL, grant_id TEXT NOT NULL, payload TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', reason TEXT, attempted INTEGER NOT NULL DEFAULT 0)")
         db.execSQL("CREATE INDEX pending_learning ON events(status,course,grant_id)")
     }
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        // Existing receipts may have reached the server even without an ACK; freeze them.
+        if (oldVersion < 2) db.execSQL("ALTER TABLE events ADD COLUMN attempted INTEGER NOT NULL DEFAULT 1")
+    }
     private fun key(): SecretKey {
         val alias = "scratch-learning-${BuildConfig.FLAVOR}"
         val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
@@ -83,17 +86,38 @@ internal class LearningStore(context: Context) : SQLiteOpenHelper(context,
         writableDatabase.update("accounts", ContentValues().apply { put("celebration", 0) }, "course=?", arrayOf(course))
     }
     @Synchronized fun add(course: String, grant: String, event: JSONObject) {
+        val previous = writableDatabase.rawQuery("SELECT payload FROM events WHERE course=? AND grant_id=? AND status='pending' AND attempted=0 ORDER BY rowid DESC LIMIT 1", arrayOf(course, grant)).use {
+            if (it.moveToFirst()) JSONObject(it.getString(0)) else null
+        }
+        if (previous != null && previous.getString("lesson_uuid") == event.getString("lesson_uuid") &&
+            previous.getInt("version") == event.getInt("version") && WatchEventMergePolicy.canMerge(
+                previous.getLong("started_ms"), previous.getLong("ended_ms"), event.getLong("started_ms"), event.getLong("ended_ms"),
+                previous.getLong("watch_ms"), event.getLong("watch_ms"), previous.getLong("to_ms"), event.getLong("from_ms"))) {
+            previous.put("ended_ms", event.getLong("ended_ms")).put("to_ms", event.getLong("to_ms"))
+                .put("watch_ms", previous.getLong("watch_ms") + event.getLong("watch_ms"))
+            writableDatabase.update("events", ContentValues().apply { put("payload", previous.toString()) }, "id=?", arrayOf(previous.getString("uuid")))
+            return
+        }
         writableDatabase.insertOrThrow("events", null, ContentValues().apply {
-            put("id", event.getString("uuid")); put("course", course); put("grant_id", grant); put("payload", event.toString())
+            put("id", event.getString("uuid")); put("course", course); put("grant_id", grant); put("payload", event.toString()); put("attempted", 0)
         })
     }
     @Synchronized fun pending(): List<Pair<String, String>> = readableDatabase.rawQuery(
         "SELECT course,grant_id FROM events WHERE status='pending' GROUP BY course,grant_id ORDER BY MIN(rowid)", null).use { cursor ->
         buildList { while (cursor.moveToNext()) add(cursor.getString(0) to cursor.getString(1)) }
     }
-    @Synchronized fun batch(course: String, grant: String): List<JSONObject> = readableDatabase.rawQuery(
-        "SELECT payload FROM events WHERE course=? AND grant_id=? AND status='pending' ORDER BY rowid LIMIT 60", arrayOf(course, grant)).use { cursor ->
-        buildList { while (cursor.moveToNext()) add(JSONObject(cursor.getString(0))) }
+    @Synchronized fun batch(course: String, grant: String): List<JSONObject> {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val rows = db.rawQuery("SELECT payload FROM events WHERE course=? AND grant_id=? AND status='pending' ORDER BY rowid LIMIT 60", arrayOf(course, grant)).use { cursor ->
+                buildList { while (cursor.moveToNext()) add(JSONObject(cursor.getString(0))) }
+            }
+            // Freeze BEFORE networking: an uncertain HTTP result must retry the exact same body.
+            rows.forEach { db.update("events", ContentValues().apply { put("attempted", 1) }, "id=?", arrayOf(it.getString("uuid"))) }
+            db.setTransactionSuccessful()
+            return rows
+        } finally { db.endTransaction() }
     }
     @Synchronized fun acknowledge(id: String, status: String, reason: String?) {
         if (status == "accepted") writableDatabase.delete("events", "id=?", arrayOf(id))

@@ -47,13 +47,14 @@ internal fun TrainingScreen(state: TrainingState, controller: TrainingController
     val learning = controller.learning
     val profiles by learning?.profiles?.collectAsState() ?: remember { mutableStateOf(emptyMap<String, LearnerProfile>()) }
     val selectedProfile = profiles[LearningIdentity.KEY]
+    LaunchedEffect(state.course?.id, state.courses.map { it.id }) { learning?.refreshProfile() }
     TrainingContent(state, onBack, { controller.load() }, { controller.select(it) },
         { course, restore ->
             if (purchaseNetworkAvailable(context)) controller.purchase(restore, course)
             else pendingPurchase = course to restore
         }, { controller.download(it) },
         controller::cancelDownload, onPlay, controller::refreshPrices, controller::catalogReady, controller::catalogFailed,
-        learnerHeader = { selectedProfile?.let { LearnerChip(it) { showProfile = true } } },
+        learnerHeader = { selectedProfile?.let { LearnerChip(it) { learning?.refreshProfile(); showProfile = true } } },
         learnerCelebration = { if (state.course != null && selectedProfile != null && learning != null) LevelCelebration(state.course.id, selectedProfile, learning) })
     if (showProfile && selectedProfile != null && learning != null)
         LearnerDialog(state.course, selectedProfile, learning) { showProfile = false }
@@ -89,8 +90,6 @@ internal fun TrainingContent(
     Column(Modifier.fillMaxSize().background(Paper).windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 16.dp)) {
         Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TextButton(onClick = onBack) { Text(if (state.course == null) "بازگشت" else "همهٔ دوره‌ها") }
-            Text(persian(state.course?.title ?: "آکادمی اسکرچ فارسی"), Modifier.weight(1f), fontWeight = FontWeight.Bold,
-                color = Ink, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (state.course != null) {
                 Row(Modifier.widthIn(max = 340.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     FilterChip(selected = filter == LessonFilter.ALL, onClick = { filter = LessonFilter.ALL }, label = { Text("همهٔ درس‌ها") })
@@ -100,6 +99,8 @@ internal fun TrainingContent(
             }
             if (state.busy && state.downloadingId == null) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
             learnerHeader()
+            Text(persian(state.course?.title ?: "آکادمی اسکرچ فارسی"), Modifier.weight(1f), fontWeight = FontWeight.Bold,
+                color = Ink, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Box {
                 IconButton(onClick = { optionsExpanded = true }, modifier = Modifier.semantics { contentDescription = "گزینه‌های بیشتر" }) {
                     Text("⋮", fontSize = 28.sp, color = Ink)

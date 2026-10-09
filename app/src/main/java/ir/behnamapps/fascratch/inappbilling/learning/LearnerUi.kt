@@ -4,6 +4,7 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -28,6 +29,10 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ir.behnamapps.fascratch.inappbilling.domain.Course
@@ -56,8 +61,12 @@ import kotlinx.coroutines.launch
 }
 
 @Composable fun LearnerChip(profile: LearnerProfile, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    TextButton(onClick = onClick, modifier = modifier, contentPadding = PaddingValues(0.dp)) {
-        LearnerLevelBadge(profile.level, Modifier.size(76.dp))
+    // Material TextButton clips content to its capsule shape. The artwork is not
+    // capsule-shaped: use a rectangular, unclipped hit target with a safety inset.
+    Box(modifier.size(84.dp)
+        .semantics { contentDescription = "پروفایل هنرجو، سطح ${persianDisplay(profile.level.toString())}" }
+        .clickable(role = Role.Button, onClick = onClick).padding(4.dp), contentAlignment = Alignment.Center) {
+        LearnerLevelBadge(profile.level, Modifier.fillMaxSize())
     }
 }
 
@@ -81,7 +90,7 @@ import kotlinx.coroutines.launch
     val visible = resumed && delayFinished && profile != null
     val opacity by androidx.compose.animation.core.animateFloatAsState(
         if (visible) 1f else 0f, animationSpec = androidx.compose.animation.core.tween(450), label = "learner-badge-fade")
-    Box(Modifier.size(76.dp), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(84.dp), contentAlignment = Alignment.Center) {
         // No invisible focus target or click handler during the two-second delay.
         if (visible) LearnerChip(profile, Modifier.graphicsLayer { alpha = opacity }, onClick)
     }
@@ -104,7 +113,8 @@ import kotlinx.coroutines.launch
         // The plaque has fixed artwork dimensions. Do not inherit the button's much
         // taller line-height/font padding, which clips the glyphs in this small slot.
         val badgeFontSize = (maxWidth.value * (if (level < 1000) .20f else .16f) / LocalDensity.current.fontScale).sp
-        Image(painterResource(R.drawable.learner_level_badge), contentDescription = null, modifier = Modifier.fillMaxSize())
+        Image(painterResource(R.drawable.learner_level_badge), contentDescription = null,
+            contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
         // Updated artwork has a taller plaque spanning roughly 60–90% of the badge.
         Box(Modifier.offset(y = maxHeight * .60f).width(maxWidth * .80f).height(maxHeight * .30f),
             contentAlignment = Alignment.Center) {

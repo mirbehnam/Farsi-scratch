@@ -159,14 +159,27 @@ import kotlinx.coroutines.launch
                     Column(Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(if (profile.name == "هنرجو") "برنامه‌نویس" else profile.name,
+                                modifier = Modifier.weight(1f, fill = false), maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                 fontWeight = FontWeight.Bold, style = MaterialTheme.typography.headlineSmall)
                             if (profile.nameBlocked) Text(" ⛔", color = Color(0xFFBA2525), modifier = Modifier.semantics { contentDescription = "نام نمایشی مسدود است" })
-                            IconButton(onClick = { editing = true }, modifier = Modifier.semantics { contentDescription = "ویرایش نام نمایشی" }) {
-                                Text("✎", fontSize = 26.sp, color = Color(0xFF855CD6))
+                            if (profile.nameSet) {
+                                IconButton(onClick = { editing = true }, modifier = Modifier.semantics { contentDescription = "ویرایش نام نمایشی" }) {
+                                    Text("✎", fontSize = 26.sp, color = Color(0xFF855CD6))
+                                }
+                            } else {
+                                FilledTonalButton(onClick = { editing = true }, shape = RoundedCornerShape(12.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)) {
+                                    Text("ثبت نام", fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
                         Text("برنامه‌نویس", color = Color(0xFF746584), style = MaterialTheme.typography.labelLarge)
                         profile.fullName?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                    }
+                    FilledTonalButton(onClick = { showPointsGuide = true }, shape = RoundedCornerShape(14.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)) {
+                        Text("✨ راهنمای کسب امتیاز", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
                     }
                     IconButton(onClick = onClose, modifier = Modifier.semantics { contentDescription = "بستن پروفایل" }) {
                         Text("×", fontSize = 30.sp)
@@ -187,9 +200,6 @@ import kotlinx.coroutines.launch
                     }
                 }
                 if (!profile.nameSet && !profile.nameBlocked) Text("برای حضور در رتبه‌بندی، نام نمایشی ثبت کنید.", style = MaterialTheme.typography.bodySmall)
-                FilledTonalButton(onClick = { showPointsGuide = true }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
-                    Text("✨ راهنمای کسب امتیاز", fontWeight = FontWeight.Bold)
-                }
                 val purchased = profile.courses.filter { it.purchased }
                 if (purchased.isNotEmpty()) {
                     Text("دوره‌های خریداری‌شده", fontWeight = FontWeight.Bold)

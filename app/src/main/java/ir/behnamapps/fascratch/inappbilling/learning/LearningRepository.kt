@@ -17,12 +17,19 @@ import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
 
+data class LearnerCourse(val uuid: String, val title: String, val watchMs: Long, val purchased: Boolean, val enabled: Boolean)
 data class LearnerProfile(val uuid: String, val name: String, val level: Int, val watchMs: Long,
-    val xpIntoLevel: Double, val xpForNext: Double, val rank: Int?, val enabled: Boolean) {
+    val xpIntoLevel: Double, val xpForNext: Double, val rank: Int?, val enabled: Boolean,
+    val nameSet: Boolean = false, val nameChangesLeft: Int = 3, val courses: List<LearnerCourse> = emptyList()) {
     companion object {
         fun parse(json: JSONObject) = LearnerProfile(json.getString("uuid"), json.getString("display_name"),
             json.getInt("level"), json.getLong("watch_ms"), json.getDouble("xp_into_level"), json.getDouble("xp_for_next_level"),
-            if (json.isNull("rank")) null else json.optInt("rank"), json.optBoolean("is_enabled", true))
+            if (json.isNull("rank")) null else json.optInt("rank"), json.optBoolean("is_enabled", true),
+            json.optJSONObject("name_policy")?.optBoolean("is_set") ?: (json.optString("display_name") != "هنرجو"),
+            json.optJSONObject("name_policy")?.optInt("remaining_changes", 3) ?: 3,
+            json.optJSONArray("courses")?.let { rows -> (0 until rows.length()).map { i -> rows.getJSONObject(i).let {
+                LearnerCourse(it.getString("uuid"), it.getString("title"), it.optLong("watch_ms"), it.optBoolean("purchased"), it.optBoolean("access_enabled"))
+            } } } ?: emptyList())
     }
 }
 
@@ -37,10 +44,21 @@ class LearningRepository private constructor(context: Context) {
     private val mutable = MutableStateFlow<Map<String, LearnerProfile>>(emptyMap())
     val profiles = mutable.asStateFlow()
     private val preparing = mutableSetOf<String>()
+    private val knownCourses = java.util.concurrent.ConcurrentHashMap<String, Course>()
+    private val lastPrepare = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private var foregroundSync: Job? = null
+    private val mutableStatus = MutableStateFlow<String?>(null)
+    val status = mutableStatus.asStateFlow()
+    private fun failure(error: Exception) {
+        mutableStatus.value = if (error is CourseFailure) "ثبت پیشرفت: ${error.message} (HTTP ${error.status ?: 0})"
+            else "ثبت پیشرفت انجام نشد؛ اتصال را بررسی کنید. اطلاعات ذخیره‌شده برای ارسال مجدد حفظ می‌شود."
+    }
     init { scope.launch { mutex.withLock { mutable.value = store.profiles() }; if (store.pending().isNotEmpty()) schedule() } }
     fun visit() { scope.launch {
-        mutex.withLock { runCatching { api.account() }; mutable.value = store.profiles() }
+        mutex.withLock { try { api.account(); mutableStatus.value = null } catch (e: CancellationException) { throw e } catch (e: Exception) { failure(e) }; mutable.value = store.profiles() }
+        if (store.pending().isNotEmpty()) flushNow()
     } }
+    fun refreshProfile() { visit(); flushNow() }
 
     private suspend fun access(course: Course, force: Boolean = false): String {
         val vault = PurchaseVault(app)
@@ -60,7 +78,9 @@ class LearningRepository private constructor(context: Context) {
         }
     }
     fun prepare(course: Course, forceGrant: Boolean = false) {
+        knownCourses[course.id] = course
         synchronized(preparing) { if (!preparing.add(course.id)) return }
+        lastPrepare[course.id] = SystemClock.elapsedRealtime()
         scope.launch {
             try {
                 mutex.withLock {
@@ -77,10 +97,11 @@ class LearningRepository private constructor(context: Context) {
                         store.saveProfile(course.id, result.getJSONObject("profile"))
                     } else store.saveProfile(course.id, authorized(course, "profile"))
                     mutable.value = store.profiles()
+                    mutableStatus.value = null
                 }
                 sync()
             } catch (error: CancellationException) { throw error }
-            catch (_: Exception) { /* Progress failures never block legal playback or erase pending time. */ }
+            catch (e: Exception) { failure(e) /* Never block legal playback or erase pending time. */ }
             finally { synchronized(preparing) { preparing.remove(course.id) } }
         }
     }
@@ -103,9 +124,28 @@ class LearningRepository private constructor(context: Context) {
         if (current?.optJSONObject("lesson_versions")?.optInt(lesson.id, -1) != lesson.version) prepare(course, true)
         return WatchTracker(this, course.id, lesson)
     }
-    internal fun recorded() { schedule() }
-    internal fun flushNow() { scope.launch { runCatching { sync() }; if (store.pending().isNotEmpty()) schedule() } }
+    internal fun retryPreparation(course: String, lesson: Lesson) {
+        val grant = grant(course)
+        if (grant?.optJSONObject("lesson_versions")?.optInt(lesson.id, -1) == lesson.version && serverNow(grant) <= grant.getLong("valid_until_ms")) return
+        if (SystemClock.elapsedRealtime() - (lastPrepare[course] ?: 0L) >= 30_000)
+            knownCourses[course]?.let { prepare(it, true) }
+    }
+    internal fun recorded() {
+        schedule()
+        synchronized(this) {
+            if (foregroundSync?.isActive != true) foregroundSync = scope.launch { delay(30_000); sendPending() }
+        }
+    }
+    private suspend fun sendPending() {
+        if (store.pending().isEmpty()) return
+        try { sync(); mutableStatus.value = null }
+        catch (e: CancellationException) { throw e }
+        catch (e: Exception) { failure(e) }
+        if (store.pending().isNotEmpty()) schedule()
+    }
+    internal fun flushNow() { scope.launch { sendPending() } }
     fun counts(course: String) = store.counts(course)
+    fun allCounts() = store.allCounts()
     fun celebration(course: String) = store.celebration(course)
     fun clearCelebration(course: String) = store.clearCelebration(course)
     suspend fun name(course: Course?, value: String) = withContext(Dispatchers.IO) {

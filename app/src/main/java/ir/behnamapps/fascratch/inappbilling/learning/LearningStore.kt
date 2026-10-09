@@ -105,4 +105,9 @@ internal class LearningStore(context: Context) : SQLiteOpenHelper(context,
         while (cursor.moveToNext()) { if (cursor.getString(0) == "pending") pending = cursor.getInt(1) else rejected += cursor.getInt(1) }
         pending to rejected
     }
+    @Synchronized fun allCounts(): Pair<Int, Int> = readableDatabase.rawQuery("SELECT status,COUNT(*) FROM events GROUP BY status", null).use { cursor ->
+        var pending = 0; var rejected = 0
+        while (cursor.moveToNext()) { if (cursor.getString(0) == "pending") pending = cursor.getInt(1) else rejected += cursor.getInt(1) }
+        pending to rejected
+    }
 }

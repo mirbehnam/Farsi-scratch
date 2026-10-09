@@ -65,6 +65,8 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
                 val code = json?.optJSONObject("error")?.optString("code").orEmpty()
                 throw CourseFailure(when {
                     status == 429 -> "درخواست‌های زیادی ارسال شده؛ یک دقیقه صبر کنید."
+                    code == "validation_failed" && json?.optJSONObject("error")?.optJSONObject("fields")?.optJSONArray("display_name") != null ->
+                        json.getJSONObject("error").getJSONObject("fields").getJSONArray("display_name").optString(0, "نام معتبر نیست.")
                     code == "access_disabled" -> "دسترسی این خرید توسط مدیر غیرفعال شده است؛ با پشتیبانی تماس بگیرید."
                     code == "refunded" || code == "rejected" -> "خرید از طرف استور تأیید نشد؛ وضعیت خرید را بررسی کنید."
                     status == 401 || status == 403 -> "دسترسی نیاز به بازیابی و تأیید مجدد خرید دارد."

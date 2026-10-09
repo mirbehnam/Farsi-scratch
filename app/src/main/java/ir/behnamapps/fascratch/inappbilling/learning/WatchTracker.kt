@@ -18,6 +18,7 @@ class WatchTracker internal constructor(private val repo: LearningRepository, pr
     private var activeGrant: JSONObject? = null
 
     fun sample(position: Int, playing: Boolean) {
+        if (playing && activeGrant == null) repo.retryPreparation(course, lesson)
         val now = SystemClock.elapsedRealtime()
         val delta = now - lastTime
         val distance = position.toLong() - lastPosition

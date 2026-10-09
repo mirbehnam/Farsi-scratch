@@ -92,7 +92,7 @@ class CourseApi : PurchaseBackend {
                         row.optString("instructor_name"), row.optInt("difficulty"), stats?.optDouble("duration_seconds", 0.0) ?: 0.0,
                         posterUrl(row.optJSONObject("cover")) ?: row.optString("banner_url").takeIf { it.startsWith("https://") },
                         if (stats != null && stats.has("confirmed_purchases") && !stats.isNull("confirmed_purchases")) stats.optInt("confirmed_purchases").coerceAtLeast(0) else null,
-                        serverPrice(row, provider, sku))
+                        serverPrice(row, provider, sku), difficultyLabel = DifficultyLevel.label(row.optInt("difficulty"), row.optString("difficulty_label")))
                     courses[course.id] = withPricing(row, provider, course)
                 }
             }
@@ -113,7 +113,8 @@ class CourseApi : PurchaseBackend {
                     val lesson = Lesson(CoursePolicy.uuid(row.getString("uuid")), course.id, section.getString("title"), row.getString("title"),
                         video.getInt("content_version"), video.getLong("file_size_bytes"), video.getString("content_hash"),
                         row.optInt("difficulty"), video.optDouble("duration_seconds", 0.0), posterUrl(row.optJSONObject("cover")), row.optString("description"),
-                        row.optBoolean("is_preview", false), video.optString("url").takeIf { row.optBoolean("is_preview", false) && it.startsWith("https://") })
+                        row.optBoolean("is_preview", false), video.optString("url").takeIf { row.optBoolean("is_preview", false) && it.startsWith("https://") },
+                        DifficultyLevel.label(row.optInt("difficulty"), row.optString("difficulty_label")))
                     CoursePolicy.downloadKey(lesson)
                     add(lesson)
                 }

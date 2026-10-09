@@ -29,7 +29,7 @@ class CourseCache(context: Context) {
     fun clearCatalogLayout() { layoutFile.delete() }
     private fun courseFile(id: String) = AtomicFile(File(root, "course-${BuildConfig.FLAVOR}-${CoursePolicy.uuid(id)}.json"))
     private fun encode(course: Course) = JSONObject().put("id", course.id).put("title", course.title).put("description", course.description)
-        .put("sku", course.sku).put("instructor", course.instructor).put("difficulty", course.difficulty)
+        .put("sku", course.sku).put("instructor", course.instructor).put("difficulty", course.difficulty).put("difficulty_label", course.difficultyLabel)
         .put("duration", course.durationSeconds).put("cover", course.coverUrl).put("purchases", course.confirmedPurchases).put("price_toman", course.serverPriceToman)
         .put("compare_at_toman", course.compareAtToman).put("discount_ends_at_ms", course.discountEndsAtMillis)
     private fun decode(data: JSONObject) = Course(CoursePolicy.uuid(data.getString("id")), data.getString("title"), data.getString("description"), data.getString("sku"),
@@ -37,7 +37,8 @@ class CourseCache(context: Context) {
         if (data.has("purchases") && !data.isNull("purchases")) data.optInt("purchases") else null,
         CoursePolicy.serverPrice(data.getString("sku"), data.getString("sku"), data.opt("price_toman").takeUnless { it == JSONObject.NULL }),
         CoursePolicy.serverPrice(data.getString("sku"), data.getString("sku"), data.opt("compare_at_toman").takeUnless { it == JSONObject.NULL }),
-        if (data.has("discount_ends_at_ms") && !data.isNull("discount_ends_at_ms")) data.getLong("discount_ends_at_ms") else null)
+        if (data.has("discount_ends_at_ms") && !data.isNull("discount_ends_at_ms")) data.getLong("discount_ends_at_ms") else null,
+        DifficultyLevel.label(data.optInt("difficulty"), data.optString("difficulty_label")))
     fun saveCatalog(courses: List<Course>) {
         val output = catalog.startWrite()
         try { output.write(JSONArray().apply { courses.forEach { put(encode(it)) } }.toString().toByteArray(Charsets.UTF_8)); catalog.finishWrite(output) }
@@ -52,7 +53,7 @@ class CourseCache(context: Context) {
         val rows = JSONArray()
         lessons.forEach { rows.put(JSONObject().put("id", it.id).put("section", it.section).put("title", it.title)
             .put("version", it.version).put("bytes", it.bytes).put("sha256", it.sha256)
-            .put("difficulty", it.difficulty).put("duration", it.durationSeconds).put("cover", it.coverUrl).put("description", it.description).put("is_preview", it.isPreview)) }
+            .put("difficulty", it.difficulty).put("difficulty_label", it.difficultyLabel).put("duration", it.durationSeconds).put("cover", it.coverUrl).put("description", it.description).put("is_preview", it.isPreview)) }
         val data = encode(course).put("lessons", rows)
         val output = file.startWrite()
         try { output.write(data.toString().toByteArray(Charsets.UTF_8)); file.finishWrite(output) }
@@ -68,7 +69,8 @@ class CourseCache(context: Context) {
             val row = rows.getJSONObject(index)
             Lesson(CoursePolicy.uuid(row.getString("id")), course.id, row.getString("section"), row.getString("title"),
                 row.getInt("version"), row.getLong("bytes"), row.getString("sha256"), row.optInt("difficulty"), row.optDouble("duration", 0.0),
-                row.optString("cover").takeIf { it.startsWith("https://") }, row.optString("description"), row.optBoolean("is_preview", false)).also { CoursePolicy.downloadKey(it) }
+                row.optString("cover").takeIf { it.startsWith("https://") }, row.optString("description"), row.optBoolean("is_preview", false),
+                difficultyLabel = DifficultyLevel.label(row.optInt("difficulty"), row.optString("difficulty_label"))).also { CoursePolicy.downloadKey(it) }
         }
     }.getOrNull()
 }

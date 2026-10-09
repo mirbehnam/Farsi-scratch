@@ -292,7 +292,7 @@ private fun LessonCard(lesson: Lesson, state: TrainingState, onDownload: (Lesson
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Text(persian(lesson.title), fontWeight = FontWeight.Bold, color = Ink, style = MaterialTheme.typography.bodyMedium)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        DifficultyBadge(lesson.difficulty)
+                DifficultyBadge(lesson.difficulty, lesson.difficultyLabel)
                         if (lesson.isPreview) Badge("مشاهده رایگان", PreviewGreen, Color.White)
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -334,13 +334,21 @@ private fun Badge(text: String, background: Color, foreground: Color) {
 }
 
 @Composable
-private fun DifficultyBadge(level: Int) {
-    when (level) {
-        1 -> Badge("🌱 مقدماتی", Mint, Ink)
-        2 -> Badge("🙂 آسان", Color(0xFFE4EFFC), Color(0xFF245B88))
-        3 -> Badge("💡 متوسط", Color(0xFFFFF1D6), Color(0xFF805300))
-        4 -> Badge("🚀 پیشرفته", Color(0xFFEDE6FA), Color(0xFF69469B))
-        5 -> Badge("🔥 حرفه‌ای", Color(0xFFFFE7E0), Color(0xFFA23E25))
+private fun DifficultyBadge(level: Int, customTitle: String) {
+    val title = DifficultyLevel.label(level, customTitle)
+    if (title.isEmpty()) return
+    val (background, foreground) = when (level) {
+        1 -> Mint to Ink
+        2 -> Color(0xFFE4EFFC) to Color(0xFF245B88)
+        3 -> Color(0xFFFFF1D6) to Color(0xFF805300)
+        4 -> Color(0xFFEDE6FA) to Color(0xFF69469B)
+        5, 6 -> Color(0xFFFFE7E0) to Color(0xFFA23E25)
+        7, 8 -> Color(0xFFFCE4EC) to Color(0xFF9C2850)
+        else -> Color(0xFFE9E4FF) to Color(0xFF5335A3)
+    }
+    Surface(shape = RoundedCornerShape(8.dp), color = background) {
+        Text("${DifficultyLevel.emoji(level)} ${persian(title)}", Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            color = foreground, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

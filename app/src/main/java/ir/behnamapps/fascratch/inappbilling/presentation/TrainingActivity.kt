@@ -57,9 +57,21 @@ class TrainingActivity : ComponentActivity() {
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl, LocalTextStyle provides LocalTextStyle.current.copy(fontFamily = font)) {
                     BackHandler(playing != null) { playing = null }
                     BackHandler(playing == null && state.course != null) { controller.backToCatalog() }
-                    if (playing != null) FullscreenLessonPlayer(playing!!.file, playing!!.title, window, onClose = { playing = null }, watchTracker = playing!!.tracker)
+                    if (playing != null) key(playing!!.lessonId) {
+                        val current = playing!!
+                        FullscreenLessonPlayer(current.file, current.title, window, onClose = { playing = null }, watchTracker = current.tracker,
+                            nextLessonTitle = controller.nextDownloadedLesson(current.lessonId)?.title,
+                            onPlayNext = {
+                                val next = controller.nextDownloadedLesson(current.lessonId)
+                                val nextFile = next?.let(controller::playable)
+                                if (next != null && nextFile != null) {
+                                    playing = PlayingLesson(nextFile, next.title, controller.watchTracker(next), next.id)
+                                    true
+                                } else false
+                            })
+                    }
                     else TrainingScreen(state, controller, onBack = { if (!controller.backToCatalog()) finish() }, onPlay = { lesson ->
-                        controller.playable(lesson)?.let { playing = PlayingLesson(it, lesson.title, controller.watchTracker(lesson)) }
+                        controller.playable(lesson)?.let { playing = PlayingLesson(it, lesson.title, controller.watchTracker(lesson), lesson.id) }
                     })
                 }
             }
@@ -79,4 +91,4 @@ class TrainingActivity : ComponentActivity() {
     }
 }
 
-private data class PlayingLesson(val file: File, val title: String, val tracker: ir.behnamapps.fascratch.inappbilling.learning.WatchTracker?)
+private data class PlayingLesson(val file: File, val title: String, val tracker: ir.behnamapps.fascratch.inappbilling.learning.WatchTracker?, val lessonId: String)

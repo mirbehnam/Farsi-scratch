@@ -20,7 +20,7 @@ import org.json.JSONObject
 data class LearnerCourse(val uuid: String, val title: String, val watchMs: Long, val purchased: Boolean, val enabled: Boolean)
 data class LearnerProfile(val uuid: String, val name: String, val level: Int, val watchMs: Long,
     val xpIntoLevel: Double, val xpForNext: Double, val rank: Int?, val enabled: Boolean,
-    val nameSet: Boolean = false, val nameChangesLeft: Int = 3, val courses: List<LearnerCourse> = emptyList(), val codingMs: Long = 0) {
+    val nameSet: Boolean = false, val nameChangesLeft: Int = 3, val courses: List<LearnerCourse> = emptyList(), val codingMs: Long = 0, val fullName: String? = null) {
     companion object {
         fun parse(json: JSONObject) = LearnerProfile(json.getString("uuid"), json.getString("display_name"),
             json.getInt("level"), json.getLong("watch_ms"), json.getDouble("xp_into_level"), json.getDouble("xp_for_next_level"),
@@ -29,7 +29,7 @@ data class LearnerProfile(val uuid: String, val name: String, val level: Int, va
             json.optJSONObject("name_policy")?.optInt("remaining_changes", 3) ?: 3,
             json.optJSONArray("courses")?.let { rows -> (0 until rows.length()).map { i -> rows.getJSONObject(i).let {
                 LearnerCourse(it.getString("uuid"), it.getString("title"), it.optLong("watch_ms"), it.optBoolean("purchased"), it.optBoolean("access_enabled"))
-            } } } ?: emptyList(), json.optLong("coding_ms"))
+            } } } ?: emptyList(), json.optLong("coding_ms"), json.optString("full_name").takeUnless { it.isBlank() || it == "null" })
     }
 }
 
@@ -158,9 +158,10 @@ class LearningRepository private constructor(context: Context) {
     fun allCounts() = store.allCounts()
     fun celebration(course: String) = store.celebration(course)
     fun clearCelebration(course: String) = store.clearCelebration(course)
-    suspend fun name(course: Course?, value: String) = withContext(Dispatchers.IO) {
+    suspend fun name(course: Course?, value: String, fullName: String? = null) = withContext(Dispatchers.IO) {
         mutex.withLock {
-            val result = api.learning("profile", body = JSONObject().put("display_name", value.trim()))
+            val result = api.learning("profile", body = JSONObject().put("display_name", value.trim())
+                .put("full_name", fullName?.trim()?.takeIf { it.isNotEmpty() } ?: JSONObject.NULL))
             store.saveProfile(LearningIdentity.KEY, result); mutable.value = store.profiles()
         }
     }

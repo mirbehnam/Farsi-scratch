@@ -236,6 +236,8 @@ class TrainingController(
     fun playable(lesson: Lesson): File? = if (lesson.courseId == state.value.course?.id &&
         CoursePolicy.canLearn(lesson, state.value.purchased)) downloads.completed(lesson) else null
     fun watchTracker(lesson: Lesson) = state.value.course?.let { learning?.tracker(it, lesson) }
+    fun nextDownloadedLesson(currentId: String): Lesson? = LessonPlayerPolicy.next(state.value.lessons, currentId)
+        ?.takeIf { playable(it) != null }
     fun cancelDownload() { if (state.value.downloadingId != null) activeJob?.cancel() }
 
     private fun action(courseId: String? = state.value.course?.id, block: suspend () -> Unit) {

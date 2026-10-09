@@ -29,7 +29,8 @@ import java.util.Locale
 
 @Composable
 internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, onClose: () -> Unit,
-    watchTracker: ir.behnamapps.fascratch.inappbilling.learning.WatchTracker? = null) {
+    watchTracker: ir.behnamapps.fascratch.inappbilling.learning.WatchTracker? = null,
+    nextLessonTitle: String? = null, onPlayNext: () -> Boolean = { false }) {
     var video by remember(file) { mutableStateOf<ZoomVideoView?>(null) }
     var prepared by remember(file) { mutableStateOf(false) }
     var error by remember(file) { mutableStateOf(false) }
@@ -40,6 +41,23 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
     var playing by remember(file) { mutableStateOf(false) }
     var seeking by remember { mutableStateOf<Float?>(null) }
     var interaction by remember { mutableIntStateOf(0) }
+    var speed by rememberSaveable(file.absolutePath) { mutableFloatStateOf(1f) }
+    var speedMenu by remember(file) { mutableStateOf(false) }
+    var speedError by remember(file) { mutableStateOf(false) }
+    var completed by remember(file) { mutableStateOf(false) }
+    var nextPrompt by remember(file) { mutableStateOf(false) }
+    var seekHint by remember(file) { mutableStateOf<Int?>(null) }
+    var seekHintSequence by remember(file) { mutableIntStateOf(0) }
+    val currentNextTitle by rememberUpdatedState(nextLessonTitle)
+    val currentPlayNext by rememberUpdatedState(onPlayNext)
+    fun seekBy(delta: Int) {
+        if (!prepared) return
+        watchTracker?.discontinuity()
+        val currentDuration = video?.duration()?.takeIf { it > 0 } ?: duration
+        val target = LessonPlayerPolicy.seek(video?.position() ?: position, delta, currentDuration)
+        video?.seek(target); position = target; interaction++
+        completed = false; nextPrompt = false
+    }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(window, file) {
         val bars = WindowCompat.getInsetsController(window, window.decorView)
@@ -74,19 +92,35 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
             delay(300)
         }
     }
-    LaunchedEffect(controls, playing, interaction, seeking) {
-        if (controls && playing && seeking == null) { delay(4_000); controls = false }
+    LaunchedEffect(controls, playing, interaction, seeking, speedMenu, nextPrompt) {
+        if (controls && playing && seeking == null && !speedMenu && !nextPrompt) { delay(4_000); controls = false }
+    }
+    LaunchedEffect(seekHintSequence) {
+        if (seekHint != null) { delay(900); seekHint = null }
     }
     val playerColors = darkColorScheme(primary = Color(0xFFFFBC72), onPrimary = Color(0xFF39220D), surface = Color(0xFF182235))
     MaterialTheme(colorScheme = playerColors, typography = MaterialTheme.typography) {
         Box(Modifier.fillMaxSize().background(Color.Black)) {
             AndroidView(modifier = Modifier.fillMaxSize(), factory = { context ->
                 ZoomVideoView(context, file, position,
-                    onReady = { prepared = true }, onError = { error = true; controls = true },
-                    onTap = { controls = !controls; interaction++ }, onZoom = { zoom = it }).also {
+                    onReady = { prepared = true; video?.setSpeed(speed) }, onError = { error = true; controls = true },
+                    onTap = { controls = !controls; interaction++ }, onZoom = { zoom = it },
+                    onDoubleTapSeek = { delta -> seekBy(delta); seekHint = delta; seekHintSequence++ },
+                    onCompleted = {
+                        position = video?.duration() ?: duration
+                        playing = false; completed = true; controls = true
+                        watchTracker?.finish()
+                        nextPrompt = currentNextTitle != null
+                    }).also {
                         video = it; it.setForeground(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
                     }
             })
+            seekHint?.let { delta ->
+                Surface(Modifier.align(if (delta > 0) androidx.compose.ui.AbsoluteAlignment.CenterRight else androidx.compose.ui.AbsoluteAlignment.CenterLeft).padding(horizontal = 48.dp),
+                    color = Color(0xCC182235), shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)) {
+                    Text(if (delta > 0) "۵ ثانیه جلو »" else "« ۵ ثانیه عقب", Modifier.padding(18.dp), color = Color.White)
+                }
+            }
             if (!prepared && !error) CircularProgressIndicator(Modifier.align(Alignment.Center))
             if (error) Surface(Modifier.align(Alignment.Center).padding(32.dp), color = Color(0xEE182235)) {
                 Text("پخش این فایل ممکن نشد. به درس‌ها برگردید و فایل را دوباره دانلود کنید.", Modifier.padding(20.dp), color = Color.White)
@@ -102,24 +136,51 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
                 if (!error) Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                     .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xED000000))))
                     .windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 24.dp, vertical = 8.dp)) {
-                    Text("زوم با دو انگشت · جابه‌جایی تصویر بزرگ‌شده · دو ضربه برای اندازه اصلی", color = Color(0xFFDBDBDB), style = MaterialTheme.typography.labelSmall)
+                    Text("زوم با دو انگشت · دو ضربه: راست ۵ ثانیه جلو، چپ ۵ ثانیه عقب", color = Color(0xFFDBDBDB), style = MaterialTheme.typography.labelSmall)
                     // Time always runs from left to right, independently of Persian layout.
                     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                         Slider(value = seeking ?: position.toFloat().coerceIn(0f, duration.coerceAtLeast(1).toFloat()),
                             onValueChange = { seeking = it; interaction++ }, onValueChangeFinished = {
-                                watchTracker?.discontinuity(); seeking?.let { video?.seek(it.toInt()); position = it.toInt() }; seeking = null; interaction++
+                                watchTracker?.discontinuity(); seeking?.let { video?.seek(it.toInt()); position = it.toInt() }; seeking = null; interaction++; completed = false; nextPrompt = false
                             }, valueRange = 0f..duration.coerceAtLeast(1).toFloat(), enabled = prepared && duration > 0,
                             modifier = Modifier.fillMaxWidth().height(32.dp))
                     }
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                        TextButton(onClick = { watchTracker?.discontinuity(); video?.seek(position - 10_000); interaction++ }, enabled = prepared) { Text("۱۰ ثانیه عقب") }
-                        FilledTonalButton(onClick = { video?.toggle(); playing = video?.isPlaying() == true; interaction++ }, enabled = prepared) { Text(if (playing) "توقف" else "پخش") }
-                        TextButton(onClick = { watchTracker?.discontinuity(); video?.seek(position + 10_000); interaction++ }, enabled = prepared) { Text("۱۰ ثانیه جلو") }
+                        TextButton(onClick = { seekBy(10_000) }, enabled = prepared) { Text("۱۰ ثانیه جلو") }
+                        FilledTonalButton(onClick = {
+                            if (completed) { watchTracker?.discontinuity(); video?.seek(0); position = 0; completed = false }
+                            video?.toggle(); playing = video?.isPlaying() == true; interaction++
+                        }, enabled = prepared) { Text(if (playing) "توقف" else "پخش") }
+                        TextButton(onClick = { seekBy(-10_000) }, enabled = prepared) { Text("۱۰ ثانیه عقب") }
+                        Box {
+                            TextButton(onClick = { speedMenu = true; interaction++ }, enabled = prepared) {
+                                Text("سرعت ${persianDisplay(speed.toString()).replace('.', '٫')}×")
+                            }
+                            DropdownMenu(expanded = speedMenu, onDismissRequest = { speedMenu = false }) {
+                                LessonPlayerPolicy.speeds.forEach { option ->
+                                    DropdownMenuItem(text = { Text((if (option == speed) "✓ " else "") + persianDisplay(option.toString()).replace('.', '٫') + "×") },
+                                        onClick = {
+                                            watchTracker?.discontinuity()
+                                            if (video?.setSpeed(option) == true) { speed = option; speedError = false }
+                                            else speedError = true
+                                            speedMenu = false; interaction++
+                                        })
+                                }
+                            }
+                        }
                         Spacer(Modifier.width(16.dp))
                         Text(persianDisplay("${playbackTime(position)} / ${playbackTime(duration)}"), color = Color.White, style = MaterialTheme.typography.labelMedium)
                     }
+                    if (speedError) Text("این دستگاه نتوانست سرعت انتخاب‌شده را اعمال کند.", color = Color(0xFFFFBC72), style = MaterialTheme.typography.labelSmall)
                 }
             }
+            if (nextPrompt && currentNextTitle != null) AlertDialog(
+                onDismissRequest = { nextPrompt = false }, title = { Text("قسمت بعد پخش شود؟") },
+                text = { Text(persianDisplay(currentNextTitle!!)) },
+                confirmButton = { Button(onClick = {
+                    if (!currentPlayNext()) { nextPrompt = false; onClose() }
+                }) { Text("پخش قسمت بعد") } },
+                dismissButton = { TextButton(onClick = { nextPrompt = false }) { Text("فعلاً نه") } })
         }
     }
 }

@@ -37,15 +37,16 @@ import kotlinx.coroutines.launch
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val focus = LocalFocusManager.current
-    val height = (LocalConfiguration.current.screenHeightDp - 24).coerceAtLeast(160).dp
     val canSave = !busy && NameEditorPolicy.canSave(name, profile.name, profile.nameSet, profile.nameChangesLeft, profile.nameBlocked) &&
         NameEditorPolicy.validFullName(fullName)
-    Dialog(onDismissRequest = { if (!busy) onClose() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.widthIn(max = 820.dp).fillMaxWidth(.94f).heightIn(max = height),
+    Dialog(onDismissRequest = { if (!busy) onClose() }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        LearnerDialogWindowBounds()
+        Box(Modifier.learnerSafeDialogBounds()) {
+        Surface(Modifier.fillMaxSize(),
             shape = RoundedCornerShape(26.dp), border = BorderStroke(1.dp, Color(0xFFDCC8FF)), shadowElevation = 10.dp) {
-            Column(Modifier.background(Brush.linearGradient(listOf(Color(0xFFFAF5FF), Color(0xFFFFF8EB))))) {
+            Column(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(0xFFFAF5FF), Color(0xFFFFF8EB))))) {
                 // Keep the action bar outside the scrolling content, especially on landscape phones.
-                Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(18.dp),
+                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(18.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     LearnerLevelBadge(profile.level, Modifier.size(68.dp))
@@ -129,5 +130,6 @@ import kotlinx.coroutines.launch
                 }
             }
         }
+    }
     }
 }

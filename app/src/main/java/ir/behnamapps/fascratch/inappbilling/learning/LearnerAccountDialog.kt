@@ -105,6 +105,7 @@ import kotlinx.coroutines.launch
         }
     }
     Dialog(onDismissRequest = { if (!busy) onClose() }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        LearnerDialogWindowBounds()
         Box(Modifier.learnerSafeDialogBounds()) {
             Surface(Modifier.fillMaxSize(), shape = RoundedCornerShape(24.dp), border = BorderStroke(2.dp, Color.White), shadowElevation = 10.dp) {
                 Column(Modifier.background(Brush.linearGradient(listOf(Color(0xFFFAF5FF), Color(0xFFFFF8EB))))) {

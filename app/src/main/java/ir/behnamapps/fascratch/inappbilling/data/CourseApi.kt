@@ -28,18 +28,18 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
         finally { connection.disconnect() }
     }
 
-    fun connection(path: String, token: String? = null): HttpsURLConnection {
+    fun connection(path: String, token: String? = null, accountSecret: String? = null): HttpsURLConnection {
         val target = "$base/$path"
-        return connectionTo(target, token)
+        return connectionTo(target, token, accountSecret)
     }
 
-    private fun connectionTo(target: String, token: String? = null): HttpsURLConnection {
+    private fun connectionTo(target: String, token: String? = null, accountSecret: String? = null): HttpsURLConnection {
         require(CoursePolicy.sameOrigin(base, target))
         return (URL(target).openConnection() as HttpsURLConnection).apply {
             connectTimeout = 15_000; readTimeout = 30_000; instanceFollowRedirects = false
             useCaches = false
             setRequestProperty("Accept", "application/json")
-            identity?.let { setRequestProperty("X-Scratch-Account", it.secret()) }
+            identity?.let { setRequestProperty("X-Scratch-Account", accountSecret ?: it.secret()) }
             if (token != null) {
                 require(token.matches(Regex("[a-f0-9]{64}")))
                 setRequestProperty("Authorization", "Bearer $token")
@@ -49,8 +49,8 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
 
     fun previewConnection(lesson: Lesson): HttpsURLConnection = connectionTo(CoursePolicy.previewUrl(base, lesson))
 
-    private suspend fun request(path: String, token: String? = null, body: JSONObject? = null): JSONObject = withContext(Dispatchers.IO) {
-        val connection = connection(path, token)
+    private suspend fun request(path: String, token: String? = null, body: JSONObject? = null, accountSecret: String? = null): JSONObject = withContext(Dispatchers.IO) {
+        val connection = connection(path, token, accountSecret)
         try {
             if (body != null) {
                 connection.requestMethod = "POST"; connection.doOutput = true
@@ -195,14 +195,17 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
 
     suspend fun account(): JSONObject {
         val id = identity ?: error("Account context is required")
-        val profile = try { request("accounts/me").getJSONObject("data") }
+        val session = id.secret()
+        val profile = try { request("accounts/me", accountSecret = session).getJSONObject("data") }
         catch (failure: CourseFailure) {
             if (failure.status != 401) throw failure
+            if (id.secret() != session) throw CourseFailure("حساب به‌روز شده است؛ دوباره بررسی کن.", 409)
             // Expiry must not silently replace a registered learner with a new guest.
             if (id.profile()?.registered == true) throw CourseFailure("برای ادامه همگام‌سازی، دوباره وارد حساب خودت شو یا خریدت را بازیابی کن.", 401)
-            request("accounts/register", body = JSONObject().put("secret", id.secret())).getJSONObject("data")
+            request("accounts/register", body = JSONObject().put("secret", session), accountSecret = session).getJSONObject("data")
         }
-        id.accept(JSONObject().put("profile", profile))
+        if (!id.accept(JSONObject().put("profile", profile), expectedSecret = session))
+            throw CourseFailure("حساب به‌روز شده است؛ دوباره بررسی کن.", 409)
         return profile
     }
 }

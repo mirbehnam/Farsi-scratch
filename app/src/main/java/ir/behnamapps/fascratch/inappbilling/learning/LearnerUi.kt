@@ -142,7 +142,9 @@ import kotlinx.coroutines.delay
 }
 
 @Composable fun LearnerDialog(course: Course?, profile: LearnerProfile, repository: LearningRepository, onClose: () -> Unit) {
-    LearnerDialogTheme { LearnerProfileDialog(course, profile, repository, onClose) }
+    val profiles by repository.profiles.collectAsState()
+    val current = profiles[LearningIdentity.KEY] ?: profile
+    LearnerDialogTheme { LearnerProfileDialog(course, current, repository, onClose) }
 }
 
 @Composable private fun LearnerProfileDialog(course: Course?, profile: LearnerProfile, repository: LearningRepository, onClose: () -> Unit) {
@@ -151,8 +153,10 @@ import kotlinx.coroutines.delay
     var showAccount by remember(profile.uuid) { mutableStateOf(false) }
     var showCourses by remember(profile.uuid) { mutableStateOf(false) }
     val syncStatus by repository.status.collectAsState()
+    LaunchedEffect(profile.registered) { if (profile.registered) showAccount = false }
     androidx.compose.ui.window.Dialog(onDismissRequest = onClose,
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        LearnerDialogWindowBounds()
         Box(Modifier.learnerSafeDialogBounds()) {
         Surface(Modifier.fillMaxSize(),
             shape = RoundedCornerShape(27.dp), color = Color.White,
@@ -163,8 +167,8 @@ import kotlinx.coroutines.delay
                     for (x in 0..3) for (y in 0..2) drawCircle(Color(0xFFF5CC65).copy(alpha = .3f),
                         3.dp.toPx(), Offset((13 + x * 27).dp.toPx(), (13 + y * 27).dp.toPx()))
                 }
-                Column(Modifier.padding(20.dp).verticalScroll(rememberScrollState())) {
-                    LearnerProfilePanel(profile, onAccount = { showAccount = true }, onEditName = { if (profile.registered) editing = true else showAccount = true },
+                Column(Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
+                    LearnerProfilePanel(profile, onAccount = { if (profile.registered) editing = true else showAccount = true }, onEditName = { if (profile.registered) editing = true else showAccount = true },
                         onGuide = { showPointsGuide = true }, onClose = onClose)
                     if (profile.nameBlocked) {
                         Spacer(Modifier.height(12.dp))
@@ -203,7 +207,7 @@ import kotlinx.coroutines.delay
         editing = false
         if (!profile.registered) showAccount = true
     })
-    if (showAccount) LearnerAccountDialog(profile, repository) { showAccount = false }
+    if (showAccount && !profile.registered) LearnerAccountDialog(profile, repository) { showAccount = false }
     if (showPointsGuide) LearnerPointsGuideDialog { showPointsGuide = false }
 }
 

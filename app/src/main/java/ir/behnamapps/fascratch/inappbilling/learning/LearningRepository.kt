@@ -182,7 +182,9 @@ class LearningRepository private constructor(context: Context) {
     suspend fun googleChallenge(secret: String, expectedUuid: String): JSONObject = withContext(Dispatchers.IO) {
         mutex.withLock {
             require(identity.profile()?.uuid == expectedUuid) { "حساب تغییر کرده؛ فرم را دوباره باز کن." }
-            api.auth("google/native/challenge", JSONObject().put("session_secret", secret))
+            api.auth("google/native/challenge", JSONObject().put("session_secret", secret).put("expected_profile_uuid", expectedUuid)).also {
+                require(!it.has("source_profile_uuid") || it.getString("source_profile_uuid") == expectedUuid) { "حساب تغییر کرده؛ فرم را دوباره باز کن." }
+            }
         }
     }
     suspend fun googleComplete(flowUuid: String, secret: String, token: String, expectedUuid: String) = withContext(Dispatchers.IO) {

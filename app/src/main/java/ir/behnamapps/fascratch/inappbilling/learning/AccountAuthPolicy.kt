@@ -4,6 +4,7 @@ import java.security.SecureRandom
 import java.util.Locale
 
 internal object AccountAuthPolicy {
+    fun sameSession(expected: String?, current: String) = expected == null || expected == current
     fun googleUnavailableMessage(nativeFieldPresent: Boolean, enabled: Boolean): String? = when {
         enabled -> null
         !nativeFieldPresent -> "سرور هنوز به نسخه ورود گوگل به‌روز نشده است؛ فعلاً با نام کاربری وارد شو."

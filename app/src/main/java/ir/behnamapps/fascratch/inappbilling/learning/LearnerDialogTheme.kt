@@ -18,6 +18,19 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.LayoutDirection
 import ir.behnamapps.fascratch.R
 
+/** Explicitly center a bounded window; do not inherit an Activity's no-limits layout. */
+@Composable internal fun LearnerDialogWindowBounds() {
+    val view = androidx.compose.ui.platform.LocalView.current
+    androidx.compose.runtime.SideEffect {
+        (view.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window?.apply {
+            clearFlags(android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
+            setGravity(android.view.Gravity.CENTER)
+            attributes = attributes.apply { x = 0; y = 0 }
+            setLayout(android.view.WindowManager.LayoutParams.MATCH_PARENT, android.view.WindowManager.LayoutParams.MATCH_PARENT)
+        }
+    }
+}
+
 /** Use the dialog window's bounds, including landscape side bars/cutouts and the keyboard. */
 internal fun Modifier.learnerSafeDialogBounds(): Modifier = fillMaxSize()
     .safeDrawingPadding().imePadding().padding(16.dp).clipToBounds()

@@ -66,29 +66,26 @@ import kotlin.math.ceil
     val config = LocalConfiguration.current
     val narrow = contentWidth <= 700
     val short = config.screenHeightDp <= 470 && config.screenWidthDp >= 780
-    val avatar = if (narrow) 100.dp else 112.dp
+    val avatar = if (narrow) 88.dp else 104.dp
     val font = if (narrow) 9.5.sp else if (short) 10.sp else 11.sp
     // RTL Row puts the avatar at the physical right, never reversed by the app's locale.
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Top) {
         // No second frame, clipping shape or sample text over the artwork's own plaque.
         LearnerLevelBadge(profile.level, Modifier.size(avatar))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Box(Modifier.fillMaxWidth()) {
-                FlowRow(Modifier.fillMaxWidth().padding(end = 76.dp), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(if (!profile.registered) "کاربر مهمان" else if (profile.nameSet) profile.name else "برنامه‌نویس", color = Color(0xFF344F83),
                         fontSize = if (narrow) 15.sp else if (short) 17.sp else 19.sp, lineHeight = 23.sp, fontWeight = FontWeight.Black,
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.align(Alignment.CenterVertically).widthIn(max = 230.dp).clickable(role = Role.Button, onClick = onEditName)
+                        modifier = Modifier.weight(1f).clickable(role = Role.Button, onClick = onEditName)
                             .semantics { contentDescription = "ویرایش نام نمایشی" })
-                    ProfileAction(if (profile.registered) "مدیریت ورود" else "ثبت‌نام / ورود", font,
-                        listOf(Color(0xFF54ACFF), Color(0xFF387DE5)), Color.White, onAccount)
-                    ProfileAction("✨ راهنمای کسب امتیاز", font,
-                        listOf(Color(0xFFFFE28B), Color(0xFFFFC34B)), Color(0xFF795117), onGuide)
-                }
-                Row(Modifier.align(Alignment.TopEnd), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    ProfileRoundAction("؟", "راهنمای کسب امتیاز", false, onGuide)
                     ProfileRoundAction("×", "بستن پروفایل", true, onClose)
-                }
+            }
+            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                ProfileAction(if (profile.registered) "✎ تغییر نام نمایشی" else "ثبت‌نام / ورود", font,
+                    listOf(Color(0xFF54ACFF), Color(0xFF387DE5)), Color.White, if (profile.registered) onEditName else onAccount)
+                ProfileAction("✨ راهنمای کسب امتیاز", font,
+                    listOf(Color(0xFFFFE28B), Color(0xFFFFC34B)), Color(0xFF795117), onGuide)
             }
             ReferenceProgress(profile, narrow)
         }
@@ -107,12 +104,12 @@ import kotlin.math.ceil
         .background(Brush.verticalGradient(colors)).border(2.dp, Color.White.copy(alpha = .77f), RoundedCornerShape(11.dp))
         .clickable(role = Role.Button, onClick = onClick).heightIn(min = 32.dp).padding(horizontal = 8.dp, vertical = 5.dp),
         contentAlignment = Alignment.Center) {
-        Text(label, color = ink, fontSize = font, fontWeight = FontWeight.ExtraBold)
+        Text(label, color = ink, fontSize = font, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
 @Composable private fun ProfileRoundAction(label: String, description: String, close: Boolean, action: () -> Unit) {
-    Box(Modifier.size(32.dp).shadow(2.dp, RoundedCornerShape(9.dp)).clip(RoundedCornerShape(9.dp))
+    Box(Modifier.size(44.dp).shadow(2.dp, RoundedCornerShape(9.dp)).clip(RoundedCornerShape(9.dp))
         .background(Color(if (close) 0xFFFFF0F0 else 0xFFF0F3FF))
         .border(1.dp, Color(if (close) 0xFFFFE0E0 else 0xFFDFE6FD), RoundedCornerShape(9.dp))
         .semantics { contentDescription = description }.clickable(role = Role.Button, onClick = action), contentAlignment = Alignment.Center) {

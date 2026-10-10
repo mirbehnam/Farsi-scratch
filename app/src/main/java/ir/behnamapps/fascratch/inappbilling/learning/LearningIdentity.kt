@@ -14,15 +14,18 @@ class LearningIdentity private constructor(context: Context) {
         store.saveGrant(KEY, JSONObject().put("secret", secret))
         return secret
     }
-    @Synchronized fun accept(account: JSONObject?) {
-        if (account == null) return
-        val profile = account.optJSONObject("profile") ?: return
+    @Synchronized fun accept(account: JSONObject?, expectedSecret: String? = null): Boolean {
+        // An accounts/me response started before sign-in must never restore the old guest.
+        if (!AccountAuthPolicy.sameSession(expectedSecret, secret())) return false
+        if (account == null) return false
+        val profile = account.optJSONObject("profile") ?: return false
         val previous = store.profiles()[KEY]?.uuid
         account.optString("secret").takeIf { it.matches(Regex("[a-f0-9]{64}")) }?.let {
             store.saveGrant(KEY, JSONObject().put("secret", it))
         }
         if (previous != null && previous != profile.getString("uuid")) store.clearCurrentGrants()
         store.saveProfile(KEY, profile)
+        return true
     }
     fun profile() = store.profiles()[KEY]
     companion object {

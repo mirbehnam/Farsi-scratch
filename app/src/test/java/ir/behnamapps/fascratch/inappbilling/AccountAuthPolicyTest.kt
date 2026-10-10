@@ -5,6 +5,11 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AccountAuthPolicyTest {
+    @Test fun oldGuestResponsesCannotReplaceANewerSignedInSession() {
+        assertTrue(AccountAuthPolicy.sameSession(null, "new-session"))
+        assertTrue(AccountAuthPolicy.sameSession("same-session", "same-session"))
+        assertFalse(AccountAuthPolicy.sameSession("guest-session", "signed-in-session"))
+    }
     @Test fun googleStatusDistinguishesOldServerFromMissingConfiguration() {
         assertNull(AccountAuthPolicy.googleUnavailableMessage(true, true))
         val oldServer = AccountAuthPolicy.googleUnavailableMessage(false, false)

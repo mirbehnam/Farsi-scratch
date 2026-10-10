@@ -49,25 +49,35 @@ class PurchaseVault(context: Context) : ReceiptStore {
         try { output.write(bytes); file.finishWrite(output) } catch (error: Exception) { file.failWrite(output); throw error }
     }
 
-    @Synchronized override fun saveReceipt(courseId: String, receipt: Receipt) {
+    override fun saveReceipt(courseId: String, receipt: Receipt) = synchronized(lock) {
+        values = read()
         val record = values.optJSONObject(courseId) ?: JSONObject().also { values.put(courseId, it) }
         record.put("sku", receipt.sku).put("receipt", receipt.token)
         write()
     }
-    @Synchronized override fun receipt(courseId: String): Receipt? = values.optJSONObject(courseId)?.let {
+    override fun receipt(courseId: String): Receipt? = synchronized(lock) { values = read(); values.optJSONObject(courseId)?.let {
         if (it.optString("receipt").isBlank()) null else Receipt(it.getString("sku"), it.getString("receipt"))
-    }
-    @Synchronized override fun saveAccess(access: CourseAccess) {
+    } }
+    override fun saveAccess(access: CourseAccess) = synchronized(lock) {
+        values = read()
         val record = values.optJSONObject(access.courseId) ?: JSONObject().also { values.put(access.courseId, it) }
         record.put("access", access.token).put("expires", access.expiresAtMillis).put("verified", true)
         write()
     }
-    @Synchronized fun access(courseId: String): CourseAccess? = values.optJSONObject(courseId)?.let {
+    fun access(courseId: String): CourseAccess? = synchronized(lock) { values = read(); values.optJSONObject(courseId)?.let {
         if (it.optString("access").isBlank()) null else CourseAccess(courseId, it.getString("access"), it.optLong("expires"))
-    }
-    @Synchronized fun wasVerified(courseId: String): Boolean = values.optJSONObject(courseId)?.optBoolean("verified") == true
-    @Synchronized fun revoke(courseId: String) {
+    } }
+    fun wasVerified(courseId: String): Boolean = synchronized(lock) { values = read(); values.optJSONObject(courseId)?.optBoolean("verified") == true }
+    fun revoke(courseId: String) = synchronized(lock) {
+        values = read()
         values.optJSONObject(courseId)?.apply { remove("access"); put("verified", false); remove("expires") }
         write()
     }
+    /** Revoke authorization only. Receipts and downloaded video files are not removed. */
+    fun revokeAll() = synchronized(lock) {
+        values = read()
+        values.keys().forEach { course -> values.optJSONObject(course)?.apply { remove("access"); remove("expires"); put("verified", false) } }
+        write()
+    }
+    companion object { private val lock = Any() }
 }

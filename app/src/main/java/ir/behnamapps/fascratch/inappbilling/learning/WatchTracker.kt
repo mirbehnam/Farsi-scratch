@@ -7,6 +7,7 @@ import java.util.UUID
 
 /** Only advancing, foreground playback counts. Seek jumps and scheduler stalls do not. */
 class WatchTracker internal constructor(private val repo: LearningRepository, private val course: String, private val lesson: Lesson) {
+    fun accessRevoked(): Boolean = !lesson.isPreview && repo.requiresRecovery()
     private var lastTime = 0L
     private var lastPosition = 0L
     private var wasPlaying = false

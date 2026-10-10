@@ -79,6 +79,9 @@ internal class LearningStore(context: Context) : SQLiteOpenHelper(context,
         writableDatabase.update("accounts", ContentValues().apply { putNull("grant_data"); putNull("profile"); put("celebration", 0) },
             "course NOT LIKE 'grant:%' AND course<>?", arrayOf("@identity"))
     }
+    @Synchronized fun clearIdentityProfile() {
+        writableDatabase.update("accounts", ContentValues().apply { putNull("profile"); put("celebration", 0) }, "course=?", arrayOf("@identity"))
+    }
     @Synchronized fun celebration(course: String): Int = readableDatabase.rawQuery("SELECT celebration FROM accounts WHERE course=?", arrayOf(course)).use {
         if (it.moveToFirst()) it.getInt(0) else 0
     }

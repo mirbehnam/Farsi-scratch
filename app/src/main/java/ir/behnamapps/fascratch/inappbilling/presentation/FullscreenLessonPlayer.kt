@@ -89,6 +89,9 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
     }
     LaunchedEffect(video, prepared) {
         while (prepared) {
+            if (watchTracker?.accessRevoked() == true) {
+                video?.setForeground(false); watchTracker.discontinuity(); onClose(); break
+            }
             val previouslyPlaying = playing
             val actualPosition = video?.position() ?: 0
             position = video?.seekPosition() ?: actualPosition; duration = video?.duration() ?: 0; playing = video?.isPlaying() == true

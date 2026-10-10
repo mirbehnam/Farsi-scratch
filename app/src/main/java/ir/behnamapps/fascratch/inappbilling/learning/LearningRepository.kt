@@ -50,6 +50,8 @@ class LearningRepository private constructor(context: Context) {
     private val mutex = Mutex()
     private val mutable = MutableStateFlow<Map<String, LearnerProfile>>(emptyMap())
     val profiles = mutable.asStateFlow()
+    val identityChanges = identity.changes
+    fun requiresRecovery(): Boolean = identity.requiresRecovery()
     private val preparing = mutableSetOf<String>()
     private val knownCourses = java.util.concurrent.ConcurrentHashMap<String, Course>()
     private val lastPrepare = java.util.concurrent.ConcurrentHashMap<String, Long>()
@@ -57,15 +59,46 @@ class LearningRepository private constructor(context: Context) {
     private var lastSyncAttempt = -10_000L
     private var lastProfileAttempt = -10_000L
     private var codingJob: Job? = null
+    private var sessionMonitor: Job? = null
+    @Synchronized private fun startSessionMonitor() {
+        if (sessionMonitor?.isActive == true) return
+        sessionMonitor = scope.launch {
+            while (isActive) {
+                val process = android.app.ActivityManager.RunningAppProcessInfo()
+                android.app.ActivityManager.getMyMemoryState(process)
+                if (process.importance > android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND) break
+                visit(); delay(15_000)
+            }
+        }
+    }
     private var codingStop: java.util.concurrent.atomic.AtomicLong? = null
     private val mutableStatus = MutableStateFlow<String?>(null)
     val status = mutableStatus.asStateFlow()
     private fun failure(error: Exception) {
-        mutableStatus.value = if (error is CourseFailure) "ثبت پیشرفت: ${error.message} (HTTP ${error.status ?: 0})"
+        mutableStatus.value = if (requiresRecovery()) "نشست حساب پایان یافته؛ دوباره وارد حساب شو یا خرید را بازیابی کن."
+            else if (error is CourseFailure && error.status == 401)
+                "مجوز ثبت پیشرفت معتبر نیست؛ حساب را بررسی کن. (HTTP 401${error.operation.takeIf { it.isNotBlank() }?.let { " — $it" }.orEmpty()})"
+            else if (error is CourseFailure) "ثبت پیشرفت: ${error.message} (HTTP ${error.status})"
             else "ثبت پیشرفت انجام نشد؛ اتصال را بررسی کنید. اطلاعات ذخیره‌شده برای ارسال مجدد حفظ می‌شود."
     }
-    init { scope.launch { mutex.withLock { mutable.value = store.profiles() }; if (store.pending().isNotEmpty()) schedule() } }
-    fun visit() { scope.launch {
+    init {
+        scope.launch { identity.changes.collect { mutex.withLock { mutable.value = store.profiles() } } }
+        scope.launch { mutex.withLock { mutable.value = store.profiles() }; if (store.pending().isNotEmpty()) schedule() }
+        // Only monitor while an Activity is resumed. Offline/network failures retain cached access.
+        (app as? android.app.Application)?.registerActivityLifecycleCallbacks(object : android.app.Application.ActivityLifecycleCallbacks {
+            private var resumed = 0
+            override fun onActivityResumed(activity: android.app.Activity) {
+                if (++resumed == 1) startSessionMonitor()
+            }
+            override fun onActivityPaused(activity: android.app.Activity) { if (--resumed <= 0) { resumed = 0; sessionMonitor?.cancel(); sessionMonitor = null } }
+            override fun onActivityCreated(activity: android.app.Activity, state: android.os.Bundle?) {}
+            override fun onActivityStarted(activity: android.app.Activity) {}
+            override fun onActivityStopped(activity: android.app.Activity) {}
+            override fun onActivitySaveInstanceState(activity: android.app.Activity, state: android.os.Bundle) {}
+            override fun onActivityDestroyed(activity: android.app.Activity) {}
+        })
+    }
+    fun visit() { startSessionMonitor(); scope.launch {
         mutex.withLock {
             if (SystemClock.elapsedRealtime() - lastProfileAttempt >= 10_000) {
                 lastProfileAttempt = SystemClock.elapsedRealtime()
@@ -78,6 +111,7 @@ class LearningRepository private constructor(context: Context) {
     fun refreshProfile() { visit(); flushNow() }
 
     private suspend fun access(course: Course, force: Boolean = false): String {
+        if (requiresRecovery()) throw CourseFailure("نشست قبلی پایان یافته؛ وارد حساب شو یا خرید را بازیابی کن.")
         if (identity.profile()?.registered == true) return api.accountAccess(course, force).token
         val vault = PurchaseVault(app)
         require(vault.wasVerified(course.id))
@@ -143,6 +177,7 @@ class LearningRepository private constructor(context: Context) {
         return WatchTracker(this, course.id, lesson)
     }
     private fun ownsCourse(id: String): Boolean {
+        if (requiresRecovery()) return false
         val profile = identity.profile()
         return if (profile?.registered == true) profile.courses.any { it.uuid == id && it.purchased && it.enabled }
             else PurchaseVault(app).wasVerified(id)

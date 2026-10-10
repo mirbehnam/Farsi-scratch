@@ -80,7 +80,7 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
                     status == 401 || status == 403 -> "دسترسی نیاز به بازیابی و تأیید مجدد خرید دارد."
                     status == 404 -> "دوره یا درس در سرور پیدا نشد."
                     else -> "ارتباط با سرور یا استور برقرار نشد؛ دوباره تلاش کنید."
-                }, status, code)
+                }, status, code, path.substringBefore('?'))
             }
             json ?: throw CourseFailure("پاسخ سرور معتبر نیست.")
         } catch (error: kotlinx.coroutines.CancellationException) { throw error }
@@ -161,10 +161,12 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
     }
 
     override suspend fun verify(course: Course, provider: String, receipt: Receipt, restore: Boolean): CourseAccess {
+        val session = identity?.secret()
         val response = request("purchases/${if (restore) "restore" else "verify"}", body = JSONObject()
             .put("provider", provider).put("sku", receipt.sku).put("purchase_token", receipt.token)).getJSONObject("data")
         if (response.optString("status") != "verified" || !response.optBoolean("has_access")) throw CourseFailure("خرید هنوز تأیید نشده است.")
-        identity?.accept(response.optJSONObject("account"))
+        if (identity != null && !identity.accept(response.optJSONObject("account"), expectedSecret = session))
+            throw CourseFailure("حساب تغییر کرده؛ بازیابی را دوباره انجام بده.", 409)
         val token = response.getString("access_token")
         require(token.matches(Regex("[a-f0-9]{64}")))
         val expiry = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US).apply { isLenient = false }.parse(response.getString("expires_at"))
@@ -179,7 +181,7 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
 
     suspend fun accountAccess(course: Course, force: Boolean = false): CourseAccess {
         val uuid = identity?.profile()?.uuid ?: throw CourseFailure("ابتدا وارد حساب خودت شو.")
-        val key = "$uuid:${course.id}"
+        val key = "$uuid:${identity.secret()}:${course.id}"
         val old = accountAccessCache[key]
         if (!force && old != null && old.expiresAtMillis > System.currentTimeMillis() + 60_000) return old
         val result = auth("course-access", JSONObject().put("course_uuid", course.id))
@@ -195,13 +197,17 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
 
     suspend fun account(): JSONObject {
         val id = identity ?: error("Account context is required")
-        val session = id.secret()
+        var session = id.secret()
         val profile = try { request("accounts/me", accountSecret = session).getJSONObject("data") }
         catch (failure: CourseFailure) {
             if (failure.status != 401) throw failure
             if (id.secret() != session) throw CourseFailure("حساب به‌روز شده است؛ دوباره بررسی کن.", 409)
-            // Expiry must not silently replace a registered learner with a new guest.
-            if (id.profile()?.registered == true) throw CourseFailure("برای ادامه همگام‌سازی، دوباره وارد حساب خودت شو یا خریدت را بازیابی کن.", 401)
+            if (id.profile() != null) {
+                if (!ir.behnamapps.fascratch.inappbilling.learning.AccountSessionPolicy.ended(failure.status, failure.code, true)) throw failure
+                if (!id.invalidateEndedSession(session)) throw CourseFailure("حساب تغییر کرده؛ دوباره بررسی کن.", 409)
+                accountAccessCache.clear()
+                session = id.secret()
+            }
             request("accounts/register", body = JSONObject().put("secret", session), accountSecret = session).getJSONObject("data")
         }
         if (!id.accept(JSONObject().put("profile", profile), expectedSecret = session))

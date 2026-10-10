@@ -56,6 +56,7 @@ class TrainingController(
     private var layoutGeneration = 0
 
     private fun ownsCourse(id: String): Boolean {
+        if (learning?.requiresRecovery() == true) return false
         val profile = learning?.profiles?.value?.get(ir.behnamapps.fascratch.inappbilling.learning.LearningIdentity.KEY)
         return if (profile?.registered == true) profile.courses.any { it.uuid == id && it.purchased && it.enabled } else vault.wasVerified(id)
     }
@@ -63,8 +64,10 @@ class TrainingController(
     init {
         scope.launch {
             learning?.profiles?.collect {
+                if (learning.requiresRecovery()) cancelDownload()
                 mutable.update { current -> current.copy(purchasedIds = current.courses.filter { ownsCourse(it.id) }.map { it.id }.toSet(),
-                    purchased = current.course?.let { ownsCourse(it.id) } ?: false) }
+                    purchased = current.course?.let { ownsCourse(it.id) } ?: false,
+                    message = if (learning.requiresRecovery()) "نشست حساب پایان یافته؛ دوباره وارد حساب شو یا خرید را بازیابی کن. فایل‌هایت محفوظ هستند." else current.message) }
             }
         }
     }
@@ -144,6 +147,7 @@ class TrainingController(
 
     // Serial SDK access prevents competing inventory/payment callbacks. No global UI/download lock.
     private fun syncStores(courses: List<Course>) {
+        if (learning?.requiresRecovery() == true) return
         // The catalog already contains fresh server prices; do not request every course twice.
         if (billing.provider == "website") return
         // Re-render/refresh must not interrupt a pending Myket SDK inventory operation.
@@ -151,6 +155,7 @@ class TrainingController(
         pauseStoreSync = false
         storeJob = scope.launch {
             for (course in courses) {
+                if (learning?.requiresRecovery() == true) break
                 if (pauseStoreSync) break
                 // An explicitly signed-in account is authoritative. Automatic inventory must not switch it.
                 if (learning?.profiles?.value?.get(ir.behnamapps.fascratch.inappbilling.learning.LearningIdentity.KEY)?.registered == true) continue
@@ -221,6 +226,7 @@ class TrainingController(
     }
 
     private suspend fun access(course: Course, force: Boolean = false): CourseAccess {
+        if (learning?.requiresRecovery() == true) throw CourseFailure("نشست پایان یافته؛ وارد حساب شو یا خرید را بازیابی کن.")
         if (learning?.profiles?.value?.get(ir.behnamapps.fascratch.inappbilling.learning.LearningIdentity.KEY)?.registered == true)
             return api.accountAccess(course, force)
         val saved = vault.access(course.id)
@@ -253,7 +259,7 @@ class TrainingController(
         mutable.update { it.copy(downloaded = it.downloaded - lesson.id, message = null) }
     }
     fun playable(lesson: Lesson): File? = if (lesson.courseId == state.value.course?.id &&
-        CoursePolicy.canLearn(lesson, state.value.purchased)) downloads.completed(lesson) else null
+        CoursePolicy.canLearn(lesson, ownsCourse(lesson.courseId))) downloads.completed(lesson) else null
     fun watchTracker(lesson: Lesson) = state.value.course?.let { learning?.tracker(it, lesson) }
     fun nextDownloadedLesson(currentId: String): Lesson? = LessonPlayerPolicy.next(state.value.lessons, currentId)
         ?.takeIf { playable(it) != null }

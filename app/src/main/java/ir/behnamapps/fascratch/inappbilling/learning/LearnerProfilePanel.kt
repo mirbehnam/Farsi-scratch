@@ -4,7 +4,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,15 +27,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import ir.behnamapps.fascratch.R
 import ir.behnamapps.fascratch.inappbilling.presentation.persianDisplay
 import kotlin.math.ceil
 
@@ -64,28 +60,16 @@ import kotlin.math.ceil
     val config = LocalConfiguration.current
     val narrow = config.screenWidthDp <= 700
     val short = config.screenHeightDp <= 470 && config.screenWidthDp >= 780
-    val avatar = if (narrow) 74.dp else if (short) 88.dp else 94.dp
+    val avatar = if (narrow) 100.dp else 112.dp
     val font = if (narrow) 9.5.sp else if (short) 10.sp else 11.sp
     // RTL Row puts the avatar at the physical right, never reversed by the app's locale.
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Top) {
-        Box(Modifier.size(avatar).shadow(5.dp, RoundedCornerShape(24.dp))
-            .background(Brush.radialGradient(listOf(Color.White, Color(0xFFFFF8DB), Color(0xFFFFECC0))), RoundedCornerShape(24.dp))
-            .border(3.dp, Color(0xFFFFCF65), RoundedCornerShape(24.dp)).padding(6.dp)) {
-            Image(painterResource(R.drawable.learner_profile_cat), null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
-            // The reference PNG contains a sample level. Cover it with the real, live level.
-            BoxWithConstraints(Modifier.fillMaxSize()) {
-                Box(Modifier.offset(y = maxHeight * .65f).fillMaxWidth(.76f).align(Alignment.TopCenter)
-                    .height(maxHeight * .23f).background(Brush.verticalGradient(listOf(Color(0xFF0868CB), Color(0xFF063C8C))), RoundedCornerShape(5.dp)),
-                    contentAlignment = Alignment.Center) {
-                    Text("سطح ${persianDisplay(profile.level.toString())}", color = Color(0xFFFFD44F),
-                        fontWeight = FontWeight.Black, fontSize = if (profile.level < 1000) 13.sp else 10.sp, maxLines = 1)
-                }
-            }
-        }
+        // No second frame, clipping shape or sample text over the artwork's own plaque.
+        LearnerLevelBadge(profile.level, Modifier.size(avatar))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(Modifier.fillMaxWidth()) {
                 FlowRow(Modifier.fillMaxWidth().padding(end = 76.dp), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Text(if (profile.nameSet) profile.name else "حساب مهمان", color = Color(0xFF344F83),
+                    Text(if (!profile.registered) "کاربر مهمان" else if (profile.nameSet) profile.name else "برنامه‌نویس", color = Color(0xFF344F83),
                         fontSize = if (narrow) 15.sp else if (short) 17.sp else 19.sp, lineHeight = 23.sp, fontWeight = FontWeight.Black,
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.align(Alignment.CenterVertically).widthIn(max = 230.dp).clickable(role = Role.Button, onClick = onEditName)
@@ -107,8 +91,8 @@ import kotlin.math.ceil
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(if (narrow) 7.dp else 10.dp)) {
         ReferenceStat("زمان مشاهده آموزش", persianDisplay(learningDuration(profile.watchMs)), 0, Modifier.weight(1f), narrow)
         ReferenceStat("زمان برنامه‌نویسی", persianDisplay(learningDuration(profile.codingMs)), 1, Modifier.weight(1f), narrow)
-        ReferenceStat("رتبه در جدول کاربران", profile.rank?.let { persianDisplay(it.toString()) } ?: "—", 2, Modifier.weight(1f), narrow,
-            if (profile.rank == null && !profile.nameSet) "پس از ثبت نام نمایشی" else null)
+        ReferenceStat("رتبه در جدول کاربران", profile.rank?.takeIf { profile.registered }?.let { persianDisplay(it.toString()) } ?: "—", 2, Modifier.weight(1f), narrow,
+            if (!profile.registered) "پس از تکمیل ثبت‌نام" else if (!profile.nameSet) "نام نمایشی را ثبت کن" else null)
     }
 }
 

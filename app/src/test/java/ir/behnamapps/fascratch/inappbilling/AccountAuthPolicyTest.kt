@@ -20,4 +20,14 @@ class AccountAuthPolicyTest {
         assertTrue(first.matches(Regex("[a-f0-9]{64}")))
         assertNotEquals(first, AccountAuthPolicy.secret())
     }
+    @Test fun registrationRequiresFourValidFieldsAndTheLatestAvailabilityResult() {
+        val password = "a long secret phrase"
+        assertTrue(AccountAuthPolicy.registration("scratch_star", "ستاره", password, password, true, "scratch_star"))
+        assertFalse(AccountAuthPolicy.registration("scratch_star", "", password, password, true, "scratch_star"))
+        assertFalse(AccountAuthPolicy.registration("scratch_star", "<bad>", password, password, true, "scratch_star"))
+        assertFalse(AccountAuthPolicy.registration("scratch_star", "ستاره", password, "different", true, "scratch_star"))
+        assertFalse(AccountAuthPolicy.registration("scratch_star", "ستاره", password, password, false, "scratch_star"))
+        assertFalse(AccountAuthPolicy.registration("scratch_star", "ستاره", password, password, null, null))
+        assertFalse(AccountAuthPolicy.registration("new_name", "ستاره", password, password, true, "old_name"))
+    }
 }

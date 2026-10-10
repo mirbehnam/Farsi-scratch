@@ -151,12 +151,10 @@ import kotlinx.coroutines.delay
     var showAccount by remember(profile.uuid) { mutableStateOf(false) }
     var showCourses by remember(profile.uuid) { mutableStateOf(false) }
     val syncStatus by repository.status.collectAsState()
-    val config = androidx.compose.ui.platform.LocalConfiguration.current
-    val height = (config.screenHeightDp - 24).coerceAtLeast(180).dp
-    val short = config.screenHeightDp <= 470
     androidx.compose.ui.window.Dialog(onDismissRequest = onClose,
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.widthIn(max = 1220.dp).fillMaxWidth(.96f).heightIn(max = height),
+        Box(Modifier.fillMaxSize().padding(16.dp)) {
+        Surface(Modifier.fillMaxSize(),
             shape = RoundedCornerShape(27.dp), color = Color.White,
             border = BorderStroke(3.dp, Color.White), shadowElevation = 16.dp) {
             Box(Modifier.background(androidx.compose.ui.graphics.Brush.linearGradient(
@@ -165,9 +163,8 @@ import kotlinx.coroutines.delay
                     for (x in 0..3) for (y in 0..2) drawCircle(Color(0xFFF5CC65).copy(alpha = .3f),
                         3.dp.toPx(), Offset((13 + x * 27).dp.toPx(), (13 + y * 27).dp.toPx()))
                 }
-                Column(Modifier.padding(horizontal = if (short) 17.dp else 30.dp,
-                    vertical = if (short) 16.dp else 20.dp).verticalScroll(rememberScrollState())) {
-                    LearnerProfilePanel(profile, onAccount = { showAccount = true }, onEditName = { editing = true },
+                Column(Modifier.padding(20.dp).verticalScroll(rememberScrollState())) {
+                    LearnerProfilePanel(profile, onAccount = { showAccount = true }, onEditName = { if (profile.registered) editing = true else showAccount = true },
                         onGuide = { showPointsGuide = true }, onClose = onClose)
                     if (profile.nameBlocked) {
                         Spacer(Modifier.height(12.dp))
@@ -199,6 +196,7 @@ import kotlinx.coroutines.delay
                     }
                 }
             }
+        }
         }
     }
     if (editing) LearnerNameEditorDialog(course, profile, repository, onClose = { editing = false }, onSaved = {

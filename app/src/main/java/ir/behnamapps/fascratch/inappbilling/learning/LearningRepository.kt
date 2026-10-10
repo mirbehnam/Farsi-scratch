@@ -179,11 +179,14 @@ class LearningRepository private constructor(context: Context) {
         }
     }
     suspend fun authOptions(): JSONObject = api.auth("options")
-    suspend fun authenticate(register: Boolean, username: String, password: String, confirmation: String, secret: String, expectedUuid: String) = withContext(Dispatchers.IO) {
+    suspend fun usernameAvailable(username: String): Boolean = api.auth("username-availability", JSONObject().put("username", username.trim())).getBoolean("available")
+    suspend fun authenticate(register: Boolean, username: String, password: String, confirmation: String, secret: String, expectedUuid: String, displayName: String? = null) = withContext(Dispatchers.IO) {
         mutex.withLock {
             require(identity.profile()?.uuid == expectedUuid) { "حساب تغییر کرده؛ فرم را دوباره باز کن." }
-            val result = api.auth(if (register) "register" else "login", JSONObject().put("username", username.trim())
-                .put("password", password).put("password_confirmation", confirmation).put("session_secret", secret))
+            val body = JSONObject().put("username", username.trim()).put("password", password)
+                .put("password_confirmation", confirmation).put("session_secret", secret)
+            if (register && displayName != null) body.put("display_name", displayName.trim())
+            val result = api.auth(if (register) "register" else "login", body)
             identity.accept(result.getJSONObject("account")); mutable.value = store.profiles(); mutableStatus.value = null
         }
     }

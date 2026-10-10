@@ -5,6 +5,14 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AccountAuthPolicyTest {
+    @Test fun googleStatusDistinguishesOldServerFromMissingConfiguration() {
+        assertNull(AccountAuthPolicy.googleUnavailableMessage(true, true))
+        val oldServer = AccountAuthPolicy.googleUnavailableMessage(false, false)
+        val unconfigured = AccountAuthPolicy.googleUnavailableMessage(true, false)
+        assertTrue(oldServer!!.contains("به‌روز"))
+        assertTrue(unconfigured!!.contains("تنظیم"))
+        assertNotEquals(oldServer, unconfigured)
+    }
     @Test fun usernameIsUnambiguousAndPasswordAllowsPassphrases() {
         assertTrue(AccountAuthPolicy.username(" Scratch_Star "))
         assertFalse(AccountAuthPolicy.username("ab"))

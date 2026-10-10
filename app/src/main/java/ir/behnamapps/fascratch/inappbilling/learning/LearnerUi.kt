@@ -152,8 +152,8 @@ import kotlinx.coroutines.delay
     var showCourses by remember(profile.uuid) { mutableStateOf(false) }
     val syncStatus by repository.status.collectAsState()
     androidx.compose.ui.window.Dialog(onDismissRequest = onClose,
-        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
-        Box(Modifier.fillMaxSize().padding(16.dp)) {
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        Box(Modifier.learnerSafeDialogBounds()) {
         Surface(Modifier.fillMaxSize(),
             shape = RoundedCornerShape(27.dp), color = Color.White,
             border = BorderStroke(3.dp, Color.White), shadowElevation = 16.dp) {

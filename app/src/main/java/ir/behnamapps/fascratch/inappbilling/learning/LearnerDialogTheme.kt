@@ -1,6 +1,13 @@
 package ir.behnamapps.fascratch.inappbilling.learning
 
 import androidx.compose.material3.*
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
@@ -10,6 +17,10 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.LayoutDirection
 import ir.behnamapps.fascratch.R
+
+/** Use the dialog window's bounds, including landscape side bars/cutouts and the keyboard. */
+internal fun Modifier.learnerSafeDialogBounds(): Modifier = fillMaxSize()
+    .safeDrawingPadding().imePadding().padding(16.dp).clipToBounds()
 
 /** Home and training use different outer themes; learner dialogs must not inherit either. */
 @Composable internal fun LearnerDialogTheme(content: @Composable () -> Unit) {

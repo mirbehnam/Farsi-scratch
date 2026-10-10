@@ -43,6 +43,8 @@ import kotlinx.coroutines.launch
     var googleEnabled by remember { mutableStateOf(false) }
     var passwordEnabled by remember { mutableStateOf(false) }
     var optionsLoaded by remember { mutableStateOf(false) }
+    var optionsLoading by remember { mutableStateOf(false) }
+    var googleUnavailableMessage by remember { mutableStateOf<String?>(null) }
     var available by remember { mutableStateOf<Boolean?>(null) }
     var checkedUsername by remember { mutableStateOf<String?>(null) }
     var checking by remember { mutableStateOf(false) }
@@ -58,12 +60,16 @@ import kotlinx.coroutines.launch
         AccountAuthPolicy.password(password, register) && (!register || (!checking &&
             AccountAuthPolicy.registration(username, displayName, password, confirmation, available, checkedUsername)))
     suspend fun loadOptions() {
+        if (optionsLoading) return
+        optionsLoading = true
         try {
             val options = repository.authOptions()
             googleEnabled = options.optBoolean("google_native_enabled"); passwordEnabled = options.optBoolean("password_enabled")
+            googleUnavailableMessage = AccountAuthPolicy.googleUnavailableMessage(options.has("google_native_enabled"), googleEnabled)
             optionsLoaded = true; error = null
         } catch (e: CancellationException) { throw e }
         catch (_: Exception) { error = "اتصال برقرار نشد؛ دوباره تلاش کن." }
+        finally { optionsLoading = false }
     }
     LaunchedEffect(Unit) { loadOptions() }
     LaunchedEffect(username, page, passwordEnabled, checkRetry) {
@@ -98,8 +104,8 @@ import kotlinx.coroutines.launch
             finally { busy = false }
         }
     }
-    Dialog(onDismissRequest = { if (!busy) onClose() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Box(Modifier.fillMaxSize().padding(16.dp)) {
+    Dialog(onDismissRequest = { if (!busy) onClose() }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        Box(Modifier.learnerSafeDialogBounds()) {
             Surface(Modifier.fillMaxSize(), shape = RoundedCornerShape(24.dp), border = BorderStroke(2.dp, Color.White), shadowElevation = 10.dp) {
                 Column(Modifier.background(Brush.linearGradient(listOf(Color(0xFFFAF5FF), Color(0xFFFFF8EB))))) {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -119,7 +125,9 @@ import kotlinx.coroutines.launch
                             }
                             if (profile.username != null) Text("نام کاربری شما: " + profile.username, color = Color(0xFF407D48))
                             if (!googleSupported) Text("ورود با نام کاربری و رمز در این گوشی در دسترس است.", style = MaterialTheme.typography.bodySmall)
-                            else if (optionsLoaded && !googleEnabled) Text("ورود گوگل فعلاً فعال نیست.", style = MaterialTheme.typography.bodySmall)
+                            else if (optionsLoaded && !googleEnabled) googleUnavailableMessage?.let {
+                                Text(it, style = MaterialTheme.typography.bodySmall)
+                            }
                         } else {
                             if (!register) Text("با ورود، حساب فعلی عوض می‌شود؛ امتیاز حساب‌ها با هم جمع نمی‌شود.", style = MaterialTheme.typography.bodySmall)
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -145,7 +153,8 @@ import kotlinx.coroutines.launch
                             }
                         }
                         error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-                        if (!optionsLoaded) TextButton(onClick = { scope.launch { loadOptions() } }) { Text("بررسی اتصال") }
+                        if (!optionsLoaded || (googleSupported && !googleEnabled)) TextButton(enabled = !busy && !optionsLoading,
+                            onClick = { scope.launch { loadOptions() } }) { Text(if (optionsLoading) "در حال بررسی…" else "بررسی مجدد اتصال") }
                     }
                     HorizontalDivider(color = Color(0xFFDCC8FF))
                     Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {

@@ -44,8 +44,13 @@ import kotlin.math.ceil
     onGuide: () -> Unit,
     onClose: () -> Unit,
 ) {
-    CompositionLocalProvider(LocalTextStyle provides MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, lineHeight = 14.sp)) {
-        ProfilePanelContent(profile, onAccount, onEditName, onGuide, onClose)
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val contentWidth = maxWidth.value
+        CompositionLocalProvider(LocalTextStyle provides MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, lineHeight = 14.sp)) {
+            Column(Modifier.fillMaxWidth()) {
+                ProfilePanelContent(profile, onAccount, onEditName, onGuide, onClose, contentWidth)
+            }
+        }
     }
 }
 
@@ -56,9 +61,10 @@ import kotlin.math.ceil
     onEditName: () -> Unit,
     onGuide: () -> Unit,
     onClose: () -> Unit,
+    contentWidth: Float,
 ) {
     val config = LocalConfiguration.current
-    val narrow = config.screenWidthDp <= 700
+    val narrow = contentWidth <= 700
     val short = config.screenHeightDp <= 470 && config.screenWidthDp >= 780
     val avatar = if (narrow) 100.dp else 112.dp
     val font = if (narrow) 9.5.sp else if (short) 10.sp else 11.sp

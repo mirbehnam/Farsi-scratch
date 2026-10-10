@@ -1,8 +1,6 @@
 package ir.behnamapps.fascratch.inappbilling.learning
 
 import androidx.compose.animation.*
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -151,78 +149,55 @@ import kotlinx.coroutines.delay
     var editing by remember(profile.uuid) { mutableStateOf(false) }
     var showPointsGuide by remember(profile.uuid) { mutableStateOf(false) }
     var showAccount by remember(profile.uuid) { mutableStateOf(false) }
+    var showCourses by remember(profile.uuid) { mutableStateOf(false) }
     val syncStatus by repository.status.collectAsState()
-    val height = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp - 32).coerceAtLeast(180).dp
+    val config = androidx.compose.ui.platform.LocalConfiguration.current
+    val height = (config.screenHeightDp - 24).coerceAtLeast(180).dp
+    val short = config.screenHeightDp <= 470
     androidx.compose.ui.window.Dialog(onDismissRequest = onClose,
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.widthIn(max = 940.dp).fillMaxWidth(.94f).heightIn(max = height),
-            shape = RoundedCornerShape(28.dp), color = Color(0xFFFAF8FF), tonalElevation = 6.dp) {
-            Column(Modifier.padding(20.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    LearnerLevelBadge(profile.level, Modifier.size(92.dp))
-                    Column(Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(if (profile.name == "هنرجو") "برنامه‌نویس" else profile.name,
-                                modifier = Modifier.weight(1f, fill = false), maxLines = 1,
-                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                fontWeight = FontWeight.Bold, style = MaterialTheme.typography.headlineSmall)
-                            if (profile.nameBlocked) Text(" ⛔", color = Color(0xFFBA2525), modifier = Modifier.semantics { contentDescription = "نام نمایشی مسدود است" })
-                            if (profile.nameSet) {
-                                IconButton(onClick = { editing = true }, modifier = Modifier.semantics { contentDescription = "ویرایش نام نمایشی" }) {
-                                    Text("✎", fontSize = 26.sp, color = Color(0xFF855CD6))
-                                }
-                            } else {
-                                FilledTonalButton(onClick = { editing = true }, shape = RoundedCornerShape(12.dp),
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)) {
-                                    Text("ثبت نام", fontWeight = FontWeight.Bold)
+        Surface(Modifier.widthIn(max = 1220.dp).fillMaxWidth(.96f).heightIn(max = height),
+            shape = RoundedCornerShape(27.dp), color = Color.White,
+            border = BorderStroke(3.dp, Color.White), shadowElevation = 16.dp) {
+            Box(Modifier.background(androidx.compose.ui.graphics.Brush.linearGradient(
+                listOf(Color.White, Color(0xFFFFFDFA), Color(0xFFF9F6FF))))) {
+                Canvas(Modifier.align(Alignment.TopEnd).padding(top = 11.dp, end = 10.dp).size(110.dp, 76.dp)) {
+                    for (x in 0..3) for (y in 0..2) drawCircle(Color(0xFFF5CC65).copy(alpha = .3f),
+                        3.dp.toPx(), Offset((13 + x * 27).dp.toPx(), (13 + y * 27).dp.toPx()))
+                }
+                Column(Modifier.padding(horizontal = if (short) 17.dp else 30.dp,
+                    vertical = if (short) 16.dp else 20.dp).verticalScroll(rememberScrollState())) {
+                    LearnerProfilePanel(profile, onAccount = { showAccount = true }, onEditName = { editing = true },
+                        onGuide = { showPointsGuide = true }, onClose = onClose)
+                    if (profile.nameBlocked) {
+                        Spacer(Modifier.height(12.dp))
+                        NameRestrictionNotice(profile)
+                    }
+                    val purchased = profile.courses.filter { it.purchased }
+                    if (purchased.isNotEmpty()) {
+                        TextButton(onClick = { showCourses = !showCourses }) {
+                            Text("دوره‌های خریداری‌شده " + if (showCourses) "⌃" else "⌄", color = Color(0xFF505DC0))
+                        }
+                        if (showCourses) purchased.forEach { item ->
+                            Surface(Modifier.fillMaxWidth().padding(bottom = 6.dp), shape = RoundedCornerShape(14.dp), color = Color(0xFFEAF7E7)) {
+                                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text("✓ " + item.title, Modifier.weight(1f), fontWeight = FontWeight.Bold, color = Color(0xFF407D48))
+                                    Text(persianDisplay(learningDuration(item.watchMs)) + " مشاهده" +
+                                        if (item.enabled) "" else " · دسترسی غیرفعال", style = MaterialTheme.typography.bodySmall)
                                 }
                             }
                         }
-                        Text("برنامه‌نویس", color = Color(0xFF746584), style = MaterialTheme.typography.labelLarge)
-                        profile.fullName?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                     }
-                    FilledTonalButton(onClick = { showPointsGuide = true }, shape = RoundedCornerShape(14.dp),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)) {
-                        Text("✨ راهنمای کسب امتیاز", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
-                    }
-                    IconButton(onClick = onClose, modifier = Modifier.semantics { contentDescription = "بستن پروفایل" }) {
-                        Text("×", fontSize = 30.sp)
-                    }
+                    syncStatus?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 8.dp)) }
+                    if (!profile.enabled) Text("امتیازدهی این حساب توسط مدیر متوقف شده است.", color = MaterialTheme.colorScheme.error)
                 }
-                ScratchLevelProgress(profile)
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(if (profile.registered) "🔐 حساب قابل بازیابی" else "حساب مهمان", style = MaterialTheme.typography.labelMedium)
-                    TextButton(onClick = { showAccount = true }) { Text(if (profile.registered) "مدیریت ورود" else "ذخیره حساب / ورود") }
-                }
-                if (profile.nameBlocked) NameRestrictionNotice(profile)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    ProfileStat("زمان مشاهده آموزش", persianDisplay(learningDuration(profile.watchMs)), Modifier.weight(1f))
-                    ProfileStat("زمان برنامه‌نویسی", persianDisplay(learningDuration(profile.codingMs)), Modifier.weight(1f))
-                }
-                Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = Color(0xFFEEE5FF)) {
-                    Row(Modifier.padding(horizontal = 20.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("🏆", fontSize = 28.sp)
-                        Text("رتبه شما", Modifier.weight(1f).padding(horizontal = 12.dp), fontWeight = FontWeight.Bold)
-                        Text(profile.rank?.let { persianDisplay(it.toString()) } ?: "—",
-                            fontWeight = FontWeight.Black, fontSize = 26.sp, color = Color(0xFF7044BC))
+                // Physical left-to-right order matches the HTML stripe, regardless of RTL.
+                Canvas(Modifier.fillMaxWidth().height(7.dp).align(Alignment.TopCenter)) {
+                    listOf(0xFFFFBD44, 0xFFFF829A, 0xFF9C81FC, 0xFF4C97FF, 0xFF46CDA7).forEachIndexed { index, color ->
+                        drawRect(Color(color), Offset(size.width * index / 5f, 0f), Size(size.width / 5f, size.height))
                     }
                 }
-                if (!profile.nameSet && !profile.nameBlocked) Text("برای حضور در رتبه‌بندی، نام نمایشی ثبت کنید.", style = MaterialTheme.typography.bodySmall)
-                val purchased = profile.courses.filter { it.purchased }
-                if (purchased.isNotEmpty()) {
-                    Text("دوره‌های خریداری‌شده", fontWeight = FontWeight.Bold)
-                    purchased.forEach { item ->
-                        Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), color = Color(0xFFE8F3EB)) {
-                            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text("✓ " + item.title, Modifier.weight(1f), fontWeight = FontWeight.Bold, color = Color(0xFF21634F))
-                                Text(persianDisplay(learningDuration(item.watchMs)) + " مشاهده" +
-                                    if (item.enabled) "" else " · دسترسی غیرفعال", style = MaterialTheme.typography.bodySmall)
-                            }
-                        }
-                    }
-                }
-                syncStatus?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-                if (!profile.enabled) Text("امتیازدهی این حساب توسط مدیر متوقف شده است.", color = MaterialTheme.colorScheme.error)
             }
         }
     }
@@ -234,37 +209,6 @@ import kotlinx.coroutines.delay
     if (showPointsGuide) LearnerPointsGuideDialog { showPointsGuide = false }
 }
 
-@Composable private fun ScratchLevelProgress(profile: LearnerProfile) {
-    val target = (profile.xpIntoLevel / profile.xpForNext.coerceAtLeast(1.0)).toFloat().coerceIn(0f, 1f)
-    var started by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { started = true }
-    val animated by androidx.compose.animation.core.animateFloatAsState(if (started) target else 0f,
-        animationSpec = androidx.compose.animation.core.tween(900), label = "scratch-level-progress")
-    val transition = androidx.compose.animation.core.rememberInfiniteTransition(label = "progress-glow")
-    val glow by transition.animateFloat(0f, 1f, animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-        androidx.compose.animation.core.tween(2400), androidx.compose.animation.core.RepeatMode.Restart), label = "glow-position")
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Surface(Modifier.size(44.dp), shape = CircleShape, color = Color(0xFFFFAB19)) {
-            Box(contentAlignment = Alignment.Center) { Text(persianDisplay(profile.level.toString()), fontWeight = FontWeight.Black, color = Color(0xFF513508)) }
-        }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Canvas(Modifier.fillMaxWidth().height(12.dp)) {
-                drawRoundRect(Color(0xFFE9DFF7), cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height / 2))
-                if (animated > 0) {
-                    drawRoundRect(androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(Color(0xFF855CD6), Color(0xFFFFAB19))),
-                        size = Size(size.width * animated, size.height), cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height / 2))
-                    clipRect(right = size.width * animated) {
-                        drawRect(androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(Color.Transparent, Color.White.copy(alpha = .35f), Color.Transparent)),
-                            topLeft = Offset(size.width * glow - 60.dp.toPx(), 0f), size = Size(60.dp.toPx(), size.height))
-                    }
-                }
-            }
-            Text(persianDisplay((target * 100).toInt().toString()) + "٪ - " +
-                persianDisplay(kotlin.math.ceil((profile.xpForNext - profile.xpIntoLevel).coerceAtLeast(0.0)).toLong().toString()) +
-                " امتیاز تا سطح بعد", style = MaterialTheme.typography.labelMedium, color = Color(0xFF7044BC))
-        }
-    }
-}
 
 @Composable internal fun NameRestrictionNotice(profile: LearnerProfile) {
     Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), color = Color(0xFFFFE9E7), border = BorderStroke(1.dp, Color(0xFFE5AAA4))) {
@@ -274,12 +218,6 @@ import kotlinx.coroutines.delay
             profile.nameBlockReason?.let { Text("دلیل: " + it, style = MaterialTheme.typography.bodySmall, color = Color(0xFF823530)) }
             Text("این محدودیت بر امتیاز، پیشرفت و خریدهای شما تأثیری ندارد.", style = MaterialTheme.typography.labelSmall, color = Color(0xFF823530))
         }
-    }
-}
-
-@Composable private fun ProfileStat(title: String, value: String, modifier: Modifier) {
-    Surface(modifier, shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.primaryContainer) {
-        Column(Modifier.padding(12.dp)) { Text(title, style = MaterialTheme.typography.labelSmall); Text(value, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium) }
     }
 }
 

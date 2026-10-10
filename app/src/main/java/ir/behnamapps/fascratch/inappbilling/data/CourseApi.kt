@@ -65,6 +65,8 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
                 val code = json?.optJSONObject("error")?.optString("code").orEmpty()
                 throw CourseFailure(when {
                     status == 429 -> "درخواست‌های زیادی ارسال شده؛ یک دقیقه صبر کنید."
+                    path.startsWith("accounts/auth/google/native/") && status == 422 -> "ورود گوگل تأیید نشد؛ دوباره تلاش کن یا با نام کاربری وارد شو."
+                    path.startsWith("accounts/auth/google/native/") && status == 410 -> "زمان ورود گوگل تمام شد؛ دوباره تلاش کن."
                     path.startsWith("accounts/auth/") && code == "validation_failed" ->
                         json?.optJSONObject("error")?.optJSONObject("fields")?.let { fields ->
                             fields.keys().asSequence().mapNotNull { fields.optJSONArray(it)?.optString(0) }.firstOrNull()

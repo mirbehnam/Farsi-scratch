@@ -73,6 +73,9 @@ android {
 }
 
 dependencies {
+    implementation("androidx.credentials:credentials:1.6.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.6.0")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.2.0")
     "bazaarImplementation"("com.github.cafebazaar.Poolakey:poolakey:2.2.0")
     "myketImplementation"("com.github.myketstore:myket-billing-client:1.19")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")

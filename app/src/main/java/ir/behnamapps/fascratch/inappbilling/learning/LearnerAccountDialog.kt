@@ -1,7 +1,5 @@
 package ir.behnamapps.fascratch.inappbilling.learning
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -27,9 +25,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -48,7 +43,6 @@ import kotlinx.coroutines.launch
     var googleEnabled by remember { mutableStateOf(false) }
     var passwordEnabled by remember { mutableStateOf(false) }
     var optionsLoaded by remember { mutableStateOf(false) }
-    var googlePending by remember { mutableStateOf(repository.pendingGoogle() != null) }
     var available by remember { mutableStateOf<Boolean?>(null) }
     var checkedUsername by remember { mutableStateOf<String?>(null) }
     var checking by remember { mutableStateOf(false) }
@@ -58,15 +52,15 @@ import kotlinx.coroutines.launch
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val focus = LocalFocusManager.current
-    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    var googleSupported by remember(context) { mutableStateOf(NativeGoogleLogin.supported(context)) }
     val validName = NameEditorPolicy.validName(displayName)
-    val canSave = passwordEnabled && !busy && !googlePending && AccountAuthPolicy.username(username) &&
+    val canSave = passwordEnabled && !busy && AccountAuthPolicy.username(username) &&
         AccountAuthPolicy.password(password, register) && (!register || (!checking &&
             AccountAuthPolicy.registration(username, displayName, password, confirmation, available, checkedUsername)))
     suspend fun loadOptions() {
         try {
             val options = repository.authOptions()
-            googleEnabled = options.optBoolean("google_enabled"); passwordEnabled = options.optBoolean("password_enabled")
+            googleEnabled = options.optBoolean("google_native_enabled"); passwordEnabled = options.optBoolean("password_enabled")
             optionsLoaded = true; error = null
         } catch (e: CancellationException) { throw e }
         catch (_: Exception) { error = "اتصال برقرار نشد؛ دوباره تلاش کن." }
@@ -85,33 +79,22 @@ import kotlinx.coroutines.launch
         catch (_: Exception) { checkError = "نام بررسی نشد؛ دوباره بررسی کن." }
         finally { checking = false }
     }
-    LaunchedEffect(googlePending, lifecycle) {
-        if (!googlePending) return@LaunchedEffect
-        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            while (googlePending) {
-                try {
-                    when (repository.pollGoogle()) {
-                        "ready" -> { googlePending = false; onClose() }
-                        "failed", "expired" -> { googlePending = false; error = "ورود گوگل کامل نشد؛ دوباره تلاش کن." }
-                    }
-                } catch (e: CancellationException) { throw e }
-                catch (_: Exception) { error = "منتظر اتصال اینترنت هستیم؛ نتیجه ورود دوباره بررسی می‌شود." }
-                delay(5_000)
-            }
-        }
-    }
     fun choose(next: Int) { page = next; error = null; password = ""; confirmation = ""; reveal = false }
     fun google() {
         focus.clearFocus(); busy = true; error = null
         scope.launch {
             try {
-                val result = repository.startGoogle("login", profile.uuid)
-                val url = Uri.parse(result.getString("authorization_url"))
-                require(url.scheme == "https" && url.host == "accounts.google.com")
-                context.startActivity(Intent(Intent.ACTION_VIEW, url).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                googlePending = true
+                if (!NativeGoogleLogin.supported(context)) throw NativeGoogleUnavailable()
+                val secret = AccountAuthPolicy.secret()
+                val challenge = repository.googleChallenge(secret, profile.uuid)
+                val token = NativeGoogleLogin.token(context, challenge.getString("server_client_id"), challenge.getString("nonce"))
+                if (token != null) {
+                    repository.googleComplete(challenge.getString("flow_uuid"), secret, token, profile.uuid)
+                    onClose()
+                }
             } catch (e: CancellationException) { throw e }
-            catch (_: Exception) { error = "ورود گوگل در دسترس نیست؛ با نام کاربری وارد شو." }
+            catch (e: NativeGoogleUnavailable) { googleSupported = false; error = e.message }
+            catch (_: Exception) { error = "ورود گوگل کامل نشد؛ دوباره تلاش کن یا با نام کاربری وارد شو." }
             finally { busy = false }
         }
     }
@@ -123,26 +106,27 @@ import kotlinx.coroutines.launch
                         LearnerLevelBadge(profile.level, Modifier.size(58.dp))
                         Text(when (page) { 1 -> "خوش برگشتی!"; 2 -> "حسابت را بساز ✨"; else -> "ثبت‌نام و ورود" },
                             Modifier.weight(1f).padding(horizontal = 12.dp), fontWeight = FontWeight.Bold, color = Color(0xFF344F83), fontSize = 20.sp)
-                        if (page != 0) TextButton(enabled = !busy && !googlePending, onClick = { choose(0) }) { Text("بازگشت") }
+                        if (page != 0) TextButton(enabled = !busy, onClick = { choose(0) }) { Text("بازگشت") }
                         IconButton(enabled = !busy, onClick = onClose) { Text("×", fontSize = 28.sp) }
                     }
                     Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (page == 0) {
                             Spacer(Modifier.height(8.dp))
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                AccountChoice("ورود", "به حسابی که قبلاً ساختی", "🔑", Modifier.weight(1f), passwordEnabled && !busy && !googlePending) { choose(1) }
-                                AccountChoice("ثبت‌نام با یوزرنیم", "نام کاربری و رمز عبور", "✨", Modifier.weight(1f), passwordEnabled && profile.username == null && !busy && !googlePending) { choose(2) }
-                                AccountChoice("ورود با گوگل", "با حساب گوگلت وارد شو", "G", Modifier.weight(1f), googleEnabled && !busy && !googlePending) { google() }
+                                AccountChoice("ورود", "به حسابی که قبلاً ساختی", "🔑", Modifier.weight(1f), passwordEnabled && !busy) { choose(1) }
+                                AccountChoice("ثبت‌نام با یوزرنیم", "نام کاربری و رمز عبور", "✨", Modifier.weight(1f), passwordEnabled && profile.username == null && !busy) { choose(2) }
+                                if (googleSupported) AccountChoice("ورود با گوگل", "با حساب گوگلت وارد شو", "G", Modifier.weight(1f), googleEnabled && !busy) { google() }
                             }
                             if (profile.username != null) Text("نام کاربری شما: " + profile.username, color = Color(0xFF407D48))
-                            if (optionsLoaded && !googleEnabled) Text("ورود گوگل فعلاً فعال نیست.", style = MaterialTheme.typography.bodySmall)
+                            if (!googleSupported) Text("ورود با نام کاربری و رمز در این گوشی در دسترس است.", style = MaterialTheme.typography.bodySmall)
+                            else if (optionsLoaded && !googleEnabled) Text("ورود گوگل فعلاً فعال نیست.", style = MaterialTheme.typography.bodySmall)
                         } else {
                             if (!register) Text("با ورود، حساب فعلی عوض می‌شود؛ امتیاز حساب‌ها با هم جمع نمی‌شود.", style = MaterialTheme.typography.bodySmall)
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                AccountField(username, { username = it; error = null; available = null }, "نام کاربری", Modifier.weight(1f), !busy && !googlePending, false, false, 30,
+                                AccountField(username, { username = it; error = null; available = null }, "نام کاربری", Modifier.weight(1f), !busy, false, false, 30,
                                     username.isNotEmpty() && (!AccountAuthPolicy.username(username) || (register && available == false)))
-                                if (register) AccountField(displayName, { displayName = it; error = null }, "نام نمایشی", Modifier.weight(1f), !busy && !googlePending, false, true, 30, displayName.isNotEmpty() && !validName)
-                                else AccountField(password, { password = it; error = null }, "رمز عبور", Modifier.weight(1f), !busy && !googlePending, !reveal, false, 64, false, true)
+                                if (register) AccountField(displayName, { displayName = it; error = null }, "نام نمایشی", Modifier.weight(1f), !busy, false, true, 30, displayName.isNotEmpty() && !validName)
+                                else AccountField(password, { password = it; error = null }, "رمز عبور", Modifier.weight(1f), !busy, !reveal, false, 64, false, true)
                             }
                             if (register) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -152,15 +136,14 @@ import kotlinx.coroutines.launch
                                     if (checkError != null) TextButton(onClick = { checkRetry++ }) { Text("بررسی دوباره") }
                                 }
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    AccountField(password, { password = it; error = null }, "رمز عبور", Modifier.weight(1f), !busy && !googlePending, !reveal, false, 64,
+                                    AccountField(password, { password = it; error = null }, "رمز عبور", Modifier.weight(1f), !busy, !reveal, false, 64,
                                         password.isNotEmpty() && !AccountAuthPolicy.password(password, true), true)
-                                    AccountField(confirmation, { confirmation = it; error = null }, "تکرار رمز عبور", Modifier.weight(1f), !busy && !googlePending, !reveal, false, 64,
+                                    AccountField(confirmation, { confirmation = it; error = null }, "تکرار رمز عبور", Modifier.weight(1f), !busy, !reveal, false, 64,
                                         confirmation.isNotEmpty() && password != confirmation, true)
                                 }
                                 Text("رمز: حداقل ۱۵ حرف؛ نام نمایشی محترمانه باشد تا محدود نشود. فعلاً بازیابی رمز نداریم.", style = MaterialTheme.typography.bodySmall)
                             }
                         }
-                        if (googlePending) Text("ورود را در مرورگر کامل کن و به برنامه برگرد؛ نتیجه خودکار بررسی می‌شود.", color = Color(0xFF7044BC), style = MaterialTheme.typography.bodySmall)
                         error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                         if (!optionsLoaded) TextButton(onClick = { scope.launch { loadOptions() } }) { Text("بررسی اتصال") }
                     }

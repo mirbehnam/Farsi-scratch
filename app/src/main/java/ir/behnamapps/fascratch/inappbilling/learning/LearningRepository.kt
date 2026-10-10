@@ -179,6 +179,20 @@ class LearningRepository private constructor(context: Context) {
         }
     }
     suspend fun authOptions(): JSONObject = api.auth("options")
+    suspend fun googleChallenge(secret: String, expectedUuid: String): JSONObject = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            require(identity.profile()?.uuid == expectedUuid) { "حساب تغییر کرده؛ فرم را دوباره باز کن." }
+            api.auth("google/native/challenge", JSONObject().put("session_secret", secret))
+        }
+    }
+    suspend fun googleComplete(flowUuid: String, secret: String, token: String, expectedUuid: String) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            require(identity.profile()?.uuid == expectedUuid) { "حساب تغییر کرده؛ فرم را دوباره باز کن." }
+            val result = api.auth("google/native/complete", JSONObject().put("flow_uuid", flowUuid)
+                .put("session_secret", secret).put("id_token", token))
+            identity.accept(result.getJSONObject("account")); mutable.value = store.profiles(); mutableStatus.value = null
+        }
+    }
     suspend fun usernameAvailable(username: String): Boolean = api.auth("username-availability", JSONObject().put("username", username.trim())).getBoolean("available")
     suspend fun authenticate(register: Boolean, username: String, password: String, confirmation: String, secret: String, expectedUuid: String, displayName: String? = null) = withContext(Dispatchers.IO) {
         mutex.withLock {
@@ -188,31 +202,6 @@ class LearningRepository private constructor(context: Context) {
             if (register && displayName != null) body.put("display_name", displayName.trim())
             val result = api.auth(if (register) "register" else "login", body)
             identity.accept(result.getJSONObject("account")); mutable.value = store.profiles(); mutableStatus.value = null
-        }
-    }
-    suspend fun startGoogle(mode: String, expectedUuid: String): JSONObject = withContext(Dispatchers.IO) {
-        mutex.withLock {
-            require(identity.profile()?.uuid == expectedUuid) { "حساب تغییر کرده؛ فرم را دوباره باز کن." }
-            val secret = AccountAuthPolicy.secret()
-            api.auth("google/start", JSONObject().put("mode", mode).put("poll_secret", secret)).also {
-                it.put("poll_secret", secret).put("source_uuid", expectedUuid).put("created_at", System.currentTimeMillis())
-                store.saveGrant("@google-sign-in", it)
-            }
-        }
-    }
-    fun pendingGoogle(): JSONObject? = store.grant("@google-sign-in")?.takeIf {
-        it.optString("source_uuid") == identity.profile()?.uuid && System.currentTimeMillis() - it.optLong("created_at") < 600_000
-    }
-    suspend fun pollGoogle(): String = withContext(Dispatchers.IO) {
-        mutex.withLock {
-            val flow = pendingGoogle() ?: return@withLock "expired"
-            val result = api.auth("google/poll", JSONObject().put("flow_uuid", flow.getString("flow_uuid")).put("poll_secret", flow.getString("poll_secret")))
-            val status = result.getString("status")
-            if (status == "ready") {
-                identity.accept(result.getJSONObject("account")); mutable.value = store.profiles(); mutableStatus.value = null
-            }
-            if (status != "pending") store.saveGrant("@google-sign-in", JSONObject())
-            status
         }
     }
     suspend fun sync(): Boolean = withContext(Dispatchers.IO) {

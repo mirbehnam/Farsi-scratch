@@ -15,7 +15,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -39,10 +38,10 @@ import kotlinx.coroutines.launch
     val focus = LocalFocusManager.current
     val canSave = !busy && NameEditorPolicy.canSave(name, profile.name, profile.nameSet, profile.nameChangesLeft, profile.nameBlocked) &&
         NameEditorPolicy.validFullName(fullName)
-    Dialog(onDismissRequest = { if (!busy) onClose() }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+    Dialog(onDismissRequest = { if (!busy) onClose() }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = true)) {
         LearnerDialogWindowBounds()
-        Box(Modifier.learnerSafeDialogBounds()) {
-        Surface(Modifier.fillMaxSize(),
+        Box(Modifier.learnerSafeDialogBounds(), contentAlignment = Alignment.Center) {
+        Surface(Modifier.learnerDialogPanelBounds(),
             shape = RoundedCornerShape(26.dp), border = BorderStroke(1.dp, Color(0xFFDCC8FF)), shadowElevation = 10.dp) {
             Column(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(0xFFFAF5FF), Color(0xFFFFF8EB))))) {
                 // Keep the action bar outside the scrolling content, especially on landscape phones.

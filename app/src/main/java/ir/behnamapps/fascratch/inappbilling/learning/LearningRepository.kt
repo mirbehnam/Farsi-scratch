@@ -187,12 +187,15 @@ class LearningRepository private constructor(context: Context) {
             }
         }
     }
-    suspend fun googleComplete(flowUuid: String, secret: String, token: String, expectedUuid: String) = withContext(Dispatchers.IO) {
+    suspend fun googleComplete(flowUuid: String, secret: String, token: String, expectedUuid: String, confirmSwitch: Boolean = false): Boolean = withContext(Dispatchers.IO) {
         mutex.withLock {
             require(identity.profile()?.uuid == expectedUuid) { "حساب تغییر کرده؛ فرم را دوباره باز کن." }
             val result = api.auth("google/native/complete", JSONObject().put("flow_uuid", flowUuid)
-                .put("session_secret", secret).put("id_token", token))
-            identity.accept(result.getJSONObject("account")); mutable.value = store.profiles(); mutableStatus.value = null
+                .put("session_secret", secret).put("id_token", token).put("confirm_account_switch", confirmSwitch))
+            val account = result.getJSONObject("account")
+            if (account.optBoolean("confirmation_required")) return@withLock false
+            identity.accept(account); mutable.value = store.profiles(); mutableStatus.value = null
+            true
         }
     }
     suspend fun usernameAvailable(username: String): Boolean = api.auth("username-availability", JSONObject().put("username", username.trim())).getBoolean("available")

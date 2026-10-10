@@ -39,6 +39,8 @@ import kotlinx.coroutines.launch
     var confirmation by remember { mutableStateOf("") }
     var reveal by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
+    // The verified token stays in memory only while awaiting explicit confirmation.
+    var pendingGoogle by remember(profile.uuid) { mutableStateOf<Triple<String, String, String>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var googleEnabled by remember { mutableStateOf(false) }
     var passwordEnabled by remember { mutableStateOf(false) }
@@ -95,8 +97,9 @@ import kotlinx.coroutines.launch
                 val challenge = repository.googleChallenge(secret, profile.uuid)
                 val token = NativeGoogleLogin.token(context, challenge.getString("server_client_id"), challenge.getString("nonce"))
                 if (token != null) {
-                    repository.googleComplete(challenge.getString("flow_uuid"), secret, token, profile.uuid)
-                    onClose()
+                    val flow = challenge.getString("flow_uuid")
+                    if (repository.googleComplete(flow, secret, token, profile.uuid)) onClose()
+                    else pendingGoogle = Triple(flow, secret, token)
                 }
             } catch (e: CancellationException) { throw e }
             catch (e: NativeGoogleUnavailable) { googleSupported = false; error = e.message }
@@ -104,10 +107,28 @@ import kotlinx.coroutines.launch
             finally { busy = false }
         }
     }
-    Dialog(onDismissRequest = { if (!busy) onClose() }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+    pendingGoogle?.let { pending ->
+        AlertDialog(onDismissRequest = { if (!busy) pendingGoogle = null },
+            title = { Text("جیمیل به حساب دیگری متصل است") },
+            text = { Text("با ادامه، وارد آن حساب می‌شوی. پیشرفت فعلی‌ات به آن منتقل نمی‌شود؛ حساب فعلی حذف نخواهد شد. ادامه می‌دهی؟") },
+            confirmButton = { TextButton(enabled = !busy, onClick = {
+                busy = true; error = null
+                scope.launch {
+                    try {
+                        if (repository.googleComplete(pending.first, pending.second, pending.third, profile.uuid, confirmSwitch = true)) {
+                            pendingGoogle = null; onClose()
+                        }
+                    } catch (e: CancellationException) { throw e }
+                    catch (_: Exception) { pendingGoogle = null; error = "ورود کامل نشد؛ دوباره تلاش کن." }
+                    finally { busy = false }
+                }
+            }) { Text(if (busy) "در حال ورود…" else "تأیید و ورود") } },
+            dismissButton = { TextButton(enabled = !busy, onClick = { pendingGoogle = null }) { Text("ماندن در حساب فعلی") } })
+    }
+    Dialog(onDismissRequest = { if (!busy) onClose() }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = true)) {
         LearnerDialogWindowBounds()
-        Box(Modifier.learnerSafeDialogBounds()) {
-            Surface(Modifier.fillMaxSize(), shape = RoundedCornerShape(24.dp), border = BorderStroke(2.dp, Color.White), shadowElevation = 10.dp) {
+        Box(Modifier.learnerSafeDialogBounds(), contentAlignment = Alignment.Center) {
+            Surface(Modifier.learnerDialogPanelBounds(), shape = RoundedCornerShape(24.dp), border = BorderStroke(2.dp, Color.White), shadowElevation = 10.dp) {
                 Column(Modifier.background(Brush.linearGradient(listOf(Color(0xFFFAF5FF), Color(0xFFFFF8EB))))) {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         LearnerLevelBadge(profile.level, Modifier.size(58.dp))

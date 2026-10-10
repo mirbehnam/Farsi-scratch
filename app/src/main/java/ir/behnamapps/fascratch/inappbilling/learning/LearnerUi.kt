@@ -155,10 +155,10 @@ import kotlinx.coroutines.delay
     val syncStatus by repository.status.collectAsState()
     LaunchedEffect(profile.registered) { if (profile.registered) showAccount = false }
     androidx.compose.ui.window.Dialog(onDismissRequest = onClose,
-        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = true)) {
         LearnerDialogWindowBounds()
-        Box(Modifier.learnerSafeDialogBounds()) {
-        Surface(Modifier.fillMaxSize(),
+        Box(Modifier.learnerSafeDialogBounds(), contentAlignment = Alignment.Center) {
+        Surface(Modifier.learnerDialogPanelBounds(),
             shape = RoundedCornerShape(27.dp), color = Color.White,
             border = BorderStroke(3.dp, Color.White), shadowElevation = 16.dp) {
             Box(Modifier.background(androidx.compose.ui.graphics.Brush.linearGradient(

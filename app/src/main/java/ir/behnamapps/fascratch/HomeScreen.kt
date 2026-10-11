@@ -21,6 +21,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -34,6 +36,58 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 private val HomeFontFamily = FontFamily(Font(R.font.shabnam))
+
+/** Uses real Home components, with no account/network work in the preview renderer. */
+@Preview(name = "Home • landscape", group = "Home / Full screen", widthDp = 960, heightDp = 480, locale = "fa")
+@Preview(name = "Home • compact landscape", group = "Home / Full screen", widthDp = 740, heightDp = 320, locale = "fa")
+@Composable
+private fun HomeScreenPreview() {
+    MaterialTheme {
+        HomeScreen({}, {}, {}, {}, {}, {})
+    }
+}
+
+@Composable
+private fun HomePreviewSurface(content: @Composable () -> Unit) {
+    MaterialTheme {
+        CompositionLocalProvider(LocalTextStyle provides LocalTextStyle.current.copy(fontFamily = HomeFontFamily)) {
+            Box(Modifier.background(Color(0xFF0D0A1C)).padding(16.dp)) { content() }
+        }
+    }
+}
+
+@Preview(name = "Default header", group = "Home / Sections", widthDp = 500, heightDp = 250, locale = "fa")
+@Composable
+private fun HomeHeaderPreview() = HomePreviewSurface {
+    HomeHeaderImage(painterResource(R.drawable.meo_header), Modifier.fillMaxWidth().aspectRatio(1000f / 462f))
+}
+
+@Preview(name = "Start and projects", group = "Home / Sections", widthDp = 430, heightDp = 116, locale = "fa")
+@Composable
+private fun HomeActionsPreview() = HomePreviewSurface {
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        HomeProjectsButton({}, Modifier.weight(.45f), compact = false)
+        HomePrimaryButton({}, .6f, Modifier.weight(.55f), compact = false)
+    }
+}
+
+@Preview(name = "Other apps", group = "Home / Sections", widthDp = 460, heightDp = 130, locale = "fa")
+@Composable
+private fun HomeOtherAppsPreview() = HomePreviewSurface {
+    OtherAppsSection(compact = false, onLunaPlayer = {}, onMafiaApp = {})
+}
+
+@Preview(name = "Follow footer", group = "Home / Sections", widthDp = 740, heightDp = 92, locale = "fa")
+@Composable
+private fun HomeFooterPreview() = HomePreviewSurface {
+    HomeFollowFooter({}, compact = true, horizontalPadding = 0.dp, modifier = Modifier.fillMaxWidth())
+}
+
+@Preview(name = "Level badge • ۱۲", group = "Home / Sections", widthDp = 150, heightDp = 170, locale = "fa")
+@Composable
+private fun HomeBadgePreview() = HomePreviewSurface {
+    ir.behnamapps.fascratch.inappbilling.learning.LearnerLevelBadge(12, Modifier.size(110.dp))
+}
 
 @Composable
 fun HomeScreen(
@@ -166,7 +220,11 @@ fun HomeScreen(
                     verticalArrangement = Arrangement.Center
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        ir.behnamapps.fascratch.inappbilling.learning.HomeLearnerBadge()
+                        if (LocalInspectionMode.current) {
+                            ir.behnamapps.fascratch.inappbilling.learning.LearnerLevelBadge(12, Modifier.size(64.dp))
+                        } else {
+                            ir.behnamapps.fascratch.inappbilling.learning.HomeLearnerBadge()
+                        }
                         Spacer(Modifier.width(10.dp))
                         Text(
                             "اسکرچ فارسی",
@@ -360,10 +418,13 @@ private fun OtherAppsSection(
             )
         )
     }
-    var currentIndex by remember { mutableIntStateOf((0..1).random()) }
-    LaunchedEffect(currentIndex) {
-        delay(3000L)
-        currentIndex = (currentIndex + 1) % apps.size
+    val preview = LocalInspectionMode.current
+    var currentIndex by remember { mutableIntStateOf(if (preview) 0 else (0..1).random()) }
+    LaunchedEffect(currentIndex, preview) {
+        if (!preview) {
+            delay(3000L)
+            currentIndex = (currentIndex + 1) % apps.size
+        }
     }
 
     AnimatedContent(

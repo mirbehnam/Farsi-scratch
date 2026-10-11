@@ -47,7 +47,14 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
         }
     }
 
-    fun previewConnection(lesson: Lesson): HttpsURLConnection = connectionTo(CoursePolicy.previewUrl(base, lesson))
+    fun previewConnection(lesson: Lesson): HttpsURLConnection {
+        val target = CoursePolicy.previewUrl(base, lesson)
+        // Public CDN requests never carry a learner secret or a purchase token.
+        return (URL(target).openConnection() as HttpsURLConnection).apply {
+            connectTimeout = 15_000; readTimeout = 30_000; instanceFollowRedirects = false
+            setRequestProperty("Accept", "video/mp4")
+        }
+    }
 
     private suspend fun request(path: String, token: String? = null, body: JSONObject? = null, accountSecret: String? = null, timeoutMillis: Int = 30_000): JSONObject = withContext(Dispatchers.IO) {
         val connection = connection(path, token, accountSecret).apply { connectTimeout = minOf(15_000, timeoutMillis); readTimeout = timeoutMillis }
@@ -125,7 +132,8 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
                     val lesson = Lesson(CoursePolicy.uuid(row.getString("uuid")), course.id, section.getString("title"), row.getString("title"),
                         video.getInt("content_version"), video.getLong("file_size_bytes"), video.getString("content_hash"),
                         row.optInt("difficulty"), video.optDouble("duration_seconds", 0.0), posterUrl(row.optJSONObject("cover")), row.optString("description"),
-                        row.optBoolean("is_preview", false), video.optString("url").takeIf { row.optBoolean("is_preview", false) && it.startsWith("https://") },
+                        row.optBoolean("is_preview", false), (video.optString("public_url").takeIf { it.startsWith("https://") } ?: video.optString("url"))
+                            .takeIf { row.optBoolean("is_preview", false) && it.startsWith("https://") },
                         DifficultyLevel.label(row.optInt("difficulty"), row.optString("difficulty_label")))
                     CoursePolicy.downloadKey(lesson)
                     add(lesson)

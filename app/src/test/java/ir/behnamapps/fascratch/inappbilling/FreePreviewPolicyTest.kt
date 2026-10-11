@@ -38,6 +38,15 @@ class FreePreviewPolicyTest {
         }
     }
 
+    @Test fun publicPreviewUsesStableCdnPathAndRejectsOtherRoutes() {
+        val publicUrl = "$base/public-video/$id/$asset"
+        assertEquals(publicUrl, CoursePolicy.previewUrl(base, preview.copy(previewUrl = publicUrl)))
+        listOf("$publicUrl?secret=x", "$publicUrl#x", "$publicUrl/extra", publicUrl.replace(id, asset),
+            publicUrl.replace("https:", "http:"), publicUrl.replace("api.behnamapp.ir", "evil.test")).forEach { candidate ->
+            assertTrue(runCatching { CoursePolicy.previewUrl(base, preview.copy(previewUrl = candidate)) }.isFailure)
+        }
+    }
+
     @Test fun previewDefaultsClosedForOldCachedMetadataAndVersionKeyIsUnchanged() {
         val old = preview.copy(isPreview = false, previewUrl = null)
         assertFalse(CoursePolicy.canLearn(old, false))

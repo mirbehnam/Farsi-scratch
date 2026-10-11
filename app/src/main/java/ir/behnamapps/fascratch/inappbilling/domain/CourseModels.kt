@@ -84,6 +84,12 @@ object CoursePolicy {
         val url = requireNotNull(lesson.previewUrl)
         require(sameOrigin(base, url))
         val target = URI(url)
+        val publicPrefix = URI(base.trimEnd('/')).path + "/public-video/${uuid(lesson.id)}/"
+        if (target.path.startsWith(publicPrefix)) {
+            require(target.fragment == null && target.rawQuery == null)
+            uuid(target.path.removePrefix(publicPrefix))
+            return url
+        }
         val prefix = URI(base.trimEnd('/')).path + "/lessons/${uuid(lesson.id)}/video/"
         require(target.fragment == null && target.path.startsWith(prefix))
         uuid(target.path.removePrefix(prefix))

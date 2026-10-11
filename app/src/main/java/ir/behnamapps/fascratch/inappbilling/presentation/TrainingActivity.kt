@@ -49,11 +49,13 @@ class TrainingActivity : ComponentActivity() {
                 labelMedium = defaults.labelMedium.copy(fontFamily = font),
                 labelSmall = defaults.labelSmall.copy(fontFamily = font)) }
             MaterialTheme(typography = typography, colorScheme = lightColorScheme(
-                primary = Color(0xFF245B88), onPrimary = Color.White,
-                primaryContainer = Color(0xFFDCEBF8), onPrimaryContainer = Color(0xFF153F55),
-                secondary = Color(0xFF18745C), background = Color(0xFFF2F5F9),
-                surface = Color.White, onSurface = Color(0xFF182235),
-                onSurfaceVariant = Color(0xFF596579))) {
+                primary = Color(0xFF21634F), onPrimary = Color.White,
+                primaryContainer = Color(0xFFE0EFE4), onPrimaryContainer = Color(0xFF183F38),
+                secondary = Color(0xFF855F27), secondaryContainer = Color(0xFFF5E8CE),
+                onSecondaryContainer = Color(0xFF553C18), background = Color(0xFFF7F5EF),
+                surface = Color.White, onSurface = Color(0xFF183F38),
+                onBackground = Color(0xFF183F38), outline = Color(0xFF77877D),
+                onSurfaceVariant = Color(0xFF5D6C65))) {
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl, LocalTextStyle provides LocalTextStyle.current.copy(fontFamily = font)) {
                     BackHandler(playing != null) { playing = null }
                     BackHandler(playing == null && state.course != null) { controller.backToCatalog() }

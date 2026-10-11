@@ -4,15 +4,18 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -49,8 +52,22 @@ internal fun CourseArtwork(url: String?, label: String, modifier: Modifier = Mod
             }.getOrNull()
         }
     }
-    Box(modifier.background(Brush.linearGradient(listOf(Color(0xFF243B55), Color(0xFF596D8B)))), contentAlignment = Alignment.Center) {
+    Box(modifier.background(Brush.linearGradient(listOf(Color(0xFF153F38), Color(0xFF37745A)))), contentAlignment = Alignment.Center) {
         bitmap?.let { Image(it.asImageBitmap(), contentDescription = label, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
-            ?: Text("اسکرچ", color = Color.White)
+            ?: Canvas(Modifier.fillMaxSize()) {
+                // Local abstract Scratch blocks keep missing covers intentional at every size.
+                drawCircle(Color.White.copy(alpha = .05f), size.width * .48f, Offset(size.width * .9f, size.height * .1f))
+                drawCircle(Color.White.copy(alpha = .04f), size.width * .35f, Offset(size.width * .08f, size.height))
+                val unit = minOf(size.width / 5f, size.height / 4.6f)
+                val left = (size.width - unit * 2.6f) / 2
+                val top = (size.height - unit * 2.65f) / 2
+                listOf(Color(0xFFF2C66D), Color(0xFF83C9AD), Color(0xFFF3ECDD)).forEachIndexed { index, color ->
+                    val x = left + if (index == 1) unit * .3f else 0f
+                    val y = top + index * unit * .9f
+                    drawRoundRect(color, Offset(x, y), Size(unit * 2.6f, unit * .77f), CornerRadius(unit * .13f))
+                    drawRoundRect(color, Offset(x + unit * .35f, y + unit * .65f), Size(unit * .55f, unit * .25f), CornerRadius(unit * .07f))
+                    drawRoundRect(Color(0xFF153F38).copy(alpha = .24f), Offset(x + unit * .4f, y + unit * .27f), Size(unit * 1.35f, unit * .13f), CornerRadius(unit * .06f))
+                }
+            }
     }
 }

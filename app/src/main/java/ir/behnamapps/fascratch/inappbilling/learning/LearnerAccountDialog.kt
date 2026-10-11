@@ -11,12 +11,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -128,22 +128,34 @@ import kotlinx.coroutines.launch
     Dialog(onDismissRequest = { if (!busy) onClose() }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = true)) {
         LearnerDialogWindowBounds()
         Box(Modifier.learnerSafeDialogBounds(), contentAlignment = Alignment.Center) {
-            Surface(Modifier.learnerDialogPanelBounds(), shape = RoundedCornerShape(24.dp), border = BorderStroke(2.dp, Color.White), shadowElevation = 10.dp) {
-                Column(Modifier.background(Brush.linearGradient(listOf(Color(0xFFFAF5FF), Color(0xFFFFF8EB))))) {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        LearnerLevelBadge(profile.level, Modifier.size(58.dp))
+            Surface(Modifier.learnerDialogPanelBounds(), color = Color(0xFFF7F5EF), shape = RoundedCornerShape(24.dp), border = BorderStroke(1.dp, Color(0xFFDCE6DF)), shadowElevation = 10.dp) {
+                BoxWithConstraints {
+                val compact = maxHeight < 300.dp
+                Column {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = if (compact) 0.dp else 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (!compact) LearnerLevelBadge(profile.level, Modifier.size(48.dp))
                         Text(when (page) { 1 -> "خوش برگشتی!"; 2 -> "حسابت را بساز ✨"; else -> "ثبت‌نام و ورود" },
-                            Modifier.weight(1f).padding(horizontal = 12.dp), fontWeight = FontWeight.Bold, color = Color(0xFF344F83), fontSize = 20.sp)
+                            Modifier.weight(1f).padding(horizontal = 12.dp), fontWeight = FontWeight.Bold, color = Color(0xFF183F38), fontSize = if (compact) 17.sp else 20.sp)
                         if (page != 0) TextButton(enabled = !busy, onClick = { choose(0) }) { Text("بازگشت") }
                         IconButton(enabled = !busy, onClick = onClose) { Text("×", fontSize = 28.sp) }
                     }
-                    Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         if (page == 0) {
-                            Spacer(Modifier.height(8.dp))
+                            Text("ادامهٔ ماجراجویی، با حساب خودت", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF183F38))
+                            Text("قبلاً حساب ساخته‌ای؟ وارد شو. برای نگه‌داشتن پیشرفت مهمان، حساب بساز.", style = MaterialTheme.typography.bodySmall, color = Color(0xFF5D6C65))
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                AccountChoice("ورود", "به حسابی که قبلاً ساختی", "🔑", Modifier.weight(1f), passwordEnabled && !busy) { choose(1) }
-                                AccountChoice("ثبت‌نام با یوزرنیم", "نام کاربری و رمز عبور", "✨", Modifier.weight(1f), passwordEnabled && profile.username == null && !busy) { choose(2) }
-                                if (googleSupported) AccountChoice("ورود با گوگل", "با حساب گوگلت وارد شو", "G", Modifier.weight(1f), googleEnabled && !busy) { google() }
+                                AccountChoice("ورود به حساب", "با نام کاربری و رمز", "↪", Modifier.weight(1f), passwordEnabled && !busy, false) { choose(1) }
+                                AccountChoice("ساخت حساب", "پیشرفتت را نگه دار", "+", Modifier.weight(1f), passwordEnabled && profile.username == null && !busy, true) { choose(2) }
+                            }
+                            if (googleSupported) {
+                                OutlinedButton(onClick = { google() }, enabled = googleEnabled && !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                                    shape = RoundedCornerShape(14.dp), border = BorderStroke(1.dp, Color(0xFFD3DDD6)),
+                                    colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.White)) {
+                                    if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                                    else Text("G", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF4285F4))
+                                    Spacer(Modifier.width(12.dp))
+                                    Text(if (busy) "در حال ورود…" else "ادامه با گوگل", fontWeight = FontWeight.Bold)
+                                }
                             }
                             if (profile.username != null) Text("نام کاربری شما: " + profile.username, color = Color(0xFF407D48))
                             if (!googleSupported) Text("ورود با نام کاربری و رمز در این گوشی در دسترس است.", style = MaterialTheme.typography.bodySmall)
@@ -151,7 +163,7 @@ import kotlinx.coroutines.launch
                                 Text(it, style = MaterialTheme.typography.bodySmall)
                             }
                         } else {
-                            if (!register) Text("با ورود، حساب فعلی عوض می‌شود؛ امتیاز حساب‌ها با هم جمع نمی‌شود.", style = MaterialTheme.typography.bodySmall)
+                            AccountNotice(if (register) "امتیازها و خریدهای همین حساب حفظ می‌شوند." else "وارد حساب قبلی‌ات می‌شوی؛ امتیاز دو حساب با هم جمع نمی‌شود.")
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 AccountField(username, { username = it; error = null; available = null }, "نام کاربری", Modifier.weight(1f), !busy, false, false, 30,
                                     username.isNotEmpty() && (!AccountAuthPolicy.username(username) || (register && available == false)))
@@ -171,20 +183,21 @@ import kotlinx.coroutines.launch
                                     AccountField(confirmation, { confirmation = it; error = null }, "تکرار رمز عبور", Modifier.weight(1f), !busy, !reveal, false, 64,
                                         confirmation.isNotEmpty() && password != confirmation, true)
                                 }
-                                Text("رمز: حداقل ۱۵ حرف؛ نام نمایشی محترمانه باشد تا محدود نشود. فعلاً بازیابی رمز نداریم.", style = MaterialTheme.typography.bodySmall)
+                                Text("رمز حداقل ۱۵ کاراکتر باشد؛ می‌توانی یک عبارت بسازی. فعلاً بازیابی رمز نداریم؛ آن را نگه دار.", style = MaterialTheme.typography.bodySmall, color = Color(0xFF5D6C65))
+                                Text("نام نمایشی محترمانه انتخاب کن؛ نام نامناسب محدود می‌شود.", style = MaterialTheme.typography.bodySmall, color = Color(0xFF5D6C65))
                             }
                         }
-                        error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                        error?.let { AccountNotice(it, failure = true) }
                         if (!optionsLoaded || (googleSupported && !googleEnabled)) TextButton(enabled = !busy && !optionsLoading,
                             onClick = { scope.launch { loadOptions() } }) { Text(if (optionsLoading) "در حال بررسی…" else "بررسی مجدد اتصال") }
                     }
-                    HorizontalDivider(color = Color(0xFFDCC8FF))
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        TextButton(enabled = !busy, onClick = onClose) { Text("بی‌خیال") }
+                    HorizontalDivider(color = Color(0xFFE0E7E1))
+                    Row(Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 18.dp, vertical = if (compact) 0.dp else 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(enabled = !busy, onClick = onClose) { Text(if (page == 0) "فعلاً مهمان می‌مانم" else "بی‌خیال") }
                         Spacer(Modifier.weight(1f))
                         if (page != 0) {
                             TextButton(enabled = !busy, onClick = { reveal = !reveal }) { Text(if (reveal) "پنهان کردن رمز" else "نمایش رمز") }
-                            Button(enabled = canSave, shape = RoundedCornerShape(12.dp), onClick = {
+                            Button(enabled = canSave, modifier = Modifier.heightIn(min = 48.dp), shape = RoundedCornerShape(14.dp), contentPadding = PaddingValues(horizontal = 24.dp), onClick = {
                                 focus.clearFocus(); busy = true; error = null
                                 scope.launch {
                                     try {
@@ -201,19 +214,31 @@ import kotlinx.coroutines.launch
                         }
                     }
                 }
+                }
             }
         }
     }
 }
 
-@Composable private fun AccountChoice(title: String, hint: String, icon: String, modifier: Modifier, enabled: Boolean, onClick: () -> Unit) {
-    OutlinedButton(onClick = onClick, enabled = enabled, modifier = modifier.heightIn(min = 110.dp), shape = RoundedCornerShape(18.dp),
-        contentPadding = PaddingValues(12.dp), colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.White)) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(icon, fontSize = 26.sp)
-            Text(title, fontWeight = FontWeight.Bold)
-            Text(hint, style = MaterialTheme.typography.bodySmall)
+@Composable private fun AccountChoice(title: String, hint: String, icon: String, modifier: Modifier, enabled: Boolean, highlighted: Boolean, onClick: () -> Unit) {
+    OutlinedButton(onClick = onClick, enabled = enabled, modifier = modifier.heightIn(min = 90.dp), shape = RoundedCornerShape(18.dp),
+        border = BorderStroke(1.dp, if (highlighted) Color(0xFFC7DCCE) else Color(0xFFDEE5E0)),
+        contentPadding = PaddingValues(14.dp), colors = ButtonDefaults.outlinedButtonColors(containerColor = if (highlighted) Color(0xFFE7F1E9) else Color.White)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Surface(color = if (highlighted) Color(0xFF21634F) else Color(0xFFF5E8CE), shape = RoundedCornerShape(12.dp)) {
+                Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) { Text(icon, fontSize = 24.sp, color = if (highlighted) Color.White else Color(0xFF855F27)) }
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(title, fontWeight = FontWeight.Bold, textAlign = TextAlign.Start)
+                Text(hint, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Start)
+            }
         }
+    }
+}
+
+@Composable private fun AccountNotice(text: String, failure: Boolean = false) {
+    Surface(color = if (failure) Color(0xFFFFEDE9) else Color(0xFFEAF0EA), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+        Text(text, Modifier.padding(horizontal = 12.dp, vertical = 9.dp), color = if (failure) Color(0xFF9B3026) else Color(0xFF345E4D), style = MaterialTheme.typography.bodySmall)
     }
 }
 
@@ -221,7 +246,9 @@ import kotlinx.coroutines.launch
     hidden: Boolean, persian: Boolean, limit: Int, error: Boolean, password: Boolean = false) {
     CompositionLocalProvider(LocalLayoutDirection provides if (persian) LayoutDirection.Rtl else LayoutDirection.Ltr) {
         OutlinedTextField(value, onValueChange = { if (it.length <= limit) change(it) }, modifier = modifier, enabled = enabled,
-            label = { Text(label) }, singleLine = true, shape = RoundedCornerShape(12.dp), isError = error,
+            label = { CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) { Text(label) } }, singleLine = true, shape = RoundedCornerShape(14.dp), isError = error,
+            colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = Color.White, focusedContainerColor = Color.White,
+                unfocusedBorderColor = Color(0xFFCED9D0), focusedBorderColor = Color(0xFF21634F)),
             visualTransformation = if (hidden) PasswordVisualTransformation() else VisualTransformation.None,
             keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = if (password) KeyboardType.Password else if (persian) KeyboardType.Text else KeyboardType.Ascii))
     }

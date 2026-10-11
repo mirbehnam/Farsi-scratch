@@ -40,7 +40,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import ir.behnamapps.fascratch.R
 
 @Composable
-internal fun HomeBannerHeader(default: Painter, modifier: Modifier) {
+internal fun HomeBannerHeader(default: Painter, modifier: Modifier, onOpenCourses: () -> Unit) {
     if (LocalInspectionMode.current) { HomeBannerFrame(default, null, false, "", modifier, {}); return }
     val context = LocalContext.current.applicationContext
     val snapshot by HomeBannerCache.snapshots.collectAsState()
@@ -63,20 +63,27 @@ internal fun HomeBannerHeader(default: Painter, modifier: Modifier) {
             if (current?.videoUrl != video) video = null
         }
     }
+    // asImageBitmap() creates a new wrapper. Home's decorative animations recompose
+    // this header frequently: keep the wrapper stable or Crossfade restarts every frame.
+    val bitmap = selection?.bitmap
+    val displayImage = remember(bitmap) { bitmap?.asImageBitmap() }
     // Resolve the local snapshot before painting: never flash the default under a cached banner.
     if (!resolved) Box(modifier)
-    else HomeBannerFrame(default, selection?.bitmap?.asImageBitmap(), selection?.banner?.videoUrl != null,
-        selection?.banner?.caption.orEmpty(), modifier) { video = selection?.banner?.videoUrl }
+    else HomeBannerFrame(default, displayImage, selection?.banner?.videoUrl != null,
+        selection?.banner?.caption.orEmpty(), modifier,
+        onPlay = { video = selection?.banner?.videoUrl }, onOpenCourses = onOpenCourses)
     video?.let { url -> PublicIntroPlayer(url, selection?.banner?.title.orEmpty()) { video = null } }
 }
 
 /** Pure fixed-frame UI, also used by previews: remote dimensions never affect Home layout. */
 @Composable
 internal fun HomeBannerFrame(default: Painter, image: ImageBitmap?, hasVideo: Boolean, caption: String,
-    modifier: Modifier, onPlay: () -> Unit) {
+    modifier: Modifier, onPlay: () -> Unit, onOpenCourses: () -> Unit = {}) {
     Box(modifier.clip(RoundedCornerShape(16.dp)).background(Color(0xFF11173D))
         .border(1.dp, Color.White.copy(.18f), RoundedCornerShape(16.dp))) {
-        Crossfade(targetState = image, animationSpec = tween(300), label = "home-banner-fade") { bitmap ->
+        Crossfade(targetState = image, modifier = Modifier.fillMaxSize()
+            .clickable(onClickLabel = "مشاهده دوره‌ها", onClick = onOpenCourses),
+            animationSpec = tween(300), label = "home-banner-fade") { bitmap ->
             if (bitmap == null) Image(default, "نمایی از اسکرچ فارسی", Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
             else Image(bitmap, "بنر معرفی دوره", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         }

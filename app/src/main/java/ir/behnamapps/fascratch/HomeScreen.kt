@@ -188,7 +188,8 @@ fun HomeScreen(
                         ) {
                             ir.behnamapps.fascratch.home.HomeBannerHeader(
                                 default = headerPainter,
-                                modifier = Modifier.width(imageWidth).height(imageHeight)
+                                modifier = Modifier.width(imageWidth).height(imageHeight),
+                                onOpenCourses = onTraining
                             )
                             OtherAppsSection(
                                 modifier = Modifier.width(imageWidth),

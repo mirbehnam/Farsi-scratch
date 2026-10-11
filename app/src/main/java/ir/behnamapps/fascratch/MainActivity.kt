@@ -210,6 +210,7 @@ class MainActivity : ComponentActivity() {
         projectSaveBridge = ScratchProjectSaveBridge(this)
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         makeFullScreen()
+        ir.behnamapps.fascratch.home.HomeBannerCache.warm(applicationContext)
         setContent { FarsiScratchApp(this) }
     }
 

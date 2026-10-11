@@ -186,8 +186,8 @@ fun HomeScreen(
                             verticalArrangement = Arrangement.SpaceBetween,
                             horizontalAlignment = Alignment.Start
                         ) {
-                            HomeHeaderImage(
-                                painter = headerPainter,
+                            ir.behnamapps.fascratch.home.HomeBannerHeader(
+                                default = headerPainter,
                                 modifier = Modifier.width(imageWidth).height(imageHeight)
                             )
                             OtherAppsSection(

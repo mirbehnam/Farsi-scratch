@@ -22,7 +22,7 @@ data class LearnerProfile(val uuid: String, val name: String, val level: Int, va
     val xpIntoLevel: Double, val xpForNext: Double, val rank: Int?, val enabled: Boolean,
     val nameSet: Boolean = false, val nameChangesLeft: Int = 3, val courses: List<LearnerCourse> = emptyList(), val codingMs: Long = 0, val fullName: String? = null,
     val nameBlocked: Boolean = false, val nameBlockedDays: Int = 0, val nameBlockReason: String? = null,
-    val registered: Boolean = false, val username: String? = null, val googleLinked: Boolean = false) {
+    val registered: Boolean = false, val username: String? = null, val googleLinked: Boolean = false, val googleLabel: String? = null) {
     companion object {
         fun parse(json: JSONObject) = LearnerProfile(json.getString("uuid"), json.getString("display_name"),
             json.getInt("level"), json.getLong("watch_ms"), json.getDouble("xp_into_level"), json.getDouble("xp_for_next_level"),
@@ -36,7 +36,8 @@ data class LearnerProfile(val uuid: String, val name: String, val level: Int, va
             (json.optJSONObject("name_moderation")?.optInt("remaining_days") ?: 0).coerceAtLeast(0),
             json.optJSONObject("name_moderation")?.optString("reason")?.takeUnless { it.isBlank() || it == "null" },
             json.optBoolean("registered"), json.optJSONObject("sign_in")?.optString("username")?.takeUnless { it.isBlank() || it == "null" },
-            json.optJSONObject("sign_in")?.optBoolean("google") ?: false)
+            json.optJSONObject("sign_in")?.optBoolean("google") ?: false,
+            json.optJSONObject("sign_in")?.optString("google_label")?.takeUnless { it.isBlank() || it == "null" })
     }
 }
 

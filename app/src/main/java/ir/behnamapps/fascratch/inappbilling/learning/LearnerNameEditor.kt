@@ -18,6 +18,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -54,26 +55,24 @@ import kotlinx.coroutines.launch
     Dialog(onDismissRequest = { if (!busy) onClose() }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = true)) {
         LearnerDialogWindowBounds()
         Box(Modifier.learnerSafeDialogBounds(), contentAlignment = Alignment.Center) {
-        Surface(Modifier.learnerDialogPanelBounds(),
+        Surface(Modifier.widthIn(max = 560.dp).fillMaxWidth(.92f),
             shape = RoundedCornerShape(24.dp), border = BorderStroke(1.dp, Color(0xFFDCE6DF)), shadowElevation = 10.dp) {
-            Column(Modifier.fillMaxSize().background(Color(0xFFF7F5EF))) {
+            Column(Modifier.background(Color(0xFFF7F5EF))) {
                 // Keep the action bar outside the scrolling content, especially on landscape phones.
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 6.dp),
+                Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 6.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(if (profile.registered) "حساب من" else "نام نمایشی",
                             fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge, color = Color(0xFF183F38))
                     }
+                    if (profile.registered) Surface(color = Color(0xFFE7F0E9), shape = RoundedCornerShape(10.dp)) {
+                        Text((if (profile.googleLinked) "G · " else "") + (profile.googleLabel ?: profile.username ?: "گوگل"),
+                            Modifier.widthIn(max = 160.dp).padding(horizontal = 10.dp, vertical = 5.dp), maxLines = 1,
+                            overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium, color = Color(0xFF21634F))
+                    }
                     IconButton(enabled = !busy, onClick = onClose, modifier = Modifier.semantics { contentDescription = "بستن ویرایش نام" }) {
                         Text("×", fontSize = 28.sp, color = Color(0xFF183F38))
-                    }
-                }
-                if (profile.registered) Surface(Modifier.fillMaxWidth(), color = Color(0xFFE7F0E9), shape = RoundedCornerShape(12.dp)) {
-                    Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text(profile.username?.let { "نام کاربری: $it" } ?: "حساب متصل به گوگل", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
-                        Text(when { profile.googleLinked && profile.username != null -> "روش ورود: گوگل و رمز عبور"; profile.googleLinked -> "روش ورود: گوگل"; else -> "روش ورود: نام کاربری و رمز عبور" }, style = MaterialTheme.typography.bodySmall)
-                        androidx.compose.foundation.text.selection.SelectionContainer { Text("شناسه حساب: " + profile.uuid, style = MaterialTheme.typography.bodySmall, color = Color(0xFF5D6C65)) }
                     }
                 }
                 if (profile.nameBlocked) NameRestrictionNotice(profile)
@@ -83,12 +82,7 @@ import kotlinx.coroutines.launch
                             modifier = modifier, enabled = !busy && !profile.nameBlocked, singleLine = true,
                             shape = RoundedCornerShape(14.dp), label = { Text("نام نمایشی") }, placeholder = { Text("مثلاً: کدنویس خلاق") },
                             isError = name.isNotEmpty() && !NameEditorPolicy.validName(name),
-                            supportingText = {
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text(if (name.isNotEmpty() && !NameEditorPolicy.validName(name)) "۲ تا ۳۰ حرف بنویس." else "نامی محترمانه انتخاب کن.", Modifier.weight(1f))
-                                    Text(persianDisplay(name.length.toString()) + " / ۳۰")
-                                }
-                            }, keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                             keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) }))
                     }
                     val fullNameField: @Composable (Modifier) -> Unit = { modifier ->
@@ -105,19 +99,13 @@ import kotlinx.coroutines.launch
                         nameField(Modifier.fillMaxWidth()); fullNameField(Modifier.fillMaxWidth())
                     }
                 }
-                Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), color = Color(0xFFE7F0E9)) {
-                    Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text("هر ۳۰ روز تا ۳ بار تغییر نام", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                         Text(persianDisplay(profile.nameChangesLeft.toString()) + " تغییر باقی‌مانده", color = Color(0xFF21634F),
                             fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
                     }
-                }
-                Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), color = Color(0xFFFFEFDA)) {
-                    Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
                         Text("نام نامناسب، بی‌ادبانه، توهین‌آمیز یا سیاسی باعث مسدود شدن نام می‌شود؛ نه پیشرفت و خریدهای تو.",
                             style = MaterialTheme.typography.bodySmall, color = Color(0xFF795322))
-                    }
-                }
                 error?.let {
                     Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), color = Color(0xFFFFE9E7)) {
                         Text(it, Modifier.padding(12.dp), color = Color(0xFFAC2924), style = MaterialTheme.typography.bodySmall)

@@ -6,7 +6,8 @@ import java.util.UUID
 data class Course(val id: String, val title: String, val description: String, val sku: String,
     val instructor: String = "", val difficulty: Int = 0, val durationSeconds: Double = 0.0,
     val coverUrl: String? = null, val confirmedPurchases: Int? = null, val serverPriceToman: Long? = null,
-    val compareAtToman: Long? = null, val discountEndsAtMillis: Long? = null, val difficultyLabel: String = "")
+    val compareAtToman: Long? = null, val discountEndsAtMillis: Long? = null, val difficultyLabel: String = "",
+    val salesPaused: Boolean = false)
 data class Lesson(val id: String, val courseId: String, val section: String, val title: String,
     val version: Int, val bytes: Long, val sha256: String, val difficulty: Int = 0,
     val durationSeconds: Double = 0.0, val coverUrl: String? = null, val description: String = "",
@@ -54,7 +55,10 @@ class BuyCourse(private val backend: PurchaseBackend, private val receipts: Rece
         val previous = billing.owned(course.sku)
         val receipt = previous ?: if (restoreOnly) {
             throw CourseFailure("خرید قبلی این دوره در حساب فعلی استور پیدا نشد.", code = "not_owned")
-        } else billing.purchase(course.sku)
+        } else {
+            if (course.salesPaused) throw CourseFailure("در حال حاضر فروش متوقف شده است.", code = "sales_paused")
+            billing.purchase(course.sku)
+        }
         if (receipt.sku != course.sku || receipt.token.isBlank()) throw CourseFailure("رسید خرید با دوره مطابقت ندارد.")
         // Persist before HTTP verification: process death/outage must not lose the paid receipt.
         receipts.saveReceipt(course.id, receipt)

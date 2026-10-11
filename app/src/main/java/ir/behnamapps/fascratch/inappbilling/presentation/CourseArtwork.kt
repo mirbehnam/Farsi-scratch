@@ -32,6 +32,8 @@ private val artworkCache = object : LruCache<String, Bitmap>(8 * 1024 * 1024) {
     override fun sizeOf(key: String, value: Bitmap) = value.allocationByteCount
 }
 
+internal fun clearArtworkMemory() { artworkCache.evictAll() }
+
 /** Only public artwork is fetched; never send purchase credentials. Bounded bytes and sampled decoding. */
 @Composable
 internal fun CourseArtwork(url: String?, label: String, modifier: Modifier = Modifier) {

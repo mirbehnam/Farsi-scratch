@@ -80,6 +80,10 @@ class CourseImageCache(context: Context) {
 
     companion object {
         private val lock = Any()
+        fun clear(context: Context) = synchronized(lock) {
+            val root = File(context.applicationContext.cacheDir, "scratch-covers")
+            root.listFiles()?.filter { it.isFile }?.forEach { check(it.delete()) }
+        }
         private const val MAX_BYTES = 10 * 1024 * 1024
         private val MIME_TYPES = setOf("image/webp", "image/png", "image/jpeg", "image/gif")
     }

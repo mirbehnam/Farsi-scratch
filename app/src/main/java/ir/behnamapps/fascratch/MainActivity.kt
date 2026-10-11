@@ -134,6 +134,8 @@ import kotlin.math.roundToInt
 import java.io.File
 import org.json.JSONObject
 import kotlinx.coroutines.delay
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -211,6 +213,14 @@ class MainActivity : ComponentActivity() {
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         makeFullScreen()
         ir.behnamapps.fascratch.home.HomeBannerCache.warm(applicationContext)
+        lifecycleScope.launch {
+            repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+                while (true) {
+                    ir.behnamapps.fascratch.inappbilling.data.ClientCommands.refresh(applicationContext)
+                    delay(30_000)
+                }
+            }
+        }
         setContent { FarsiScratchApp(this) }
     }
 

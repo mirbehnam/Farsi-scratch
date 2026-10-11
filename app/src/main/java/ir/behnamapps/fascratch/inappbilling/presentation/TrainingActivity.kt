@@ -16,6 +16,9 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.compose.foundation.layout.fillMaxSize
+import kotlinx.coroutines.launch
 import ir.behnamapps.fascratch.BuildConfig
 import ir.behnamapps.fascratch.R
 import ir.behnamapps.fascratch.inappbilling.StoreBillingFactory
@@ -31,11 +34,21 @@ class TrainingActivity : ComponentActivity() {
         hideSystemBars()
         billing = StoreBillingFactory.create(this)
         val api = CourseApi(this)
+        lifecycleScope.launch {
+            repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+                while (true) {
+                    ClientCommands.refresh(applicationContext)
+                    kotlinx.coroutines.delay(30_000)
+                }
+            }
+        }
         ir.behnamapps.fascratch.inappbilling.learning.LearningRepository.get(this).visit()
         val controller = TrainingController(lifecycleScope, billing, api, PurchaseVault(this), CourseCache(this), LessonDownloads(this, api),
             ir.behnamapps.fascratch.inappbilling.learning.LearningRepository.get(this))
         setContent {
             val state by controller.state.collectAsState()
+            val commands by ClientCommands.state.collectAsState()
+            var observedCacheEpoch by remember { mutableLongStateOf(commands.cacheEpoch) }
             var playing by remember { mutableStateOf<PlayingLesson?>(null) }
             val font = FontFamily(Font(R.font.shabnam))
             val typography = Typography().let { defaults -> defaults.copy(
@@ -59,7 +72,20 @@ class TrainingActivity : ComponentActivity() {
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl, LocalTextStyle provides LocalTextStyle.current.copy(fontFamily = font)) {
                     BackHandler(playing != null) { playing = null }
                     BackHandler(playing == null && state.course != null) { controller.backToCatalog() }
-                    if (playing != null) key(playing!!.lessonId) {
+                    LaunchedEffect(commands.blockedMessage) {
+                        if (commands.blockedMessage != null) { playing = null; controller.cancelDownload() }
+                    }
+                    LaunchedEffect(commands.cacheEpoch) {
+                        if (commands.cacheEpoch != observedCacheEpoch) {
+                            observedCacheEpoch = commands.cacheEpoch
+                            controller.resetDisplayLayout()
+                        }
+                    }
+                    if (!commands.initialized) {
+                        androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) { CircularProgressIndicator() }
+                    } else if (commands.blockedMessage != null) {
+                        TrainingUnavailable(commands.blockedMessage!!, onBack = { finish() })
+                    } else if (playing != null) key(playing!!.lessonId) {
                         val current = playing!!
                         FullscreenLessonPlayer(current.file, current.title, window, onClose = { playing = null }, watchTracker = current.tracker,
                             nextLessonTitle = controller.nextDownloadedLesson(current.lessonId)?.title,
@@ -72,9 +98,9 @@ class TrainingActivity : ComponentActivity() {
                                 } else false
                             })
                     }
-                    else TrainingScreen(state, controller, onBack = { if (!controller.backToCatalog()) finish() }, onPlay = { lesson ->
+                    else key(commands.cacheEpoch) { TrainingScreen(state, controller, onBack = { if (!controller.backToCatalog()) finish() }, onPlay = { lesson ->
                         controller.playable(lesson)?.let { playing = PlayingLesson(it, lesson.title, controller.watchTracker(lesson), lesson.id) }
-                    })
+                    }) }
                 }
             }
         }

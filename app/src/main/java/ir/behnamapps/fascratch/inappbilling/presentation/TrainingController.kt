@@ -186,6 +186,11 @@ class TrainingController(
         priceRefresher.refresh(state.value.course?.let { listOf(it) } ?: state.value.courses)
     }
 
+    fun resetDisplayLayout() {
+        mutable.update { it.copy(catalogLayout = null) }
+        refreshCatalogLayout()
+    }
+
     private suspend fun open(course: Course) {
         val cached = withContext(Dispatchers.IO) { cache.load(course.id) }
         show(course, cached?.second ?: emptyList())
@@ -212,14 +217,16 @@ class TrainingController(
     fun purchase(restoreOnly: Boolean, target: Course? = state.value.course) {
         val course = target ?: return
         action(course.id) {
+            var purchaseCourse = course
             if (!restoreOnly) {
-                val fresh = priceLabel(api.coursePrice(course, provider()))
+                purchaseCourse = api.coursePricing(course, provider())
+                val fresh = priceLabel(purchaseCourse.serverPriceToman)
                     ?: throw CourseFailure("قیمت این دوره در سرور تنظیم نشده است.")
                 mutable.update { it.copy(prices = it.prices + (course.id to fresh), price = if (it.course?.id == course.id) fresh else it.price) }
             }
             // Let the current SDK inventory callback finish; cancelling it can leave Myket busy.
             pauseStoreSync = true
-            storeMutex.withLock { withTimeout(180_000) { buy.execute(course, billing, restoreOnly) } }
+            storeMutex.withLock { withTimeout(180_000) { buy.execute(purchaseCourse, billing, restoreOnly) } }
             updateAccess(course, true)
             open(course)
         }

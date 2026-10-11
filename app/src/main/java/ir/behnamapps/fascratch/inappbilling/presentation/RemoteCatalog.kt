@@ -204,7 +204,7 @@ private fun catalogPayload(state: TrainingState): JSONObject = JSONObject().put(
         .put("instructor", c.instructor).put("coverUrl", c.coverUrl ?: JSONObject.NULL)
         .put("priceToman", c.serverPriceToman?.takeIf { state.prices[c.id] != null } ?: JSONObject.NULL)
         .put("compareAtToman", c.compareAtToman ?: JSONObject.NULL).put("discountEndsAtMillis", c.discountEndsAtMillis ?: JSONObject.NULL)
-        .put("purchased", c.id in state.purchasedIds)) }
+        .put("salesPaused", c.salesPaused).put("purchased", c.id in state.purchasedIds)) }
 })
 
 private fun catalogImage(request: WebResourceRequest, cache: CourseImageCache): WebResourceResponse {

@@ -53,6 +53,12 @@ internal object HomeBannerCache {
 
     suspend fun select(context: Context): BannerSelection? = withContext(Dispatchers.IO) { choose(context, mutable.value.banners) }
 
+    suspend fun clear(context: Context) = lock.withLock {
+        root(context).listFiles()?.filter { it.isFile }?.forEach { check(it.delete()) }
+        mutable.value = BannerSnapshot(true, emptyList(), mutable.value.revision + 1)
+        lastAttempt = 0L
+    }
+
     private fun choose(context: Context, rows: List<HomeBanner>): BannerSelection? {
         for (banner in rows.shuffled()) {
             val file = imageFile(context, banner)

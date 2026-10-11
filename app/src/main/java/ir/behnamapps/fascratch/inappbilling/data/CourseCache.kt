@@ -31,14 +31,14 @@ class CourseCache(context: Context) {
     private fun encode(course: Course) = JSONObject().put("id", course.id).put("title", course.title).put("description", course.description)
         .put("sku", course.sku).put("instructor", course.instructor).put("difficulty", course.difficulty).put("difficulty_label", course.difficultyLabel)
         .put("duration", course.durationSeconds).put("cover", course.coverUrl).put("purchases", course.confirmedPurchases).put("price_toman", course.serverPriceToman)
-        .put("compare_at_toman", course.compareAtToman).put("discount_ends_at_ms", course.discountEndsAtMillis)
+        .put("compare_at_toman", course.compareAtToman).put("discount_ends_at_ms", course.discountEndsAtMillis).put("sales_paused", course.salesPaused)
     private fun decode(data: JSONObject) = Course(CoursePolicy.uuid(data.getString("id")), data.getString("title"), data.getString("description"), data.getString("sku"),
         data.optString("instructor"), data.optInt("difficulty"), data.optDouble("duration", 0.0), data.optString("cover").takeIf { it.startsWith("https://") },
         if (data.has("purchases") && !data.isNull("purchases")) data.optInt("purchases") else null,
         CoursePolicy.serverPrice(data.getString("sku"), data.getString("sku"), data.opt("price_toman").takeUnless { it == JSONObject.NULL }),
         CoursePolicy.serverPrice(data.getString("sku"), data.getString("sku"), data.opt("compare_at_toman").takeUnless { it == JSONObject.NULL }),
         if (data.has("discount_ends_at_ms") && !data.isNull("discount_ends_at_ms")) data.getLong("discount_ends_at_ms") else null,
-        DifficultyLevel.label(data.optInt("difficulty"), data.optString("difficulty_label")))
+        DifficultyLevel.label(data.optInt("difficulty"), data.optString("difficulty_label")), data.optBoolean("sales_paused", false))
     fun saveCatalog(courses: List<Course>) {
         val output = catalog.startWrite()
         try { output.write(JSONArray().apply { courses.forEach { put(encode(it)) } }.toString().toByteArray(Charsets.UTF_8)); catalog.finishWrite(output) }

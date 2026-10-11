@@ -180,6 +180,7 @@ private fun CourseCard(course: Course, state: TrainingState, onSelect: (Course) 
                 }
             }
             if (!owned && state.prices[course.id] != null) DiscountCountdown(course)
+            if (!owned && course.salesPaused) Text("در حال حاضر فروش متوقف شده است", color = Muted, style = MaterialTheme.typography.bodySmall)
         }
         if (horizontal) Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
             CourseArtwork(course.coverUrl, course.title, Modifier.size(152.dp, 108.dp).clip(RoundedCornerShape(12.dp)))
@@ -260,10 +261,11 @@ private fun PurchasePanel(course: Course, state: TrainingState, onPurchase: (Cou
             if (!state.purchased && canBuy) {
                 HorizontalDivider(color = Line)
                 Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
-                    Button(onClick = { onPurchase(course, false) }, enabled = !state.busy && price != null,
+                    if (course.salesPaused) Text("در حال حاضر فروش متوقف شده است", color = Muted, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 8.dp))
+                    Button(onClick = { onPurchase(course, false) }, enabled = !state.busy && price != null && !course.salesPaused,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp), shape = RoundedCornerShape(14.dp),
                         elevation = ButtonDefaults.buttonElevation(defaultElevation = 3.dp, pressedElevation = 0.dp)) {
-                        Text("خرید دوره", fontWeight = FontWeight.Bold, fontSize = 19.sp)
+                        Text(if (course.salesPaused) "فروش متوقف شده است" else "خرید دوره", fontWeight = FontWeight.Bold, fontSize = 19.sp)
                     }
                 }
             }

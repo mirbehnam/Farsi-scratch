@@ -160,7 +160,8 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
         val end = price?.optString("discount_ends_at")?.takeUnless { it.isBlank() || it == "null" }?.let {
             java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", java.util.Locale.US).apply { isLenient = false }.parse(it)?.time
         }
-        return course.copy(serverPriceToman = amount, compareAtToman = before, discountEndsAtMillis = end)
+        return course.copy(serverPriceToman = amount, compareAtToman = before, discountEndsAtMillis = end,
+            salesPaused = price?.optBoolean("sales_paused", false) == true)
     }
 
     private fun serverPrice(row: JSONObject, provider: String, sku: String): Long? {

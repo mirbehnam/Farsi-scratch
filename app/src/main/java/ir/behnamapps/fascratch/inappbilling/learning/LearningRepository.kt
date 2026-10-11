@@ -234,6 +234,20 @@ class LearningRepository private constructor(context: Context) {
         }
     }
     suspend fun usernameAvailable(username: String): Boolean = api.auth("username-availability", JSONObject().put("username", username.trim())).getBoolean("available")
+    suspend fun logout(expectedUuid: String) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            require(identity.profile()?.uuid == expectedUuid) { "حساب تغییر کرده؛ صفحه را دوباره باز کن." }
+            val session = identity.secret()
+            // Logout remains usable offline. Server revocation is best-effort; local access always closes.
+            try { withTimeoutOrNull(5_000) { api.logout(session) } }
+            catch (e: CancellationException) { throw e }
+            catch (_: Exception) { /* Existing server session expires or is superseded at the next login. */ }
+            if (identity.invalidateEndedSession(session)) {
+                mutable.value = store.profiles(); mutableStatus.value = null
+            }
+        }
+        visit()
+    }
     suspend fun authenticate(register: Boolean, username: String, password: String, confirmation: String, secret: String, expectedUuid: String, displayName: String? = null) = withContext(Dispatchers.IO) {
         mutex.withLock {
             require(identity.profile()?.uuid == expectedUuid) { "حساب تغییر کرده؛ فرم را دوباره باز کن." }

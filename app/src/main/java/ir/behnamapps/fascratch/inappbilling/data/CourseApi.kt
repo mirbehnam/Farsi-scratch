@@ -49,8 +49,8 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
 
     fun previewConnection(lesson: Lesson): HttpsURLConnection = connectionTo(CoursePolicy.previewUrl(base, lesson))
 
-    private suspend fun request(path: String, token: String? = null, body: JSONObject? = null, accountSecret: String? = null): JSONObject = withContext(Dispatchers.IO) {
-        val connection = connection(path, token, accountSecret)
+    private suspend fun request(path: String, token: String? = null, body: JSONObject? = null, accountSecret: String? = null, timeoutMillis: Int = 30_000): JSONObject = withContext(Dispatchers.IO) {
+        val connection = connection(path, token, accountSecret).apply { connectTimeout = minOf(15_000, timeoutMillis); readTimeout = timeoutMillis }
         try {
             if (body != null) {
                 connection.requestMethod = "POST"; connection.doOutput = true
@@ -178,6 +178,10 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
         request("learning/$path", token, body).getJSONObject("data")
 
     suspend fun auth(path: String, body: JSONObject? = null): JSONObject = request("accounts/auth/$path", body = body).getJSONObject("data")
+
+    suspend fun logout(session: String) {
+        request("accounts/auth/logout", body = JSONObject(), accountSecret = session, timeoutMillis = 3_000)
+    }
 
     suspend fun accountAccess(course: Course, force: Boolean = false): CourseAccess {
         val uuid = identity?.profile()?.uuid ?: throw CourseFailure("ابتدا وارد حساب خودت شو.")

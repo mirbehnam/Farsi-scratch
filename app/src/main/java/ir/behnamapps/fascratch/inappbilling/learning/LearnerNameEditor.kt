@@ -13,7 +13,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.contentDescription
@@ -34,31 +33,49 @@ import kotlinx.coroutines.launch
     var fullName by remember(profile.uuid) { mutableStateOf(profile.fullName.orEmpty()) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var confirmLogout by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val focus = LocalFocusManager.current
     val canSave = !busy && NameEditorPolicy.canSave(name, profile.name, profile.nameSet, profile.nameChangesLeft, profile.nameBlocked) &&
         NameEditorPolicy.validFullName(fullName)
+    if (confirmLogout) AlertDialog(onDismissRequest = { if (!busy) confirmLogout = false },
+        title = { Text("از حسابت خارج می‌شوی؟") },
+        text = { Text("امتیازها و خریدهایت در حساب می‌مانند و فایل‌ها پاک نمی‌شوند. برای دسترسی دوباره به دوره‌ها، وارد حساب شو یا خرید را بازیابی کن.") },
+        confirmButton = { TextButton(enabled = !busy, onClick = {
+            busy = true; error = null; focus.clearFocus()
+            scope.launch {
+                try { repository.logout(profile.uuid); confirmLogout = false; onClose() }
+                catch (e: CancellationException) { throw e }
+                catch (e: Exception) { confirmLogout = false; error = e.message ?: "خروج کامل نشد؛ دوباره تلاش کن." }
+                finally { busy = false }
+            }
+        }) { Text(if (busy) "در حال خروج…" else "خروج از حساب", color = Color(0xFFAC2924)) } },
+        dismissButton = { TextButton(enabled = !busy, onClick = { confirmLogout = false }) { Text("می‌مانم") } })
     Dialog(onDismissRequest = { if (!busy) onClose() }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = true)) {
         LearnerDialogWindowBounds()
         Box(Modifier.learnerSafeDialogBounds(), contentAlignment = Alignment.Center) {
         Surface(Modifier.learnerDialogPanelBounds(),
-            shape = RoundedCornerShape(26.dp), border = BorderStroke(1.dp, Color(0xFFDCC8FF)), shadowElevation = 10.dp) {
-            Column(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(0xFFFAF5FF), Color(0xFFFFF8EB))))) {
+            shape = RoundedCornerShape(24.dp), border = BorderStroke(1.dp, Color(0xFFDCE6DF)), shadowElevation = 10.dp) {
+            Column(Modifier.fillMaxSize().background(Color(0xFFF7F5EF))) {
                 // Keep the action bar outside the scrolling content, especially on landscape phones.
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    LearnerLevelBadge(profile.level, Modifier.size(68.dp))
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(if (profile.nameSet) "نام نمایشی‌ات را تغییر بده" else "یک اسم برای خودت انتخاب کن ✨",
-                            fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge, color = Color(0xFF7044BC))
-                        Text("این اسم در پروفایل و رتبه‌بندی دیده می‌شود.", style = MaterialTheme.typography.bodySmall)
+                        Text(if (profile.registered) "حساب من" else "نام نمایشی",
+                            fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge, color = Color(0xFF183F38))
                     }
                     IconButton(enabled = !busy, onClick = onClose, modifier = Modifier.semantics { contentDescription = "بستن ویرایش نام" }) {
-                        Text("×", fontSize = 28.sp, color = Color(0xFF7044BC))
+                        Text("×", fontSize = 28.sp, color = Color(0xFF183F38))
                     }
                 }
-                Text("می‌توانی یک لقب انتخاب کنی؛ لازم نیست اسم واقعی‌ات باشد.", style = MaterialTheme.typography.bodyMedium)
+                if (profile.registered) Surface(Modifier.fillMaxWidth(), color = Color(0xFFE7F0E9), shape = RoundedCornerShape(12.dp)) {
+                    Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text(profile.username?.let { "نام کاربری: $it" } ?: "حساب متصل به گوگل", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                        Text(when { profile.googleLinked && profile.username != null -> "روش ورود: گوگل و رمز عبور"; profile.googleLinked -> "روش ورود: گوگل"; else -> "روش ورود: نام کاربری و رمز عبور" }, style = MaterialTheme.typography.bodySmall)
+                        androidx.compose.foundation.text.selection.SelectionContainer { Text("شناسه حساب: " + profile.uuid, style = MaterialTheme.typography.bodySmall, color = Color(0xFF5D6C65)) }
+                    }
+                }
                 if (profile.nameBlocked) NameRestrictionNotice(profile)
                 BoxWithConstraints {
                     val nameField: @Composable (Modifier) -> Unit = { modifier ->
@@ -68,7 +85,7 @@ import kotlinx.coroutines.launch
                             isError = name.isNotEmpty() && !NameEditorPolicy.validName(name),
                             supportingText = {
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text(if (name.isNotEmpty() && !NameEditorPolicy.validName(name)) "یک نام ساده با ۲ تا ۳۰ حرف بنویس." else "اسمی کوتاه و محترمانه انتخاب کن.", Modifier.weight(1f))
+                                    Text(if (name.isNotEmpty() && !NameEditorPolicy.validName(name)) "۲ تا ۳۰ حرف بنویس." else "نامی محترمانه انتخاب کن.", Modifier.weight(1f))
                                     Text(persianDisplay(name.length.toString()) + " / ۳۰")
                                 }
                             }, keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
@@ -77,28 +94,26 @@ import kotlinx.coroutines.launch
                     val fullNameField: @Composable (Modifier) -> Unit = { modifier ->
                         OutlinedTextField(fullName, { if (it.length <= 100) { fullName = it; error = null } },
                             modifier = modifier, enabled = !busy, singleLine = true, shape = RoundedCornerShape(14.dp),
-                            label = { Text("نام و نام خانوادگی (اختیاری)") },
-                            isError = !NameEditorPolicy.validFullName(fullName), supportingText = { Text("اگر دوست نداری، خالی بگذار.") },
+                            label = { Text("نام کامل (اختیاری)") },
+                            isError = !NameEditorPolicy.validFullName(fullName),
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                             keyboardActions = KeyboardActions(onDone = { focus.clearFocus() }))
                     }
-                    if (maxWidth >= 580.dp) Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (maxWidth >= 420.dp) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         nameField(Modifier.weight(1f)); fullNameField(Modifier.weight(1f))
                     } else Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         nameField(Modifier.fillMaxWidth()); fullNameField(Modifier.fillMaxWidth())
                     }
                 }
-                Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), color = Color(0xFFEEE5FF)) {
-                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("🔄", fontSize = 22.sp)
-                        Text("نامت را هر ۳۰ روز تا ۳ بار می‌توانی تغییر بدهی.", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                        Text(persianDisplay(profile.nameChangesLeft.toString()) + " تغییر باقی‌مانده", color = Color(0xFF7044BC),
+                Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), color = Color(0xFFE7F0E9)) {
+                    Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("هر ۳۰ روز تا ۳ بار تغییر نام", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                        Text(persianDisplay(profile.nameChangesLeft.toString()) + " تغییر باقی‌مانده", color = Color(0xFF21634F),
                             fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
                     }
                 }
                 Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), color = Color(0xFFFFEFDA)) {
-                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("با یک اسم محترمانه وارد رقابت شو 🌟", fontWeight = FontWeight.Bold, color = Color(0xFF795322), style = MaterialTheme.typography.labelLarge)
+                    Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
                         Text("نام نامناسب، بی‌ادبانه، توهین‌آمیز یا سیاسی باعث مسدود شدن نام می‌شود؛ نه پیشرفت و خریدهای تو.",
                             style = MaterialTheme.typography.bodySmall, color = Color(0xFF795322))
                     }
@@ -109,11 +124,12 @@ import kotlinx.coroutines.launch
                     }
                 }
                 }
-                HorizontalDivider(color = Color(0xFFDCC8FF))
-                Row(Modifier.fillMaxWidth().background(Color(0xFFFAF5FF)).padding(horizontal = 18.dp, vertical = 10.dp),
+                HorizontalDivider(color = Color(0xFFE0E7E1))
+                Row(Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 12.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(enabled = !busy, onClick = onClose) { Text("بعداً") }
-                    Spacer(Modifier.width(10.dp))
+                    if (profile.registered) TextButton(enabled = !busy, onClick = { focus.clearFocus(); confirmLogout = true }) { Text("خروج از حساب", color = Color(0xFFAC2924)) }
+                    else TextButton(enabled = !busy, onClick = onClose) { Text("بعداً") }
+                    Spacer(Modifier.weight(1f))
                     Button(enabled = canSave, shape = RoundedCornerShape(14.dp), onClick = {
                         focus.clearFocus(); busy = true; error = null
                         scope.launch {

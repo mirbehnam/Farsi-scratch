@@ -4,6 +4,8 @@ import ir.behnamapps.fascratch.BuildConfig
 import ir.behnamapps.fascratch.inappbilling.domain.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 import java.net.URL
 import java.text.SimpleDateFormat
@@ -169,10 +171,10 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
         return CoursePolicy.serverPrice(sku, price.optString("sku"), price.opt("amount_toman").takeUnless { it == JSONObject.NULL })
     }
 
-    override suspend fun verify(course: Course, provider: String, receipt: Receipt, restore: Boolean): CourseAccess {
+    override suspend fun verify(course: Course, provider: String, receipt: Receipt, restore: Boolean): CourseAccess = accountSessionMutex.withLock {
         val session = identity?.secret()
         val response = request("purchases/${if (restore) "restore" else "verify"}", body = JSONObject()
-            .put("provider", provider).put("sku", receipt.sku).put("purchase_token", receipt.token)).getJSONObject("data")
+            .put("provider", provider).put("sku", receipt.sku).put("purchase_token", receipt.token), accountSecret = session).getJSONObject("data")
         if (response.optString("status") != "verified" || !response.optBoolean("has_access")) throw CourseFailure("خرید هنوز تأیید نشده است.")
         if (identity != null && !identity.accept(response.optJSONObject("account"), expectedSecret = session))
             throw CourseFailure("حساب تغییر کرده؛ بازیابی را دوباره انجام بده.", 409)
@@ -180,7 +182,7 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
         require(token.matches(Regex("[a-f0-9]{64}")))
         val expiry = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US).apply { isLenient = false }.parse(response.getString("expires_at"))
             ?: throw CourseFailure("زمان اعتبار پاسخ معتبر نیست.")
-        return CourseAccess(CoursePolicy.uuid(response.getString("course_uuid")), token, expiry.time)
+        CourseAccess(CoursePolicy.uuid(response.getString("course_uuid")), token, expiry.time)
     }
 
     suspend fun learning(path: String, token: String? = null, body: JSONObject? = null): JSONObject =
@@ -205,10 +207,13 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
     }
 
     companion object {
+        // Shared across the training and learning API instances: never check an old
+        // account credential while a purchase response is installing its successor.
+        private val accountSessionMutex = Mutex()
         private val accountAccessCache = java.util.concurrent.ConcurrentHashMap<String, CourseAccess>()
     }
 
-    suspend fun account(): JSONObject {
+    suspend fun account(): JSONObject = accountSessionMutex.withLock {
         val id = identity ?: error("Account context is required")
         var session = id.secret()
         val profile = try { request("accounts/me", accountSecret = session).getJSONObject("data") }
@@ -225,7 +230,7 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
         }
         if (!id.accept(JSONObject().put("profile", profile), expectedSecret = session))
             throw CourseFailure("حساب به‌روز شده است؛ دوباره بررسی کن.", 409)
-        return profile
+        profile
     }
 }
 

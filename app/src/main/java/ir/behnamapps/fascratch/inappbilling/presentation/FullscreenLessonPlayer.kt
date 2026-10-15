@@ -166,12 +166,16 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
                     }
             })
             if (subtitlesEnabled && subtitleText.isNotBlank() && !error) {
-                Text(subtitleText, modifier = Modifier.align(Alignment.BottomCenter)
+                Box(modifier = Modifier.align(Alignment.BottomCenter)
                     .windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 28.dp)
-                    .padding(bottom = if (controls) 132.dp else 26.dp).fillMaxWidth(),
-                    color = Color.White, textAlign = TextAlign.Center, maxLines = 4, overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodyLarge.copy(fontSize = 19.sp,
-                        shadow = Shadow(Color.Black.copy(alpha = .85f), Offset(1f, 2f), 4f)))
+                    .padding(bottom = if (controls) 132.dp else 26.dp).widthIn(max = 760.dp), contentAlignment = Alignment.Center) {
+                    Text(subtitleText, modifier = Modifier
+                        .background(Color(0xFF424242).copy(alpha = .65f), androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                        color = Color.White, textAlign = TextAlign.Center, maxLines = 4, overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp, lineHeight = 24.sp,
+                            shadow = Shadow(Color.Black.copy(alpha = .6f), Offset(1f, 1f), 2f)))
+                }
             }
             seekHint?.let { delta ->
                 key(seekHintSequence) {

@@ -7,6 +7,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -24,6 +25,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDirection
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -51,27 +58,34 @@ internal fun InstructorName(course: Course) {
 internal fun InstructorDialog(profile: InstructorProfile, onClose: () -> Unit) {
     val context = LocalContext.current
     var linkMessage by remember(profile.uuid) { mutableStateOf<String?>(null) }
-    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(16.dp), contentAlignment = Alignment.Center) {
-            Surface(Modifier.widthIn(max = 820.dp).fillMaxWidth().heightIn(max = maxHeight), shape = RoundedCornerShape(26.dp), color = Color(0xFFFAFCF9), tonalElevation = 4.dp) {
-                Column(Modifier.padding(18.dp)) {
+            val screenLimit = (LocalConfiguration.current.screenWidthDp - 32).coerceAtLeast(0).toFloat()
+            val dialogWidth = InstructorDialogPolicy.width(minOf(maxWidth.value, screenLimit)).dp
+            val compact = maxHeight < 320.dp
+            Surface(Modifier.width(dialogWidth).heightIn(max = maxHeight), shape = RoundedCornerShape(24.dp), color = Color(0xFFFAFCF9), tonalElevation = 4.dp,
+                border = BorderStroke(1.dp, Color(0xFFDDE8DF))) {
+                Column(Modifier.padding(if (compact) 12.dp else 18.dp)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text("دربارهٔ مدرس", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        TextButton(onClick = onClose) { Text("بستن ×") }
+                        IconButton(onClick = onClose, modifier = Modifier.size(36.dp).background(Color(0xFFEDF2ED), CircleShape)) {
+                            Text("×", style = MaterialTheme.typography.headlineSmall,
+                                modifier = Modifier.semantics { contentDescription = "بستن دربارهٔ مدرس" })
+                        }
                     }
                     HorizontalDivider(color = Color(0xFFE0E9E2))
-                    Row(Modifier.weight(1f, fill = false).padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                        Column(Modifier.widthIn(max = 180.dp).weight(.32f).verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            InstructorPortrait(profile)
-                            Text(profile.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            if (profile.headline.isNotBlank()) Text(profile.headline, style = MaterialTheme.typography.bodySmall, color = Color(0xFF5D6C65))
+                    Row(Modifier.weight(1f, fill = false).fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        Column(Modifier.weight(.32f).verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            InstructorPortrait(profile, if (compact) 72.dp else 88.dp)
+                            Text(profile.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                            if (profile.headline.isNotBlank()) Text(profile.headline, style = MaterialTheme.typography.bodySmall, color = Color(0xFF5D6C65), textAlign = TextAlign.Center)
                         }
                         Column(Modifier.weight(.68f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             if (profile.biography.isNotBlank()) Text(profile.biography, style = MaterialTheme.typography.bodyMedium)
                             if (profile.contacts.isNotEmpty()) {
                                 Text("راه‌های ارتباطی", style = MaterialTheme.typography.labelLarge, color = Color(0xFF21634F))
                                 profile.contacts.forEach { contact ->
-                                    OutlinedButton(onClick = {
+                                    Surface(onClick = {
                                         if (InstructorPolicy.contactAllowed(contact.url)) {
                                             val result = runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(contact.url))) }
                                             if (result.isFailure) {
@@ -79,10 +93,17 @@ internal fun InstructorDialog(profile: InstructorProfile, onClose: () -> Unit) {
                                                 linkMessage = "برنامهٔ مناسب پیدا نشد؛ آدرس را از اینجا کپی کنید: ${contact.value}"
                                             }
                                         }
-                                    }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
-                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                            Text(contact.label)
-                                            Text(contact.value, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                    }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), color = Color.White,
+                                        border = BorderStroke(1.dp, Color(0xFFE1E8E2))) {
+                                        Row(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                            InstructorContactIcon(InstructorDialogPolicy.contactKind(contact.url))
+                                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                                Text(contact.label, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                Text(contact.value, style = MaterialTheme.typography.bodySmall.copy(textDirection = TextDirection.Ltr),
+                                                    color = Color(0xFF6B7970), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            }
+                                            Text("‹", color = Color(0xFF849288), style = MaterialTheme.typography.titleMedium)
                                         }
                                     }
                                 }
@@ -98,7 +119,7 @@ internal fun InstructorDialog(profile: InstructorProfile, onClose: () -> Unit) {
 }
 
 @Composable
-private fun InstructorPortrait(profile: InstructorProfile) {
+private fun InstructorPortrait(profile: InstructorProfile, size: androidx.compose.ui.unit.Dp = 92.dp) {
     val context = LocalContext.current
     val preview = LocalInspectionMode.current
     val bitmap by produceState<Bitmap?>(null, profile.photoUrl) {
@@ -114,7 +135,7 @@ private fun InstructorPortrait(profile: InstructorProfile) {
         }
     }
     val image = remember(bitmap) { bitmap?.asImageBitmap() }
-    Box(Modifier.size(92.dp).clip(CircleShape).background(Color(0xFFE2EFE7)), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(size).clip(CircleShape).background(Color(0xFFE2EFE7)), contentAlignment = Alignment.Center) {
         if (image != null) Image(image, "عکس ${profile.name}", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         else Text(profile.name.take(1), style = MaterialTheme.typography.headlineMedium, color = Color(0xFF21634F))
     }
@@ -127,7 +148,9 @@ private fun InstructorDialogPreview() {
     MaterialTheme {
         androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalLayoutDirection provides androidx.compose.ui.unit.LayoutDirection.Rtl) {
             InstructorDialog(InstructorProfile("preview", "بهنام تاج‌الدینی", "مدرس برنامه‌نویسی و بازی‌سازی", "با پروژه‌های کوچک و جذاب، قدم‌به‌قدم اسکرچ را یاد می‌گیریم.\nهدف من این است که هر هنرجو ایده‌های خودش را بسازد.", null,
-                listOf(InstructorContact("ایمیل مدرس", "teacher@example.com", "mailto:teacher@example.com")))) {}
+                listOf(InstructorContact("اینستاگرام", "instagram.com/scratch.teacher", "https://instagram.com/scratch.teacher"),
+                    InstructorContact("تلگرام", "t.me/scratch_teacher", "https://t.me/scratch_teacher"),
+                    InstructorContact("ایمیل مدرس", "teacher@example.com", "mailto:teacher@example.com")))) {}
         }
     }
 }

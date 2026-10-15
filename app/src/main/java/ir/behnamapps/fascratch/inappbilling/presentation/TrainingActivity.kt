@@ -88,18 +88,20 @@ class TrainingActivity : ComponentActivity() {
                     } else if (playing != null) key(playing!!.lessonId) {
                         val current = playing!!
                         FullscreenLessonPlayer(current.file, current.title, window, onClose = { playing = null }, watchTracker = current.tracker,
+                            hasSubtitles = current.subtitleLesson?.subtitle != null,
+                            loadSubtitles = { current.subtitleLesson?.let { controller.subtitles(it) } },
                             nextLessonTitle = controller.nextDownloadedLesson(current.lessonId)?.title,
                             onPlayNext = {
                                 val next = controller.nextDownloadedLesson(current.lessonId)
                                 val nextFile = next?.let(controller::playable)
                                 if (next != null && nextFile != null) {
-                                    playing = PlayingLesson(nextFile, next.title, controller.watchTracker(next), next.id)
+                                    playing = PlayingLesson(nextFile, next.title, controller.watchTracker(next), next.id, next)
                                     true
                                 } else false
                             })
                     }
                     else key(commands.cacheEpoch) { TrainingScreen(state, controller, onBack = { if (!controller.backToCatalog()) finish() }, onPlay = { lesson ->
-                        controller.playable(lesson)?.let { playing = PlayingLesson(it, lesson.title, controller.watchTracker(lesson), lesson.id) }
+                        controller.playable(lesson)?.let { playing = PlayingLesson(it, lesson.title, controller.watchTracker(lesson), lesson.id, lesson) }
                     }) }
                 }
             }
@@ -119,4 +121,5 @@ class TrainingActivity : ComponentActivity() {
     }
 }
 
-private data class PlayingLesson(val file: File, val title: String, val tracker: ir.behnamapps.fascratch.inappbilling.learning.WatchTracker?, val lessonId: String)
+private data class PlayingLesson(val file: File, val title: String, val tracker: ir.behnamapps.fascratch.inappbilling.learning.WatchTracker?, val lessonId: String,
+    val subtitleLesson: ir.behnamapps.fascratch.inappbilling.domain.Lesson? = null)

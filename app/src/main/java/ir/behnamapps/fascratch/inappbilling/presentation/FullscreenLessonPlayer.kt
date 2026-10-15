@@ -24,13 +24,23 @@ import androidx.core.view.ViewCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
+import ir.behnamapps.fascratch.inappbilling.domain.SubtitleTrack
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.unit.sp
 import java.io.File
 import java.util.Locale
 
 @Composable
 internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, onClose: () -> Unit,
     watchTracker: ir.behnamapps.fascratch.inappbilling.learning.WatchTracker? = null,
-    nextLessonTitle: String? = null, onPlayNext: () -> Boolean = { false }) {
+    nextLessonTitle: String? = null, onPlayNext: () -> Boolean = { false },
+    hasSubtitles: Boolean = false, loadSubtitles: suspend () -> SubtitleTrack? = { null }) {
     var video by remember(file) { mutableStateOf<ZoomVideoView?>(null) }
     var prepared by remember(file) { mutableStateOf(false) }
     var error by remember(file) { mutableStateOf(false) }
@@ -48,6 +58,24 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
     var nextPrompt by remember(file) { mutableStateOf(false) }
     var seekHint by remember(file) { mutableStateOf<Int?>(null) }
     var seekHintSequence by remember(file) { mutableIntStateOf(0) }
+    var subtitlesEnabled by remember(file) { mutableStateOf(false) }
+    var subtitleTrack by remember(file) { mutableStateOf<SubtitleTrack?>(null) }
+    var subtitleText by remember(file) { mutableStateOf("") }
+    var subtitlesLoading by remember(file) { mutableStateOf(false) }
+    var subtitleError by remember(file) { mutableStateOf(false) }
+    val currentSubtitleLoader by rememberUpdatedState(loadSubtitles)
+    LaunchedEffect(file, subtitlesEnabled) {
+        subtitleText = ""
+        if (subtitlesEnabled) {
+            subtitleError = false; subtitlesLoading = true
+            try {
+                if (subtitleTrack == null) subtitleTrack = currentSubtitleLoader()
+                if (subtitleTrack == null) { subtitleError = true; subtitlesEnabled = false }
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) { subtitleError = true; subtitlesEnabled = false }
+            finally { subtitlesLoading = false }
+        }
+    }
     val currentNextTitle by rememberUpdatedState(nextLessonTitle)
     val currentPlayNext by rememberUpdatedState(onPlayNext)
     fun seekBy(delta: Int): Boolean {
@@ -62,6 +90,14 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
         return true
     }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(file, subtitleTrack, subtitlesEnabled, video, prepared) {
+        while (subtitlesEnabled && subtitleTrack != null && prepared) {
+            subtitleText = if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) && !completed)
+                subtitleTrack?.textAt(video?.position() ?: 0).orEmpty() else ""
+            delay(100)
+        }
+        if (!subtitlesEnabled) subtitleText = ""
+    }
     DisposableEffect(window, file) {
         val bars = WindowCompat.getInsetsController(window, window.decorView)
         val oldBehavior = bars.systemBarsBehavior
@@ -129,6 +165,14 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
                         video = it; it.setForeground(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
                     }
             })
+            if (subtitlesEnabled && subtitleText.isNotBlank() && !error) {
+                Text(subtitleText, modifier = Modifier.align(Alignment.BottomCenter)
+                    .windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 28.dp)
+                    .padding(bottom = if (controls) 132.dp else 26.dp).fillMaxWidth(),
+                    color = Color.White, textAlign = TextAlign.Center, maxLines = 4, overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodyLarge.copy(fontSize = 19.sp,
+                        shadow = Shadow(Color.Black.copy(alpha = .85f), Offset(1f, 2f), 4f)))
+            }
             seekHint?.let { delta ->
                 key(seekHintSequence) {
                     PlayerSeekFeedback(delta, Modifier.align(if (delta > 0) androidx.compose.ui.AbsoluteAlignment.CenterRight else androidx.compose.ui.AbsoluteAlignment.CenterLeft)
@@ -166,6 +210,15 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
                             video?.toggle(); playing = video?.isPlaying() == true; interaction++
                         }, enabled = prepared) { Text(if (playing) "توقف" else "پخش") }
                         TextButton(onClick = { seekBy(-10_000) }, enabled = prepared) { Text("۱۰ ثانیه عقب") }
+                        if (hasSubtitles) IconToggleButton(checked = subtitlesEnabled,
+                            onCheckedChange = { subtitlesEnabled = it; subtitleError = false; interaction++ }, enabled = prepared,
+                            modifier = Modifier.size(40.dp).semantics {
+                                contentDescription = "زیرنویس"
+                                stateDescription = if (subtitlesEnabled) "روشن" else "خاموش"
+                            }) {
+                            if (subtitlesLoading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                            else SubtitleControlIcon(if (subtitlesEnabled) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = .65f))
+                        }
                         Box {
                             TextButton(onClick = { speedMenu = true; interaction++ }, enabled = prepared) {
                                 Text("سرعت ${persianDisplay(speed.toString()).replace('.', '٫')}×")
@@ -186,6 +239,7 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
                         Text(persianDisplay("${playbackTime(position)} / ${playbackTime(duration)}"), color = Color.White, style = MaterialTheme.typography.labelMedium)
                     }
                     if (speedError) Text("این دستگاه نتوانست سرعت انتخاب‌شده را اعمال کند.", color = Color(0xFFFFBC72), style = MaterialTheme.typography.labelSmall)
+                    if (subtitleError) Text("زیرنویس دریافت نشد؛ اینترنت را بررسی کنید و دوباره دکمهٔ زیرنویس را بزنید. پخش ویدئو ادامه دارد.", color = Color(0xFFFFBC72), style = MaterialTheme.typography.labelSmall)
                 }
             }
             if (nextPrompt && currentNextTitle != null) AlertDialog(
@@ -195,6 +249,18 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
                     if (!currentPlayNext()) { nextPrompt = false; onClose() }
                 }) { Text("پخش قسمت بعد") } },
                 dismissButton = { TextButton(onClick = { nextPrompt = false }) { Text("فعلاً نه") } })
+        }
+    }
+}
+
+@Composable
+private fun SubtitleControlIcon(color: Color) {
+    androidx.compose.foundation.Canvas(Modifier.size(24.dp)) {
+        val unit = size.width / 24f
+        drawRoundRect(color, Offset(unit, 4 * unit), androidx.compose.ui.geometry.Size(22 * unit, 16 * unit),
+            androidx.compose.ui.geometry.CornerRadius(2 * unit), style = androidx.compose.ui.graphics.drawscope.Stroke(1.7f * unit))
+        listOf(Triple(4f, 10f, 6f), Triple(12f, 10f, 8f), Triple(4f, 14f, 9f), Triple(15f, 14f, 5f)).forEach { (x, y, w) ->
+            drawRoundRect(color, Offset(x * unit, y * unit), androidx.compose.ui.geometry.Size(w * unit, 1.8f * unit), androidx.compose.ui.geometry.CornerRadius(unit))
         }
     }
 }

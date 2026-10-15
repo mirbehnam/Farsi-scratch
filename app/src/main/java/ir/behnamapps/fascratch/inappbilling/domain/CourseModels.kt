@@ -11,7 +11,7 @@ data class Course(val id: String, val title: String, val description: String, va
 data class Lesson(val id: String, val courseId: String, val section: String, val title: String,
     val version: Int, val bytes: Long, val sha256: String, val difficulty: Int = 0,
     val durationSeconds: Double = 0.0, val coverUrl: String? = null, val description: String = "",
-    val isPreview: Boolean = false, val previewUrl: String? = null, val difficultyLabel: String = "")
+    val isPreview: Boolean = false, val previewUrl: String? = null, val difficultyLabel: String = "", val subtitle: LessonSubtitle? = null)
 
 /** Numeric identities remain stable; older APIs/caches still have readable badges. */
 object DifficultyLevel {

@@ -13,6 +13,7 @@ import java.security.MessageDigest
 
 /** Foreground screen download, sequential, resumable, private; only verified files become playable. */
 class LessonDownloads(context: Context, private val api: CourseApi) {
+    val subtitles = SubtitleDownloads(context, api)
     private val root = File(context.noBackupFilesDir, "course-videos-${BuildConfig.FLAVOR}").apply { mkdirs() }
     fun completed(lesson: Lesson): File? = File(root, CoursePolicy.downloadKey(lesson)).takeIf { it.isFile && it.length() == lesson.bytes }
 

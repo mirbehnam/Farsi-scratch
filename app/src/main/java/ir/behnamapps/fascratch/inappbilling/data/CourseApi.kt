@@ -58,6 +58,16 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
         }
     }
 
+    fun subtitleConnection(lesson: Lesson, access: CourseAccess?): HttpsURLConnection {
+        val path = SubtitlePolicy.path(lesson)
+        val connection = if (lesson.isPreview) (URL("$base/$path").openConnection() as HttpsURLConnection)
+            else { require(access?.courseId == lesson.courseId); connection(path, requireNotNull(access).token) }
+        return connection.apply {
+            connectTimeout = 3500; readTimeout = 5000; instanceFollowRedirects = false; useCaches = false
+            setRequestProperty("Accept", "application/x-subrip")
+        }
+    }
+
     private suspend fun request(path: String, token: String? = null, body: JSONObject? = null, accountSecret: String? = null, timeoutMillis: Int = 30_000): JSONObject = withContext(Dispatchers.IO) {
         val connection = connection(path, token, accountSecret).apply { connectTimeout = minOf(15_000, timeoutMillis); readTimeout = timeoutMillis }
         try {
@@ -137,7 +147,10 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
                         row.optInt("difficulty"), video.optDouble("duration_seconds", 0.0), posterUrl(row.optJSONObject("cover")), row.optString("description"),
                         row.optBoolean("is_preview", false), (video.optString("public_url").takeIf { it.startsWith("https://") } ?: video.optString("url"))
                             .takeIf { row.optBoolean("is_preview", false) && it.startsWith("https://") },
-                        DifficultyLevel.label(row.optInt("difficulty"), row.optString("difficulty_label")))
+                        DifficultyLevel.label(row.optInt("difficulty"), row.optString("difficulty_label")),
+                        row.optJSONObject("subtitles")?.let { sub -> runCatching {
+                            LessonSubtitle(sub.getString("sha256"), sub.getInt("bytes")).takeIf { SubtitlePolicy.valid(it) }
+                        }.getOrNull() })
                     CoursePolicy.downloadKey(lesson)
                     add(lesson)
                 }

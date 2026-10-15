@@ -54,7 +54,8 @@ class CourseCache(context: Context) {
         val rows = JSONArray()
         lessons.forEach { rows.put(JSONObject().put("id", it.id).put("section", it.section).put("title", it.title)
             .put("version", it.version).put("bytes", it.bytes).put("sha256", it.sha256)
-            .put("difficulty", it.difficulty).put("difficulty_label", it.difficultyLabel).put("duration", it.durationSeconds).put("cover", it.coverUrl).put("description", it.description).put("is_preview", it.isPreview)) }
+            .put("difficulty", it.difficulty).put("difficulty_label", it.difficultyLabel).put("duration", it.durationSeconds).put("cover", it.coverUrl).put("description", it.description).put("is_preview", it.isPreview)
+            .put("subtitle", it.subtitle?.let { sub -> JSONObject().put("sha256", sub.sha256).put("bytes", sub.bytes) })) }
         val data = encode(course).put("lessons", rows)
         val output = file.startWrite()
         try { output.write(data.toString().toByteArray(Charsets.UTF_8)); file.finishWrite(output) }
@@ -71,7 +72,8 @@ class CourseCache(context: Context) {
             Lesson(CoursePolicy.uuid(row.getString("id")), course.id, row.getString("section"), row.getString("title"),
                 row.getInt("version"), row.getLong("bytes"), row.getString("sha256"), row.optInt("difficulty"), row.optDouble("duration", 0.0),
                 row.optString("cover").takeIf { it.startsWith("https://") }, row.optString("description"), row.optBoolean("is_preview", false),
-                difficultyLabel = DifficultyLevel.label(row.optInt("difficulty"), row.optString("difficulty_label"))).also { CoursePolicy.downloadKey(it) }
+                difficultyLabel = DifficultyLevel.label(row.optInt("difficulty"), row.optString("difficulty_label")),
+                subtitle = row.optJSONObject("subtitle")?.let { sub -> runCatching { LessonSubtitle(sub.getString("sha256"), sub.getInt("bytes")).takeIf(SubtitlePolicy::valid) }.getOrNull() }).also { CoursePolicy.downloadKey(it) }
         }
     }.getOrNull()
 }

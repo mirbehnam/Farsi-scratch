@@ -259,6 +259,9 @@ class TrainingController(
             downloads.download(lesson, access(course, force = true), progress)
         }
         mutable.update { it.copy(downloaded = it.downloaded + lesson.id, message = null) }
+        if (lesson.subtitle != null) scope.launch {
+            try { subtitles(lesson) } catch (e: CancellationException) { throw e } catch (_: Exception) { /* Optional: retry from the CC button, never fail the downloaded video. */ }
+        }
     }
 
     fun delete(lesson: Lesson) = action(lesson.courseId) {
@@ -268,6 +271,12 @@ class TrainingController(
     fun playable(lesson: Lesson): File? = if (lesson.courseId == state.value.course?.id &&
         CoursePolicy.canLearn(lesson, ownsCourse(lesson.courseId))) downloads.completed(lesson) else null
     fun watchTracker(lesson: Lesson) = state.value.course?.let { learning?.tracker(it, lesson) }
+    suspend fun subtitles(lesson: Lesson): SubtitleTrack? {
+        if (lesson.subtitle == null || playable(lesson) == null) return null
+        downloads.subtitles.cached(lesson)?.let { return it }
+        val course = state.value.course ?: return null
+        return downloads.subtitles.download(lesson, if (lesson.isPreview) null else access(course))
+    }
     fun nextDownloadedLesson(currentId: String): Lesson? = LessonPlayerPolicy.next(state.value.lessons, currentId)
         ?.takeIf { playable(it) != null }
     fun cancelDownload() { if (state.value.downloadingId != null) activeJob?.cancel() }

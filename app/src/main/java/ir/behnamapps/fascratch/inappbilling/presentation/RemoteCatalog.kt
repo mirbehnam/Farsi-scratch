@@ -42,6 +42,8 @@ import javax.net.ssl.HttpsURLConnection
 internal fun RemoteCatalog(layout: CatalogLayout, state: TrainingState, onSelect: (Course) -> Unit,
     onFailure: () -> Unit, onReady: () -> Unit, modifier: Modifier, native: @Composable () -> Unit) {
     val context = LocalContext.current
+    var shownInstructor by remember { mutableStateOf<InstructorProfile?>(null) }
+    shownInstructor?.let { InstructorDialog(it) { shownInstructor = null } }
     val imageCache = remember(context) { CourseImageCache(context) }
     val fontBootstrap = remember {
         runCatching {
@@ -184,6 +186,8 @@ internal fun RemoteCatalog(layout: CatalogLayout, state: TrainingState, onSelect
                                 "heartbeat" -> checkHealth(source, failWhenUnhealthy = ready)
                                 "view-course" -> CatalogLayoutPolicy.courseAction(json.optString("type"), json.optString("courseId"), mainFrame,
                                     origin.toString().trimEnd('/'), latestState.busy, latestState.courses)?.let(select)
+                                "view-instructor" -> CatalogLayoutPolicy.courseAction("view-course", json.optString("courseId"), mainFrame,
+                                    origin.toString().trimEnd('/'), latestState.busy, latestState.courses)?.instructorProfile?.let { shownInstructor = it }
                             }
                         }
                         host.addView(view, FrameLayout.LayoutParams(-1, -1))
@@ -201,7 +205,7 @@ internal fun RemoteCatalog(layout: CatalogLayout, state: TrainingState, onSelect
 
 private fun catalogPayload(state: TrainingState): JSONObject = JSONObject().put("busy", state.busy).put("courses", JSONArray().apply {
     state.courses.forEach { c -> put(JSONObject().put("id", c.id).put("title", c.title).put("description", c.description)
-        .put("instructor", c.instructor).put("coverUrl", c.coverUrl ?: JSONObject.NULL)
+        .put("instructor", c.instructorProfile?.name ?: c.instructor).put("hasInstructor", c.instructorProfile != null).put("coverUrl", c.coverUrl ?: JSONObject.NULL)
         .put("priceToman", c.serverPriceToman?.takeIf { state.prices[c.id] != null } ?: JSONObject.NULL)
         .put("compareAtToman", c.compareAtToman ?: JSONObject.NULL).put("discountEndsAtMillis", c.discountEndsAtMillis ?: JSONObject.NULL)
         .put("salesPaused", c.salesPaused).put("purchased", c.id in state.purchasedIds)) }

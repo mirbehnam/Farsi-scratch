@@ -168,7 +168,7 @@ private fun CourseCard(course: Course, state: TrainingState, onSelect: (Course) 
         colors = CardDefaults.cardColors(containerColor = Color.White), border = BorderStroke(1.dp, Line)) {
         val details: @Composable ColumnScope.() -> Unit = {
             Text(persian(course.title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            if (course.instructor.isNotBlank()) Text(persian(course.instructor), style = MaterialTheme.typography.bodySmall, color = Muted)
+            InstructorName(course)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Column(Modifier.weight(1f)) {
                     if (owned) Text("✓ خریداری شده", color = PreviewGreen, fontWeight = FontWeight.Bold)
@@ -194,7 +194,7 @@ private fun CourseCard(course: Course, state: TrainingState, onSelect: (Course) 
 
 @Composable
 private fun CourseMetadata(course: Course) {
-    if (course.instructor.isNotBlank()) Text(persian("مدرس: ${course.instructor}"), style = MaterialTheme.typography.bodySmall, color = Muted)
+    InstructorName(course)
     durationLabel(course.durationSeconds)?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = Muted) }
 }
 

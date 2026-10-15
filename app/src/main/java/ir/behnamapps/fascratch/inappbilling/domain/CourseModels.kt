@@ -7,7 +7,7 @@ data class Course(val id: String, val title: String, val description: String, va
     val instructor: String = "", val difficulty: Int = 0, val durationSeconds: Double = 0.0,
     val coverUrl: String? = null, val confirmedPurchases: Int? = null, val serverPriceToman: Long? = null,
     val compareAtToman: Long? = null, val discountEndsAtMillis: Long? = null, val difficultyLabel: String = "",
-    val salesPaused: Boolean = false)
+    val salesPaused: Boolean = false, val instructorProfile: InstructorProfile? = null)
 data class Lesson(val id: String, val courseId: String, val section: String, val title: String,
     val version: Int, val bytes: Long, val sha256: String, val difficulty: Int = 0,
     val durationSeconds: Double = 0.0, val coverUrl: String? = null, val description: String = "",

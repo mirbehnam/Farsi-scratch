@@ -6,6 +6,7 @@ import android.net.Uri
 import android.util.AtomicFile
 import ir.behnamapps.fascratch.BuildConfig
 import ir.behnamapps.fascratch.inappbilling.domain.CoursePolicy
+import ir.behnamapps.fascratch.inappbilling.domain.InstructorPolicy
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.File
@@ -71,6 +72,7 @@ class CourseImageCache(context: Context) {
 
     private fun allowed(url: String): Boolean {
         val base = BuildConfig.COURSE_API_BASE.trimEnd('/')
+        if (InstructorPolicy.photoAllowed(base, url)) return true
         if (!url.startsWith("https://") || !CoursePolicy.sameOrigin(base, url)) return false
         val uri = Uri.parse(url)
         val prefix = Uri.parse(base).path.orEmpty() + "/media/"

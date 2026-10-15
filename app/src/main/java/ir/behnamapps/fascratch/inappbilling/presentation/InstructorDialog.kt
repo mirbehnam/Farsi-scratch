@@ -1,0 +1,133 @@
+package ir.behnamapps.fascratch.inappbilling.presentation
+
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import ir.behnamapps.fascratch.inappbilling.domain.*
+import ir.behnamapps.fascratch.inappbilling.data.CourseImageCache
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+
+@Composable
+internal fun InstructorName(course: Course) {
+    var show by remember(course.id) { mutableStateOf(false) }
+    val profile = course.instructorProfile
+    if (profile != null) {
+        TextButton(onClick = { show = true }, contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp)) {
+            Text("مدرس: ${profile.name}  ‹", style = MaterialTheme.typography.bodySmall)
+        }
+        if (show) InstructorDialog(profile) { show = false }
+    } else if (course.instructor.isNotBlank()) Text("مدرس: ${course.instructor}", style = MaterialTheme.typography.bodySmall, color = Color(0xFF5D6C65))
+}
+
+/** Landscape-first: fixed reachable close button; only biography and contacts scroll. */
+@Composable
+internal fun InstructorDialog(profile: InstructorProfile, onClose: () -> Unit) {
+    val context = LocalContext.current
+    var linkMessage by remember(profile.uuid) { mutableStateOf<String?>(null) }
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(16.dp), contentAlignment = Alignment.Center) {
+            Surface(Modifier.widthIn(max = 820.dp).fillMaxWidth().heightIn(max = maxHeight), shape = RoundedCornerShape(26.dp), color = Color(0xFFFAFCF9), tonalElevation = 4.dp) {
+                Column(Modifier.padding(18.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("دربارهٔ مدرس", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        TextButton(onClick = onClose) { Text("بستن ×") }
+                    }
+                    HorizontalDivider(color = Color(0xFFE0E9E2))
+                    Row(Modifier.weight(1f, fill = false).padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                        Column(Modifier.widthIn(max = 180.dp).weight(.32f).verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            InstructorPortrait(profile)
+                            Text(profile.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            if (profile.headline.isNotBlank()) Text(profile.headline, style = MaterialTheme.typography.bodySmall, color = Color(0xFF5D6C65))
+                        }
+                        Column(Modifier.weight(.68f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            if (profile.biography.isNotBlank()) Text(profile.biography, style = MaterialTheme.typography.bodyMedium)
+                            if (profile.contacts.isNotEmpty()) {
+                                Text("راه‌های ارتباطی", style = MaterialTheme.typography.labelLarge, color = Color(0xFF21634F))
+                                profile.contacts.forEach { contact ->
+                                    OutlinedButton(onClick = {
+                                        if (InstructorPolicy.contactAllowed(contact.url)) {
+                                            val result = runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(contact.url))) }
+                                            if (result.isFailure) {
+                                                runCatching { (context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager)?.setPrimaryClip(ClipData.newPlainText(contact.label, contact.value)) }
+                                                linkMessage = "برنامهٔ مناسب پیدا نشد؛ آدرس را از اینجا کپی کنید: ${contact.value}"
+                                            }
+                                        }
+                                    }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Text(contact.label)
+                                            Text(contact.value, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                        }
+                                    }
+                                }
+                            }
+                            linkMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                            if (profile.biography.isBlank() && profile.contacts.isEmpty()) Text("معرفی بیشتری به‌زودی اضافه می‌شود.", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun InstructorPortrait(profile: InstructorProfile) {
+    val context = LocalContext.current
+    val preview = LocalInspectionMode.current
+    val bitmap by produceState<Bitmap?>(null, profile.photoUrl) {
+        if (!preview && profile.photoUrl != null) value = withContext(Dispatchers.IO) {
+            runCatching {
+                val image = CourseImageCache(context).load(profile.photoUrl, 2500, 3500) ?: return@runCatching null
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(image.bytes, 0, image.bytes.size, bounds)
+                var sample = 1
+                while (bounds.outWidth / sample > 256 || bounds.outHeight / sample > 256) sample *= 2
+                BitmapFactory.decodeByteArray(image.bytes, 0, image.bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
+            }.getOrNull()
+        }
+    }
+    val image = remember(bitmap) { bitmap?.asImageBitmap() }
+    Box(Modifier.size(92.dp).clip(CircleShape).background(Color(0xFFE2EFE7)), contentAlignment = Alignment.Center) {
+        if (image != null) Image(image, "عکس ${profile.name}", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        else Text(profile.name.take(1), style = MaterialTheme.typography.headlineMedium, color = Color(0xFF21634F))
+    }
+}
+
+@Preview(name = "Instructor / Landscape", widthDp = 840, heightDp = 380)
+@Preview(name = "Instructor / Compact landscape", widthDp = 640, heightDp = 300)
+@Composable
+private fun InstructorDialogPreview() {
+    MaterialTheme {
+        androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalLayoutDirection provides androidx.compose.ui.unit.LayoutDirection.Rtl) {
+            InstructorDialog(InstructorProfile("preview", "بهنام تاج‌الدینی", "مدرس برنامه‌نویسی و بازی‌سازی", "با پروژه‌های کوچک و جذاب، قدم‌به‌قدم اسکرچ را یاد می‌گیریم.\nهدف من این است که هر هنرجو ایده‌های خودش را بسازد.", null,
+                listOf(InstructorContact("ایمیل مدرس", "teacher@example.com", "mailto:teacher@example.com")))) {}
+        }
+    }
+}

@@ -113,7 +113,8 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
                         row.optString("instructor_name"), row.optInt("difficulty"), stats?.optDouble("duration_seconds", 0.0) ?: 0.0,
                         posterUrl(row.optJSONObject("cover")) ?: row.optString("banner_url").takeIf { it.startsWith("https://") },
                         if (stats != null && stats.has("confirmed_purchases") && !stats.isNull("confirmed_purchases")) stats.optInt("confirmed_purchases").coerceAtLeast(0) else null,
-                        serverPrice(row, provider, sku), difficultyLabel = DifficultyLevel.label(row.optInt("difficulty"), row.optString("difficulty_label")))
+                        serverPrice(row, provider, sku), difficultyLabel = DifficultyLevel.label(row.optInt("difficulty"), row.optString("difficulty_label")),
+                        instructorProfile = InstructorJson.parse(row.optJSONObject("instructor_profile")))
                     courses[course.id] = withPricing(row, provider, course)
                 }
             }
@@ -163,7 +164,8 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
             java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", java.util.Locale.US).apply { isLenient = false }.parse(it)?.time
         }
         return course.copy(serverPriceToman = amount, compareAtToman = before, discountEndsAtMillis = end,
-            salesPaused = price?.optBoolean("sales_paused", false) == true)
+            salesPaused = price?.optBoolean("sales_paused", false) == true,
+            instructorProfile = InstructorJson.parse(row.optJSONObject("instructor_profile")))
     }
 
     private fun serverPrice(row: JSONObject, provider: String, sku: String): Long? {

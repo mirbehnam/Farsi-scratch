@@ -59,7 +59,8 @@ internal fun LearnerMissionsDialog(profile: LearnerProfile, repository: Learning
     LaunchedEffect(profile.uuid) {
         repository.missionRewards.collect { (uuid, reward) ->
             if (uuid == profile.uuid && repository.profiles.value[LearningIdentity.KEY]?.uuid == profile.uuid) {
-                celebration = "✨ " + persianDisplay(reward.toString()) + " XP گرفتی؛ ممنون از همراهی‌ات!"
+                celebration = "✨ " + persianDisplay(reward.toString()) + " XP" +
+                    (if (repository.profiles.value[LearningIdentity.KEY]?.coins != null) " و " + persianDisplay(reward.toString()) + " سکه" else "") + " گرفتی؛ ممنون از همراهی‌ات!"
                 val process = android.app.ActivityManager.RunningAppProcessInfo()
                 android.app.ActivityManager.getMyMemoryState(process)
                 if (process.importance == android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND) launch { MissionRewardSound.play() }
@@ -78,7 +79,7 @@ internal fun LearnerMissionsDialog(profile: LearnerProfile, repository: Learning
                         Text("🏆", fontSize = 30.sp, modifier = Modifier.padding(end = 10.dp))
                         Column(Modifier.weight(1f)) {
                             Text("مأموریت‌های تو", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleLarge)
-                            Text("یاد بگیر، بساز و جایزه‌ات را بگیر!", style = MaterialTheme.typography.bodySmall, color = Color(0xFF786647))
+                            Text(current?.coins?.let { "🪙 " + persianDisplay(coinBalanceText(it)) + " سکه داری" } ?: "یاد بگیر، بساز و جایزه‌ات را بگیر!", style = MaterialTheme.typography.bodySmall, color = Color(0xFF786647))
                         }
                         TextButton(enabled = !loading && busy == null, onClick = { scope.launch { refresh() } }) { Text("تازه‌سازی") }
                         TextButton(onClick = onClose) { Text("بستن ×") }
@@ -114,7 +115,8 @@ internal fun LearnerMissionsDialog(profile: LearnerProfile, repository: Learning
                                                 try {
                                                     val awarded = repository.claimMission(profile.uuid, item)
                                                     if (awarded) {
-                                                        celebration = "✨ " + persianDisplay(item.reward.toString()) + " XP گرفتی؛ آفرین برنامه‌نویس!"
+                                                        celebration = "✨ " + persianDisplay(item.reward.toString()) + " XP" +
+                                                            (if (item.rewardCoins > 0) " و " + persianDisplay(item.rewardCoins.toString()) + " سکه" else "") + " گرفتی؛ آفرین برنامه‌نویس!"
                                                         launch { MissionRewardSound.play() }
                                                     }
                                                 } catch (e: CancellationException) { throw e }
@@ -139,7 +141,7 @@ internal fun LearnerMissionsDialog(profile: LearnerProfile, repository: Learning
 private fun MissionCard(item: MissionItem, busy: Boolean, enabled: Boolean, modifier: Modifier = Modifier,
     onInfo: () -> Unit = {}, onReview: () -> Unit = {}, onClaim: () -> Unit) {
     val claimed = item.status == "claimed"
-    val icon = when (item.id) { "daily" -> "☀️"; "first_code" -> "🚀"; "coding_30", "coding_5h", "coding_15h" -> "🧩"; "coding_week" -> "🔥"; "store_review" -> "⭐"; "saved_project" -> "💾"; "details" -> "🎒"; else -> "🎬" }
+    val icon = when (item.id) { "daily" -> "☀️"; "first_code" -> "🚀"; "coding_30", "coding_5h", "coding_15h" -> "🧩"; "coding_week", "coding_month" -> "🔥"; "store_review" -> "⭐"; "saved_project" -> "💾"; "details" -> "🎒"; else -> "🎬" }
     Surface(modifier, shape = RoundedCornerShape(18.dp), color = if (claimed) Color(0xFFF0F6EE) else Color.White,
         border = BorderStroke(if (item.ready) 2.dp else 1.dp, if (item.ready) Color(0xFFE7B442) else Color(0xFFE5DFD2)), shadowElevation = 2.dp) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -152,22 +154,28 @@ private fun MissionCard(item: MissionItem, busy: Boolean, enabled: Boolean, modi
                     }
                 }
                 Surface(color = Color(0xFFFFEDAF), shape = RoundedCornerShape(9.dp)) {
-                    Text(persianDisplay(item.reward.toString()) + " XP", Modifier.padding(horizontal = 8.dp, vertical = 4.dp), color = Color(0xFF775300), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                    Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+                        Text(persianDisplay(item.reward.toString()) + " XP", color = Color(0xFF775300), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                        if (item.rewardCoins > 0) Text("🪙 " + persianDisplay(item.rewardCoins.toString()), color = Color(0xFF775300), style = MaterialTheme.typography.labelSmall)
+                    }
                 }
             }
             GameMissionProgress(item.fraction)
+            if (item.repeatable) Text(persianDisplay(
+                (if (item.achievementUnlocked) "🏆 دستاورد ثبت شده · ${item.completedCount} بار تکمیل" else "🔁 چالش تکرارشونده") +
+                if (item.pendingRewards > 0) " · ${item.pendingRewards} جایزهٔ آماده" else ""), style = MaterialTheme.typography.labelSmall, color = Color(0xFF956308))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     val caption = when (item.metric) {
                         "watch_ms", "coding_ms" -> "${item.progress / 60000} از ${item.target / 60000} دقیقه"
                         "details" -> "${item.progress} از ${item.target} گزینه"
-                        "coding_days" -> "${item.progress} از ۷ روز · امروز ${item.todayCodingMs / 60000} از ۲۰ دقیقه"
+                        "coding_days" -> item.dayCaption
                         "lessons" -> "${item.progress} از ${item.target} قسمت"
                         "review_ms" -> if (item.action == "review") "یک نظر و امتیاز برای ما" else if (claimed) "ممنون از همراهی‌ات" else "جایزه پس از ۱۰ ثانیه"
                         else -> if (item.fraction >= 1f) "تکمیل شد" else "منتظر اولین قدم تو"
                     }
                     Text(persianDisplay(caption), style = MaterialTheme.typography.bodySmall)
-                    Text(if (item.id == "daily") "روزانه · تا نیمه‌شب" else "یک‌بار برای این حساب", style = MaterialTheme.typography.labelSmall, color = Color(0xFF887A62))
+                    Text(if (item.repeatable) "پیشرفت چرخهٔ جدید" else if (item.id == "daily") "روزانه · تا نیمه‌شب" else "یک‌بار برای این حساب", style = MaterialTheme.typography.labelSmall, color = Color(0xFF887A62))
                 }
                 val reviewAction = item.action == "review"
                 val storeAvailable = BuildConfig.FLAVOR == "bazaar" || BuildConfig.FLAVOR == "myket"
@@ -197,7 +205,7 @@ private fun MissionHelpDialog(item: MissionItem, onClose: () -> Unit) {
                         Text(persianDisplay(item.description.ifBlank { "برای تکمیل این مأموریت، هدف نوشته‌شده روی کارت را انجام بده و جایزه‌ات را دریافت کن." }), style = MaterialTheme.typography.bodyMedium)
                     }
                     Surface(color = Color(0xFFFFE7A0), shape = RoundedCornerShape(12.dp)) {
-                        Text("🎁 جایزه: " + persianDisplay(item.reward.toString()) + " XP", Modifier.fillMaxWidth().padding(12.dp), fontWeight = FontWeight.Bold, color = Color(0xFF775300))
+                        Text("🎁 جایزه: " + persianDisplay(item.reward.toString()) + " XP" + (if (item.rewardCoins > 0) " + " + persianDisplay(item.rewardCoins.toString()) + " سکه" else ""), Modifier.fillMaxWidth().padding(12.dp), fontWeight = FontWeight.Bold, color = Color(0xFF775300))
                     }
                 }
             }

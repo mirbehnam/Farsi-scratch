@@ -24,7 +24,7 @@ data class LearnerProfile(val uuid: String, val name: String, val level: Int, va
     val nameSet: Boolean = false, val nameChangesLeft: Int = 3, val courses: List<LearnerCourse> = emptyList(), val codingMs: Long = 0, val fullName: String? = null,
     val nameBlocked: Boolean = false, val nameBlockedDays: Int = 0, val nameBlockReason: String? = null,
     val registered: Boolean = false, val username: String? = null, val googleLinked: Boolean = false, val googleLabel: String? = null,
-    val supplementary: SupplementaryDetails = SupplementaryDetails(), val revision: Long = 0) {
+    val supplementary: SupplementaryDetails = SupplementaryDetails(), val revision: Long = 0, val coins: Double? = null) {
     companion object {
         fun parse(json: JSONObject) = LearnerProfile(json.getString("uuid"), json.getString("display_name"),
             json.getInt("level"), json.getLong("watch_ms"), json.getDouble("xp_into_level"), json.getDouble("xp_for_next_level"),
@@ -43,7 +43,8 @@ data class LearnerProfile(val uuid: String, val name: String, val level: Int, va
             json.optJSONObject("supplementary")?.let { extra -> SupplementaryDetails(extra.optBoolean("available"), extra.optInt("version").coerceAtLeast(0),
                 extra.optInt("age").takeIf { it in 1..120 }, extra.optString("province").takeIf { it in SupplementaryPolicy.provinces },
                 extra.optString("gender").takeIf { it in SupplementaryPolicy.genders },
-                extra.optJSONArray("declined_fields")?.let { a -> (0 until a.length()).map { a.optString(it) }.filter { it in setOf("age", "province", "gender") }.toSet() } ?: emptySet()) } ?: SupplementaryDetails(), json.optLong("revision"))
+                extra.optJSONArray("declined_fields")?.let { a -> (0 until a.length()).map { a.optString(it) }.filter { it in setOf("age", "province", "gender") }.toSet() } ?: emptySet()) } ?: SupplementaryDetails(), json.optLong("revision"),
+            json.optDouble("coins").takeIf { json.optBoolean("wallet_available") && it.isFinite() && it >= 0 })
     }
 }
 

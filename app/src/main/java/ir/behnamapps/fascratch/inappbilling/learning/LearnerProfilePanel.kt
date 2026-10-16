@@ -86,6 +86,12 @@ import kotlin.math.ceil
                     listOf(Color(0xFF54ACFF), Color(0xFF387DE5)), Color.White, if (profile.registered) onEditName else onAccount)
                 ProfileAction("✨ راهنمای کسب امتیاز", font,
                     listOf(Color(0xFFFFE28B), Color(0xFFFFC34B)), Color(0xFF795117), onGuide)
+                profile.coins?.let { coins ->
+                    Surface(shape = RoundedCornerShape(10.dp), color = Color(0xFFFFF1C8), border = BorderStroke(1.dp, Color(0xFFE5BE54))) {
+                        Text("🪙 " + persianDisplay(coinBalanceText(coins)) + " سکه", Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                            color = Color(0xFF805700), fontSize = font, fontWeight = FontWeight.Bold)
+                    }
+                }
             }
             ReferenceProgress(profile, narrow)
         }

@@ -22,7 +22,8 @@ data class LearnerProfile(val uuid: String, val name: String, val level: Int, va
     val xpIntoLevel: Double, val xpForNext: Double, val rank: Int?, val enabled: Boolean,
     val nameSet: Boolean = false, val nameChangesLeft: Int = 3, val courses: List<LearnerCourse> = emptyList(), val codingMs: Long = 0, val fullName: String? = null,
     val nameBlocked: Boolean = false, val nameBlockedDays: Int = 0, val nameBlockReason: String? = null,
-    val registered: Boolean = false, val username: String? = null, val googleLinked: Boolean = false, val googleLabel: String? = null) {
+    val registered: Boolean = false, val username: String? = null, val googleLinked: Boolean = false, val googleLabel: String? = null,
+    val supplementary: SupplementaryDetails = SupplementaryDetails()) {
     companion object {
         fun parse(json: JSONObject) = LearnerProfile(json.getString("uuid"), json.getString("display_name"),
             json.getInt("level"), json.getLong("watch_ms"), json.getDouble("xp_into_level"), json.getDouble("xp_for_next_level"),
@@ -37,7 +38,10 @@ data class LearnerProfile(val uuid: String, val name: String, val level: Int, va
             json.optJSONObject("name_moderation")?.optString("reason")?.takeUnless { it.isBlank() || it == "null" },
             json.optBoolean("registered"), json.optJSONObject("sign_in")?.optString("username")?.takeUnless { it.isBlank() || it == "null" },
             json.optJSONObject("sign_in")?.optBoolean("google") ?: false,
-            json.optJSONObject("sign_in")?.optString("google_label")?.takeUnless { it.isBlank() || it == "null" })
+            json.optJSONObject("sign_in")?.optString("google_label")?.takeUnless { it.isBlank() || it == "null" },
+            json.optJSONObject("supplementary")?.let { extra -> SupplementaryDetails(extra.optBoolean("available"), extra.optInt("version").coerceAtLeast(0),
+                extra.optInt("age").takeIf { it in 1..120 }, extra.optString("province").takeIf { it in SupplementaryPolicy.provinces },
+                extra.optString("gender").takeIf { it in SupplementaryPolicy.genders }) } ?: SupplementaryDetails())
     }
 }
 
@@ -215,6 +219,17 @@ class LearningRepository private constructor(context: Context) {
         }
     }
     suspend fun authOptions(): JSONObject = api.auth("options")
+    suspend fun saveSupplementary(expectedUuid: String, details: SupplementaryDetails) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            if (identity.profile()?.uuid != expectedUuid) throw CourseFailure("حساب تغییر کرده؛ پروفایل را دوباره باز کن.", 409)
+            val secret = identity.secret()
+            val body = JSONObject().put("version", details.version).put("age", details.age ?: JSONObject.NULL)
+                .put("province", details.province ?: JSONObject.NULL).put("gender", details.gender ?: JSONObject.NULL)
+            val result = api.saveSupplementary(body, secret)
+            if (identity.secret() != secret || result.optString("uuid") != expectedUuid) throw CourseFailure("حساب تغییر کرده؛ پروفایل را دوباره باز کن.", 409)
+            store.saveProfile(LearningIdentity.KEY, result); mutable.value = store.profiles()
+        }
+    }
     suspend fun googleChallenge(secret: String, expectedUuid: String): JSONObject = withContext(Dispatchers.IO) {
         mutex.withLock {
             require(identity.profile()?.uuid == expectedUuid) { "حساب تغییر کرده؛ فرم را دوباره باز کن." }

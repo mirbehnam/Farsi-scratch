@@ -152,6 +152,7 @@ import kotlinx.coroutines.delay
     var showPointsGuide by remember(profile.uuid) { mutableStateOf(false) }
     var showAccount by remember(profile.uuid) { mutableStateOf(false) }
     var showCourses by remember(profile.uuid) { mutableStateOf(false) }
+    var showSupplementary by remember(profile.uuid) { mutableStateOf(false) }
     val syncStatus by repository.status.collectAsState()
     LaunchedEffect(profile.registered) { if (profile.registered) showAccount = false }
     androidx.compose.ui.window.Dialog(onDismissRequest = onClose,
@@ -170,6 +171,9 @@ import kotlinx.coroutines.delay
                 Column(Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
                     LearnerProfilePanel(profile, onAccount = { if (profile.registered) editing = true else showAccount = true }, onEditName = { if (profile.registered) editing = true else showAccount = true },
                         onGuide = { showPointsGuide = true }, onClose = onClose)
+                    if (profile.supplementary.available) TextButton(onClick = { showSupplementary = true }) {
+                        Text("🎒 اطلاعات تکمیلی · اختیاری", color = Color(0xFF505DC0))
+                    }
                     if (profile.nameBlocked) {
                         Spacer(Modifier.height(12.dp))
                         NameRestrictionNotice(profile)
@@ -209,6 +213,7 @@ import kotlinx.coroutines.delay
     })
     if (showAccount && !profile.registered) LearnerAccountDialog(profile, repository) { showAccount = false }
     if (showPointsGuide) LearnerPointsGuideDialog { showPointsGuide = false }
+    if (showSupplementary) LearnerSupplementaryDialog(profile, repository) { showSupplementary = false }
 }
 
 

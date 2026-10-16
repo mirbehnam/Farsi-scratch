@@ -64,6 +64,13 @@ internal class LearningStore(context: Context) : SQLiteOpenHelper(context,
     @Synchronized fun saveProfile(course: String, value: JSONObject) {
         val next = LearnerProfile.parse(value)
         val old = profiles()[course]
+        val details = SupplementaryPolicy.retainNewer(old?.uuid, old?.supplementary, next.uuid, next.supplementary)
+        if (details !== next.supplementary) {
+            // A delayed progress/purchase response must not undo a freshly saved or cleared form.
+            value.put("supplementary", JSONObject().put("available", details.available).put("version", details.version)
+                .put("age", details.age ?: JSONObject.NULL).put("province", details.province ?: JSONObject.NULL)
+                .put("gender", details.gender ?: JSONObject.NULL))
+        }
         writableDatabase.execSQL("INSERT OR IGNORE INTO accounts(course) VALUES(?)", arrayOf(course))
         writableDatabase.update("accounts", ContentValues().apply {
             put("profile", value.toString())

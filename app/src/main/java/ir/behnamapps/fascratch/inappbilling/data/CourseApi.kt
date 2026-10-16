@@ -204,6 +204,8 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
         request("learning/$path", token, body).getJSONObject("data")
 
     suspend fun auth(path: String, body: JSONObject? = null): JSONObject = request("accounts/auth/$path", body = body).getJSONObject("data")
+    suspend fun saveSupplementary(body: JSONObject, session: String): JSONObject =
+        request("learning/profile/supplementary", body = body, accountSecret = session).getJSONObject("data")
 
     suspend fun logout(session: String) {
         request("accounts/auth/logout", body = JSONObject(), accountSecret = session, timeoutMillis = 3_000)

@@ -76,6 +76,7 @@ class ProjectRepository(private val activity: MainActivity) {
             incomingFile.delete()
         }
 
+        ir.behnamapps.fascratch.inappbilling.learning.LearningRepository.get(activity).savedProjectChanged()
         return SavedScratchProject(
             name = projectFile.nameWithoutExtension,
             projectFile = projectFile,

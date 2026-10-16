@@ -3,7 +3,8 @@ package ir.behnamapps.fascratch.inappbilling.learning
 import org.json.JSONObject
 
 data class MissionItem(val id: String, val title: String, val metric: String, val target: Long, val progress: Long,
-    val reward: Int, val period: String, val status: String) {
+    val reward: Int, val period: String, val status: String, val description: String = "", val action: String? = null,
+    val retryAfterMs: Long = 0, val todayCodingMs: Long = 0) {
     val fraction: Float get() = if (target <= 0) 0f else (progress.toDouble() / target).coerceIn(0.0, 1.0).toFloat()
     val ready: Boolean get() = status == "ready"
 }
@@ -17,9 +18,10 @@ data class MissionBoard(val uuid: String, val available: Boolean, val items: Lis
                 (0 until it.length()).mapNotNull { index -> runCatching {
                     val row = it.getJSONObject(index)
                     val id = row.getString("id")
-                    require(id in setOf("first_code", "coding_30", "watch_10", "watch_60", "daily", "details"))
+                    require(id in setOf("first_code", "coding_30", "watch_10", "watch_60", "daily", "details", "coding_week", "store_review", "lessons_10", "coding_5h", "saved_project", "coding_15h"))
                     MissionItem(id, row.getString("title"), row.getString("metric"), row.getLong("target").coerceAtLeast(1),
-                        row.getLong("progress").coerceAtLeast(0), row.getInt("reward_xp").coerceAtLeast(0), row.getString("period"), row.getString("status"))
+                        row.getLong("progress").coerceAtLeast(0), row.getInt("reward_xp").coerceAtLeast(0), row.getString("period"), row.getString("status"),
+                        row.optString("description"), row.optString("action").takeIf { it == "review" }, row.optLong("retry_after_ms").coerceIn(0, 10000), row.optLong("today_coding_ms").coerceAtLeast(0))
                 }.getOrNull() }
             } ?: emptyList())
         }

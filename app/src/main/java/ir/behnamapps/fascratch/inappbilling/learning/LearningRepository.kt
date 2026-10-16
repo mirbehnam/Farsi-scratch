@@ -12,6 +12,7 @@ import ir.behnamapps.fascratch.inappbilling.domain.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
@@ -68,6 +69,10 @@ class LearningRepository private constructor(context: Context) {
     private var nextMissionVisit = 0L
     private val mutableMissions = MutableStateFlow<MissionBoard?>(null)
     val missions = mutableMissions.asStateFlow()
+    private val mutableMissionReward = kotlinx.coroutines.flow.MutableSharedFlow<Pair<String, Int>>(extraBufferCapacity = 1)
+    val missionRewards = mutableMissionReward.asSharedFlow()
+    private var reviewRewardJob: Job? = null
+    private var reviewRewardOwner: String? = null
     private var codingJob: Job? = null
     private var sessionMonitor: Job? = null
     @Synchronized private fun startSessionMonitor() {
@@ -245,6 +250,7 @@ class LearningRepository private constructor(context: Context) {
         require(json.optString("uuid") == uuid)
         store.saveGrant("@missions", json)
         mutableMissions.value = MissionBoard.parse(json)
+        scheduleReviewReward(uuid, mutableMissions.value!!)
     }
     suspend fun refreshMissions(uuid: String) = withContext(Dispatchers.IO) {
         mutex.withLock {
@@ -256,9 +262,49 @@ class LearningRepository private constructor(context: Context) {
         mutex.withLock {
             require(identity.profile()?.uuid == uuid) { "حساب تغییر کرده؛ صفحه را دوباره باز کن." }
             val secret = identity.secret()
-            val result = api.missions("", secret)
+            var result = api.missions("", secret)
+            require(identity.secret() == secret && identity.profile()?.uuid == uuid)
+            val project = MissionBoard.parse(result).items.firstOrNull { it.id == "saved_project" }
+            if (project?.status == "active" && MissionActions.hasSavedProject(app.filesDir)) {
+                result = api.missions("actions/project-saved", secret, JSONObject().put("has_project", true))
+                require(identity.secret() == secret && identity.profile()?.uuid == uuid)
+            }
+            acceptMissions(result, uuid)
+        }
+    }
+    fun savedProjectChanged() { scope.launch {
+        mutex.withLock {
+            val uuid = identity.profile()?.uuid ?: return@withLock
+            val known = mutableMissions.value?.takeIf { it.uuid == uuid }
+            if (known?.items?.any { it.id == "saved_project" && it.status != "active" } == true) return@withLock
+            val secret = identity.secret()
+            if (!MissionActions.hasSavedProject(app.filesDir)) return@withLock
+            try {
+                val result = api.missions("actions/project-saved", secret, JSONObject().put("has_project", true))
+                if (identity.secret() == secret && identity.profile()?.uuid == uuid) acceptMissions(result, uuid)
+            } catch (e: CancellationException) { throw e } catch (_: Exception) { /* Rechecked on next mission visit. */ }
+        }
+    } }
+    suspend fun startStoreReview(uuid: String) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            require(identity.profile()?.uuid == uuid)
+            val secret = identity.secret()
+            val result = api.missions("actions/review-start", secret, JSONObject().put("flavor", BuildConfig.FLAVOR))
             require(identity.secret() == secret && identity.profile()?.uuid == uuid)
             acceptMissions(result, uuid)
+        }
+    }
+    private fun scheduleReviewReward(uuid: String, board: MissionBoard) {
+        val item = board.items.firstOrNull { it.id == "store_review" && it.status != "claimed" && it.action != "review" } ?: return
+        if (reviewRewardJob?.isActive == true && reviewRewardOwner == uuid) return
+        reviewRewardJob?.cancel()
+        reviewRewardOwner = uuid
+        reviewRewardJob = scope.launch {
+            delay(item.retryAfterMs + 150)
+            if (identity.profile()?.uuid != uuid) return@launch
+            try {
+                if (claimMission(uuid, item)) mutableMissionReward.emit(uuid to item.reward)
+            } catch (e: CancellationException) { throw e } catch (_: Exception) { /* Recover/retry from server state next time. */ }
         }
     }
     suspend fun claimMission(uuid: String, mission: MissionItem): Boolean = withContext(Dispatchers.IO) {
@@ -417,7 +463,9 @@ class LearningRepository private constructor(context: Context) {
                     val end = SystemClock.elapsedRealtime()
                     val start = last
                     last = end
-                    recordCoding(grant, start, end)
+                    val interactive = app.getSystemService(android.os.PowerManager::class.java)?.isInteractive == true
+                    val locked = app.getSystemService(android.app.KeyguardManager::class.java)?.isKeyguardLocked == true
+                    if (interactive && !locked) recordCoding(grant, start, end)
                 }
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) { failure(e) }

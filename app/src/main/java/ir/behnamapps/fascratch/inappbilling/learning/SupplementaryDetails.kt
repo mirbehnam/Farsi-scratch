@@ -1,6 +1,7 @@
 package ir.behnamapps.fascratch.inappbilling.learning
 
-data class SupplementaryDetails(val available: Boolean = false, val version: Int = 0, val age: Int? = null, val province: String? = null, val gender: String? = null)
+data class SupplementaryDetails(val available: Boolean = false, val version: Int = 0, val age: Int? = null, val province: String? = null, val gender: String? = null,
+    val declinedFields: Set<String> = emptySet())
 
 object SupplementaryPolicy {
     val provinces = linkedMapOf(

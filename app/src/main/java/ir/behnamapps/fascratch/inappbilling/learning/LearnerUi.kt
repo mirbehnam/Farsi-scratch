@@ -155,6 +155,7 @@ import kotlinx.coroutines.delay
     var showAccount by remember(profile.uuid) { mutableStateOf(false) }
     var showCourses by remember(profile.uuid) { mutableStateOf(false) }
     var showSupplementary by remember(profile.uuid) { mutableStateOf(false) }
+    var showMissions by remember(profile.uuid) { mutableStateOf(false) }
     val syncStatus by repository.status.collectAsState()
     LaunchedEffect(profile.registered) { if (profile.registered) showAccount = false }
     androidx.compose.ui.window.Dialog(onDismissRequest = onClose,
@@ -173,8 +174,14 @@ import kotlinx.coroutines.delay
                 Column(Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
                     LearnerProfilePanel(profile, onAccount = { if (profile.registered) editing = true else showAccount = true }, onEditName = { if (profile.registered) editing = true else showAccount = true },
                         onGuide = { showPointsGuide = true }, onClose = onClose)
-                    if (profile.supplementary.available) TextButton(onClick = { showSupplementary = true }) {
-                        Text("🎒 اطلاعات تکمیلی · اختیاری", color = Color(0xFF505DC0))
+                    Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Button(onClick = { showMissions = true }, modifier = Modifier.weight(1f).heightIn(min = 48.dp), shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF936411))) { Text("🏆 مأموریت‌ها و جایزه‌ها", fontWeight = FontWeight.Bold) }
+                        if (profile.supplementary.available) Button(onClick = { showSupplementary = true }, modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                            shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5756B9)),
+                            elevation = ButtonDefaults.buttonElevation(defaultElevation = 3.dp, pressedElevation = 1.dp)) {
+                            Text("🎒 " + if (profile.supplementary.version > 0) "ویرایش اطلاعات تکمیلی" else "ثبت اطلاعات تکمیلی", fontWeight = FontWeight.Bold)
+                        }
                     }
                     if (profile.nameBlocked) {
                         Spacer(Modifier.height(12.dp))
@@ -216,6 +223,7 @@ import kotlinx.coroutines.delay
     if (showAccount && !profile.registered) LearnerAccountDialog(profile, repository) { showAccount = false }
     if (showPointsGuide) LearnerPointsGuideDialog { showPointsGuide = false }
     if (showSupplementary) LearnerSupplementaryDialog(profile, repository) { showSupplementary = false }
+    if (showMissions) LearnerMissionsDialog(profile, repository) { showMissions = false }
 }
 
 

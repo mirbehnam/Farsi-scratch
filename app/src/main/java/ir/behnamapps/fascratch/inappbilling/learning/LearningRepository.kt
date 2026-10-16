@@ -23,7 +23,7 @@ data class LearnerProfile(val uuid: String, val name: String, val level: Int, va
     val nameSet: Boolean = false, val nameChangesLeft: Int = 3, val courses: List<LearnerCourse> = emptyList(), val codingMs: Long = 0, val fullName: String? = null,
     val nameBlocked: Boolean = false, val nameBlockedDays: Int = 0, val nameBlockReason: String? = null,
     val registered: Boolean = false, val username: String? = null, val googleLinked: Boolean = false, val googleLabel: String? = null,
-    val supplementary: SupplementaryDetails = SupplementaryDetails()) {
+    val supplementary: SupplementaryDetails = SupplementaryDetails(), val revision: Long = 0) {
     companion object {
         fun parse(json: JSONObject) = LearnerProfile(json.getString("uuid"), json.getString("display_name"),
             json.getInt("level"), json.getLong("watch_ms"), json.getDouble("xp_into_level"), json.getDouble("xp_for_next_level"),
@@ -41,7 +41,8 @@ data class LearnerProfile(val uuid: String, val name: String, val level: Int, va
             json.optJSONObject("sign_in")?.optString("google_label")?.takeUnless { it.isBlank() || it == "null" },
             json.optJSONObject("supplementary")?.let { extra -> SupplementaryDetails(extra.optBoolean("available"), extra.optInt("version").coerceAtLeast(0),
                 extra.optInt("age").takeIf { it in 1..120 }, extra.optString("province").takeIf { it in SupplementaryPolicy.provinces },
-                extra.optString("gender").takeIf { it in SupplementaryPolicy.genders }) } ?: SupplementaryDetails())
+                extra.optString("gender").takeIf { it in SupplementaryPolicy.genders },
+                extra.optJSONArray("declined_fields")?.let { a -> (0 until a.length()).map { a.optString(it) }.filter { it in setOf("age", "province", "gender") }.toSet() } ?: emptySet()) } ?: SupplementaryDetails(), json.optLong("revision"))
     }
 }
 
@@ -63,6 +64,10 @@ class LearningRepository private constructor(context: Context) {
     private var foregroundSync: Job? = null
     private var lastSyncAttempt = -10_000L
     private var lastProfileAttempt = -10_000L
+    private var missionVisitOwner: String? = null
+    private var nextMissionVisit = 0L
+    private val mutableMissions = MutableStateFlow<MissionBoard?>(null)
+    val missions = mutableMissions.asStateFlow()
     private var codingJob: Job? = null
     private var sessionMonitor: Job? = null
     @Synchronized private fun startSessionMonitor() {
@@ -107,7 +112,24 @@ class LearningRepository private constructor(context: Context) {
         mutex.withLock {
             if (SystemClock.elapsedRealtime() - lastProfileAttempt >= 10_000) {
                 lastProfileAttempt = SystemClock.elapsedRealtime()
-                try { api.account(); mutableStatus.value = null } catch (e: CancellationException) { throw e } catch (e: Exception) { failure(e) }
+                try {
+                    api.account(); mutableStatus.value = null
+                    val uuid = identity.profile()?.uuid
+                    if (uuid != null && (uuid != missionVisitOwner || SystemClock.elapsedRealtime() >= nextMissionVisit)) {
+                        val secret = identity.secret()
+                        // A failed/older server does not cause a request every fifteen seconds.
+                        nextMissionVisit = SystemClock.elapsedRealtime() + 300_000
+                        missionVisitOwner = uuid
+                        try {
+                            val result = api.missions("visit", secret, JSONObject())
+                            if (identity.secret() == secret && identity.profile()?.uuid == uuid) {
+                                acceptMissions(result, uuid)
+                                val wait = (result.optLong("reset_at_ms") - result.optLong("server_time_ms")).coerceIn(1_000, 86400000)
+                                nextMissionVisit = SystemClock.elapsedRealtime() + wait
+                            }
+                        } catch (e: CancellationException) { throw e } catch (_: Exception) { /* Never block opening Home. */ }
+                    }
+                } catch (e: CancellationException) { throw e } catch (e: Exception) { failure(e) }
             }
             mutable.value = store.profiles()
         }
@@ -219,12 +241,47 @@ class LearningRepository private constructor(context: Context) {
         }
     }
     suspend fun authOptions(): JSONObject = api.auth("options")
+    private fun acceptMissions(json: JSONObject, uuid: String) {
+        require(json.optString("uuid") == uuid)
+        store.saveGrant("@missions", json)
+        mutableMissions.value = MissionBoard.parse(json)
+    }
+    suspend fun refreshMissions(uuid: String) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            require(identity.profile()?.uuid == uuid) { "حساب تغییر کرده؛ صفحه را دوباره باز کن." }
+            store.grant("@missions")?.takeIf { it.optString("uuid") == uuid }?.let { mutableMissions.value = MissionBoard.parse(it) }
+        }
+        // Flush the existing bounded outbox; never manufacture time to complete a mission.
+        try { sync() } catch (e: CancellationException) { throw e } catch (_: Exception) { }
+        mutex.withLock {
+            require(identity.profile()?.uuid == uuid) { "حساب تغییر کرده؛ صفحه را دوباره باز کن." }
+            val secret = identity.secret()
+            val result = api.missions("", secret)
+            require(identity.secret() == secret && identity.profile()?.uuid == uuid)
+            acceptMissions(result, uuid)
+        }
+    }
+    suspend fun claimMission(uuid: String, mission: MissionItem): Boolean = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            require(identity.profile()?.uuid == uuid) { "حساب تغییر کرده؛ صفحه را دوباره باز کن." }
+            val secret = identity.secret()
+            val result = api.missions("${mission.id}/claim", secret, JSONObject().put("period", mission.period))
+            require(identity.secret() == secret && identity.profile()?.uuid == uuid)
+            val official = result.getJSONObject("profile")
+            require(official.getString("uuid") == uuid)
+            require(identity.accept(JSONObject().put("profile", official), secret)) { "حساب تغییر کرده؛ صفحه را دوباره باز کن." }
+            mutable.value = store.profiles()
+            acceptMissions(result.getJSONObject("missions"), uuid)
+            result.optBoolean("awarded")
+        }
+    }
     suspend fun saveSupplementary(expectedUuid: String, details: SupplementaryDetails) = withContext(Dispatchers.IO) {
         mutex.withLock {
             if (identity.profile()?.uuid != expectedUuid) throw CourseFailure("حساب تغییر کرده؛ پروفایل را دوباره باز کن.", 409)
             val secret = identity.secret()
             val body = JSONObject().put("version", details.version).put("age", details.age ?: JSONObject.NULL)
                 .put("province", details.province ?: JSONObject.NULL).put("gender", details.gender ?: JSONObject.NULL)
+                .put("declined_fields", JSONArray(details.declinedFields.toList()))
             val result = api.saveSupplementary(body, secret)
             if (identity.secret() != secret || result.optString("uuid") != expectedUuid) throw CourseFailure("حساب تغییر کرده؛ پروفایل را دوباره باز کن.", 409)
             store.saveProfile(LearningIdentity.KEY, result); mutable.value = store.profiles()

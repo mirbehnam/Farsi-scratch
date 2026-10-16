@@ -64,18 +64,30 @@ internal class LearningStore(context: Context) : SQLiteOpenHelper(context,
     @Synchronized fun saveProfile(course: String, value: JSONObject) {
         val next = LearnerProfile.parse(value)
         val old = profiles()[course]
+        if (old != null && old.uuid == next.uuid && old.revision > next.revision) {
+            // A delayed accounts/me response must not undo a freshly claimed reward.
+            readableDatabase.rawQuery("SELECT profile FROM accounts WHERE course=?", arrayOf(course)).use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val previous = JSONObject(cursor.getString(0))
+                    listOf("revision", "xp", "level", "xp_into_level", "xp_for_next_level", "watch_ms", "coding_ms").forEach { key ->
+                        if (previous.has(key)) value.put(key, previous.get(key))
+                    }
+                }
+            }
+        }
         val details = SupplementaryPolicy.retainNewer(old?.uuid, old?.supplementary, next.uuid, next.supplementary)
         if (details !== next.supplementary) {
             // A delayed progress/purchase response must not undo a freshly saved or cleared form.
             value.put("supplementary", JSONObject().put("available", details.available).put("version", details.version)
                 .put("age", details.age ?: JSONObject.NULL).put("province", details.province ?: JSONObject.NULL)
-                .put("gender", details.gender ?: JSONObject.NULL))
+                .put("gender", details.gender ?: JSONObject.NULL).put("declined_fields", org.json.JSONArray(details.declinedFields.toList())))
         }
+        val effective = LearnerProfile.parse(value)
         writableDatabase.execSQL("INSERT OR IGNORE INTO accounts(course) VALUES(?)", arrayOf(course))
         writableDatabase.update("accounts", ContentValues().apply {
             put("profile", value.toString())
-            if (old != null && old.uuid == next.uuid && next.level > old.level) put("celebration", next.level)
-            if (old != null && (old.uuid != next.uuid || next.level < old.level)) put("celebration", 0)
+            if (old != null && old.uuid == effective.uuid && effective.level > old.level) put("celebration", effective.level)
+            if (old != null && (old.uuid != effective.uuid || effective.level < old.level)) put("celebration", 0)
         }, "course=?", arrayOf(course))
         // A learner has one aggregate profile, not a separate level for each course.
         for ((other, profile) in profiles()) if (other != course && profile.uuid == next.uuid)

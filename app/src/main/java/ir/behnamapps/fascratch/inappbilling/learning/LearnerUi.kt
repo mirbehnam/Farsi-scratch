@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.text.font.FontWeight
@@ -34,6 +35,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.Dp
@@ -244,5 +246,240 @@ import kotlinx.coroutines.delay
                 Text("✨ 🎉 ✨", fontSize = 24.sp)
             }
         }
+    }
+}
+
+
+@Preview(
+    name = "Learner Profile - Landscape",
+    showBackground = true,
+    widthDp = 900,
+    heightDp = 500,
+    locale = "fa"
+)
+@Composable
+private fun LearnerProfileDialogPreview() {
+    // پیش‌نمایش ظاهری مستقل از Repository و اطلاعات سرور
+    LearnerDialogTheme {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFF252A40)),
+            contentAlignment = Alignment.Center
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth(0.90f)
+                    .fillMaxHeight(0.92f),
+                shape = RoundedCornerShape(27.dp),
+                color = Color.White,
+                border = BorderStroke(3.dp, Color.White),
+                shadowElevation = 16.dp
+            ) {
+                Box(
+                    modifier = Modifier.background(
+                        Brush.linearGradient(
+                            listOf(
+                                Color.White,
+                                Color(0xFFFFFDFA),
+                                Color(0xFFF9F6FF)
+                            )
+                        )
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(20.dp)
+                        ) {
+                            LearnerLevelBadge(
+                                level = 12,
+                                modifier = Modifier.size(105.dp)
+                            )
+
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = "برنامه‌نویس اسکرچ",
+                                    fontSize = 22.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = Color(0xFF293454)
+                                )
+
+                                Text(
+                                    text = "سطح ۱۲ · برنامه‌نویس خلاق",
+                                    fontSize = 14.sp,
+                                    color = Color(0xFF666B85)
+                                )
+
+                                LinearProgressIndicator(
+                                    progress = { 0.65f },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(10.dp),
+                                    color = Color(0xFF7359DD),
+                                    trackColor = Color(0xFFEAE5FF)
+                                )
+
+                                Text(
+                                    text = "۶۵۰ از ۱۰۰۰ امتیاز تا سطح بعدی",
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF666B85)
+                                )
+                            }
+
+                            Text(
+                                text = "✕",
+                                fontSize = 22.sp,
+                                color = Color(0xFF888888)
+                            )
+                        }
+
+                        HorizontalDivider(
+                            color = Color(0xFFEDEAF4)
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            listOf(
+                                "⭐" to "۱۲ سطح",
+                                "🏆" to "۲۴۵۰ امتیاز",
+                                "⏱" to "۸ ساعت آموزش"
+                            ).forEach { (icon, title) ->
+                                Surface(
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = Color(0xFFF4F0FF)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(14.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text(icon, fontSize = 24.sp)
+                                        Text(
+                                            text = title,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF47406B)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Text(
+                            text = "حساب کاربری",
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF293454)
+                        )
+
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp),
+                            color = Color(0xFFF3F7FF)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "اطلاعات حساب و نام نمایشی",
+                                    modifier = Modifier.weight(1f),
+                                    color = Color(0xFF34476C)
+                                )
+                                Text(
+                                    text = "ویرایش",
+                                    color = Color(0xFF505DC0),
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        Text(
+                            text = "دوره‌های خریداری‌شده",
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF505DC0)
+                        )
+
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp),
+                            color = Color(0xFFEAF7E7)
+                        ) {
+                            Text(
+                                text = "✓ آموزش برنامه‌نویسی اسکرچ · ۸ ساعت مشاهده",
+                                modifier = Modifier.padding(14.dp),
+                                color = Color(0xFF407D48),
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(7.dp)
+                            .align(Alignment.TopCenter)
+                    ) {
+                        listOf(
+                            0xFFFFBD44,
+                            0xFFFF829A,
+                            0xFF9C81FC,
+                            0xFF4C97FF,
+                            0xFF46CDA7
+                        ).forEachIndexed { index, color ->
+                            drawRect(
+                                color = Color(color),
+                                topLeft = Offset(
+                                    size.width * index / 5f,
+                                    0f
+                                ),
+                                size = Size(
+                                    size.width / 5f,
+                                    size.height
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Preview(
+    name = "Level Badges",
+    showBackground = true,
+    backgroundColor = 0xFFF2F2F8,
+    widthDp = 400,
+    heightDp = 160,
+    locale = "fa"
+)
+@Composable
+private fun LearnerLevelBadgesPreview() {
+    Row(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        LearnerLevelBadge(0, Modifier.size(76.dp))
+        LearnerLevelBadge(12, Modifier.size(76.dp))
+        LearnerLevelBadge(125, Modifier.size(76.dp))
+        LearnerLevelBadge(1000, Modifier.size(76.dp))
     }
 }

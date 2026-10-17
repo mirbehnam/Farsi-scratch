@@ -19,6 +19,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.PlatformTextStyle
@@ -125,16 +126,31 @@ import kotlinx.coroutines.delay
 }
 
 /** Artwork contains no baked-in text: every level, including zero, stays dynamic and Persian. */
-@Composable internal fun LearnerLevelBadge(level: Int, modifier: Modifier = Modifier, avatarId: String? = null) {
-    val selected = if (avatarId != null) avatarId else if (androidx.compose.ui.platform.LocalInspectionMode.current) "default" else {
+@Composable internal fun LearnerLevelBadge(level: Int, modifier: Modifier = Modifier, avatarId: String? = null,
+    imageUrl: String? = null, imageHash: String? = null) {
+    val context = LocalContext.current
+    val current = if (androidx.compose.ui.platform.LocalInspectionMode.current) null else {
         val profiles by LearningRepository.get(androidx.compose.ui.platform.LocalContext.current).profiles.collectAsState()
-        profiles[LearningIdentity.KEY]?.avatarId ?: "default"
+        profiles[LearningIdentity.KEY]
+    }
+    val selected = avatarId ?: current?.avatarId ?: "default"
+    val selectedProfile = current?.takeIf { it.avatarId == selected }
+    val url = imageUrl ?: selectedProfile?.avatarImageUrl
+    val hash = imageHash ?: selectedProfile?.avatarImageHash
+    val preview = androidx.compose.ui.platform.LocalInspectionMode.current
+    var artwork by remember(selected) { mutableStateOf(AvatarImages.peek(hash)?.asImageBitmap()) }
+    LaunchedEffect(selected, url, hash) {
+        if (preview || !AvatarImages.validHash(hash)) { artwork = null; return@LaunchedEffect }
+        AvatarImages.peek(hash)?.let { artwork = it.asImageBitmap() }
+        val loaded = AvatarImages.load(context, url, hash)
+        if (loaded != null) artwork = loaded.asImageBitmap()
     }
     BoxWithConstraints(modifier, contentAlignment = Alignment.TopCenter) {
         // The plaque has fixed artwork dimensions. Do not inherit the button's much
         // taller line-height/font padding, which clips the glyphs in this small slot.
         val badgeFontSize = (maxWidth.value * (if (level < 1000) .20f else .16f) / LocalDensity.current.fontScale).sp
-        Image(painterResource(AvatarArtwork.resource(selected)), contentDescription = null,
+        if (artwork != null) Image(artwork!!, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
+        else Image(painterResource(AvatarArtwork.resource(selected)), contentDescription = null,
             contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
         // Updated artwork has a taller plaque spanning roughly 60–90% of the badge.
         Box(Modifier.offset(y = maxHeight * .60f).width(maxWidth * .80f).height(maxHeight * .30f),

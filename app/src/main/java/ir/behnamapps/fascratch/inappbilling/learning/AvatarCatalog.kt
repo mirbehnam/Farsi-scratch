@@ -3,18 +3,21 @@ package ir.behnamapps.fascratch.inappbilling.learning
 import ir.behnamapps.fascratch.R
 import org.json.JSONObject
 
-internal data class AvatarItem(val id: String, val title: String, val price: Int, val description: String, val owned: Boolean, val equipped: Boolean)
+internal data class AvatarItem(val id: String, val title: String, val price: Int, val description: String, val owned: Boolean, val equipped: Boolean,
+    val imageUrl: String? = null, val imageHash: String? = null, val forSale: Boolean = true)
 internal data class AvatarCatalog(val uuid: String, val available: Boolean, val items: List<AvatarItem>) {
     companion object {
         fun parse(json: JSONObject): AvatarCatalog {
             val rows = json.optJSONArray("items")
             return AvatarCatalog(json.getString("uuid"), json.optBoolean("available"),
-                (0 until (rows?.length() ?: 0).coerceAtMost(50)).mapNotNull { i ->
+                (0 until (rows?.length() ?: 0).coerceAtMost(300)).mapNotNull { i ->
                     val row = rows?.optJSONObject(i) ?: return@mapNotNull null
                     val id = row.optString("id")
                     val price = row.optInt("price_coins", -1)
-                    if (!AvatarArtwork.known(id) || price !in 1..1_000_000) return@mapNotNull null
-                    AvatarItem(id, row.optString("title").take(80), price, row.optString("description").take(300), row.optBoolean("owned"), row.optBoolean("equipped"))
+                    val url = row.optString("image_url").takeIf { it != "null" && it.isNotBlank() }
+                    val hash = row.optString("image_sha256").takeIf { AvatarImages.validHash(it) }
+                    if (!id.matches(Regex("[a-z0-9_]{1,40}")) || price !in 1..1_000_000 || (!AvatarArtwork.known(id) && (url == null || hash == null))) return@mapNotNull null
+                    AvatarItem(id, row.optString("title").take(80), price, row.optString("description").take(300), row.optBoolean("owned"), row.optBoolean("equipped"), url, hash, row.optBoolean("is_for_sale", true))
                 }.distinctBy { it.id })
         }
     }

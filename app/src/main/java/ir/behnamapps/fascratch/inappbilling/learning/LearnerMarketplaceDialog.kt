@@ -42,7 +42,7 @@ import java.util.UUID
     fun failure(e: Exception) {
         error = when ((e as? CourseFailure)?.status) {
             401 -> "نشست حساب تغییر کرده؛ بازارچه را ببند و دوباره وارد شو."
-            409 -> "خرید تأیید نشد؛ موجودی را تازه کن و دوباره بررسی کن."
+            409 -> "خرید تأیید نشد؛ قیمت، موجودی یا وضعیت فروش تغییر کرده است. بازارچه را تازه کن."
             else -> "ارتباط برقرار نشد؛ دوباره تلاش کن. نتیجهٔ خرید قبلی با تازه‌سازی مشخص می‌شود."
         }
     }
@@ -116,10 +116,10 @@ import java.util.UUID
             val operation = operations.getOrPut(item.id) { UUID.randomUUID().toString() }
             scope.launch {
                 try {
-                    val bought = repository.buyAvatar(profile.uuid, item.id, operation)
+                    val bought = repository.buyAvatar(profile.uuid, item.id, operation, item.price)
                     notice = if (bought) "${item.title} مال تو شد! ✨" else "این آیکون قبلاً برای تو ثبت شده است."
                     confirmation = null
-                    if (bought) launch { MissionRewardSound.play() }
+                    if (bought) MissionRewardSound.play()
                 } catch (e: CancellationException) { throw e }
                 catch (e: Exception) { confirmation = null; failure(e) }
                 finally { busy = false }
@@ -159,13 +159,13 @@ import java.util.UUID
     Surface(shape = RoundedCornerShape(19.dp), color = if (item.equipped) Color(0xFFEBF8EE) else Color.White,
         border = BorderStroke(if (item.equipped) 2.dp else 1.dp, if (item.equipped) Color(0xFF53A974) else Color(0xFFE0D7F0)), shadowElevation = 2.dp) {
         Column(Modifier.padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            LearnerLevelBadge(level, Modifier.size(100.dp), item.id)
+            LearnerLevelBadge(level, Modifier.size(100.dp), item.id, item.imageUrl, item.imageHash)
             Text(item.title, fontWeight = FontWeight.Bold, color = Color(0xFF4B347E), maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(item.description, style = MaterialTheme.typography.labelSmall, color = Color(0xFF81748E), maxLines = 2, minLines = 2, overflow = TextOverflow.Ellipsis)
             Text(if (item.owned) "✓ خریداری‌شده" else "🪙 ${persianDisplay(item.price.toString())} سکه", color = if (item.owned) Color(0xFF267250) else Color(0xFF916116), style = MaterialTheme.typography.labelMedium)
-            Button(onClick = onClick, enabled = enabled && !item.equipped && (item.owned || affordable), modifier = Modifier.fillMaxWidth(),
+            Button(onClick = onClick, enabled = enabled && !item.equipped && (item.owned || (affordable && item.forSale)), modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8050D7)), shape = RoundedCornerShape(11.dp), contentPadding = PaddingValues(8.dp)) {
-                Text(if (item.equipped) "فعال ✓" else if (item.owned) "انتخاب" else if (!affordable) "سکه کافی نیست" else "خرید", style = MaterialTheme.typography.labelMedium)
+                Text(if (item.equipped) "فعال ✓" else if (item.owned) "انتخاب" else if (!item.forSale) "فروش متوقف" else if (!affordable) "سکه کافی نیست" else "خرید", style = MaterialTheme.typography.labelMedium)
             }
         }
     }
@@ -179,7 +179,7 @@ import java.util.UUID
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        LearnerLevelBadge(level, Modifier.size(110.dp), item.id)
+                        LearnerLevelBadge(level, Modifier.size(110.dp), item.id, item.imageUrl, item.imageHash)
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text("${item.title} را می‌خوای؟", fontWeight = FontWeight.Bold, fontSize = 19.sp, color = Color(0xFF4B347E))
                             Text("با خرید، ${persianDisplay(item.price.toString())} سکه از موجودی‌ات کم می‌شود. امتیاز و سطحت تغییری نمی‌کند.", style = MaterialTheme.typography.bodySmall)

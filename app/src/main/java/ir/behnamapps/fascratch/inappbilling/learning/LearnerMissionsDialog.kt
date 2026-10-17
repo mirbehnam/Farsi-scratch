@@ -62,7 +62,7 @@ internal fun LearnerMissionsDialog(profile: LearnerProfile, repository: Learning
                 celebration = "🪙 " + persianDisplay(reward.toString()) + " سکه گرفتی؛ ممنون از همراهی‌ات!"
                 val process = android.app.ActivityManager.RunningAppProcessInfo()
                 android.app.ActivityManager.getMyMemoryState(process)
-                if (process.importance == android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND) launch { MissionRewardSound.play() }
+                if (process.importance == android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND) MissionRewardSound.play()
             }
         }
     }
@@ -115,7 +115,7 @@ internal fun LearnerMissionsDialog(profile: LearnerProfile, repository: Learning
                                                     val awarded = repository.claimMission(profile.uuid, item)
                                                     if (awarded) {
                                                         celebration = "🪙 " + persianDisplay(item.rewardCoins.toString()) + " سکه گرفتی؛ آفرین برنامه‌نویس!"
-                                                        launch { MissionRewardSound.play() }
+                                                        MissionRewardSound.play()
                                                     }
                                                 } catch (e: CancellationException) { throw e }
                                                 catch (_: Exception) { error = "دریافت تأیید نشد؛ اینترنت را بررسی و فهرست را تازه کن. جایزهٔ دریافت‌نشده محفوظ است." }

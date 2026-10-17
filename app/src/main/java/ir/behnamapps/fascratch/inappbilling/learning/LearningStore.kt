@@ -69,11 +69,15 @@ internal class LearningStore(context: Context) : SQLiteOpenHelper(context,
             readableDatabase.rawQuery("SELECT profile FROM accounts WHERE course=?", arrayOf(course)).use { cursor ->
                 if (cursor.moveToFirst()) {
                     val previous = JSONObject(cursor.getString(0))
-                    listOf("revision", "xp", "level", "xp_into_level", "xp_for_next_level", "watch_ms", "coding_ms", "wallet_available", "coins", "spendable_coins", "avatar_id").forEach { key ->
+                    listOf("revision", "xp", "level", "xp_into_level", "xp_for_next_level", "watch_ms", "coding_ms", "wallet_available", "coins", "spendable_coins", "avatar_id", "avatar_image_url", "avatar_image_sha256", "avatar_image_revision").forEach { key ->
                         if (previous.has(key)) value.put(key, previous.get(key))
                     }
                 }
             }
+        }
+        if (old != null && old.uuid == next.uuid && old.avatarId == next.avatarId && old.avatarImageRevision > next.avatarImageRevision) {
+            value.put("avatar_image_url", old.avatarImageUrl ?: JSONObject.NULL)
+                .put("avatar_image_sha256", old.avatarImageHash ?: JSONObject.NULL).put("avatar_image_revision", old.avatarImageRevision)
         }
         val details = SupplementaryPolicy.retainNewer(old?.uuid, old?.supplementary, next.uuid, next.supplementary)
         if (details !== next.supplementary) {

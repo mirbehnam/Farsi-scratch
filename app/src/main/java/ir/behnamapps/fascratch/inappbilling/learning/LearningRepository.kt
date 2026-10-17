@@ -25,7 +25,7 @@ data class LearnerProfile(val uuid: String, val name: String, val level: Int, va
     val nameBlocked: Boolean = false, val nameBlockedDays: Int = 0, val nameBlockReason: String? = null,
     val registered: Boolean = false, val username: String? = null, val googleLinked: Boolean = false, val googleLabel: String? = null,
     val supplementary: SupplementaryDetails = SupplementaryDetails(), val revision: Long = 0, val coins: Double? = null,
-    val avatarId: String = "default") {
+    val avatarId: String = "default", val avatarImageUrl: String? = null, val avatarImageHash: String? = null, val avatarImageRevision: Long = 0) {
     companion object {
         fun parse(json: JSONObject) = LearnerProfile(json.getString("uuid"), json.getString("display_name"),
             json.getInt("level"), json.getLong("watch_ms"), json.getDouble("xp_into_level"), json.getDouble("xp_for_next_level"),
@@ -45,7 +45,8 @@ data class LearnerProfile(val uuid: String, val name: String, val level: Int, va
                 extra.optInt("age").takeIf { it in 1..120 }, extra.optString("province").takeIf { it in SupplementaryPolicy.provinces },
                 extra.optString("gender").takeIf { it in SupplementaryPolicy.genders },
                 extra.optJSONArray("declined_fields")?.let { a -> (0 until a.length()).map { a.optString(it) }.filter { it in setOf("age", "province", "gender") }.toSet() } ?: emptySet()) } ?: SupplementaryDetails(), json.optLong("revision"),
-            json.optDouble("coins").takeIf { json.optBoolean("wallet_available") && it.isFinite() && it >= 0 }, json.optString("avatar_id", "default"))
+            json.optDouble("coins").takeIf { json.optBoolean("wallet_available") && it.isFinite() && it >= 0 }, json.optString("avatar_id", "default"),
+            json.optString("avatar_image_url").takeIf { it.isNotBlank() && it != "null" }, json.optString("avatar_image_sha256").takeIf { AvatarImages.validHash(it) }, json.optLong("avatar_image_revision"))
     }
 }
 
@@ -69,6 +70,9 @@ class LearningRepository private constructor(context: Context) {
     private var lastProfileAttempt = -10_000L
     private var missionVisitOwner: String? = null
     private var nextMissionVisit = 0L
+    private var avatarCatalogOwner: String? = null
+    private var nextAvatarCatalog = 0L
+    private var avatarPrefetch: Job? = null
     private val mutableMissions = MutableStateFlow<MissionBoard?>(null)
     val missions = mutableMissions.asStateFlow()
     private val mutableMissionReward = kotlinx.coroutines.flow.MutableSharedFlow<Pair<String, Int>>(extraBufferCapacity = 1)
@@ -122,6 +126,14 @@ class LearningRepository private constructor(context: Context) {
                 try {
                     api.account(); mutableStatus.value = null
                     val uuid = identity.profile()?.uuid
+                    if (uuid != null && (avatarCatalogOwner != uuid || SystemClock.elapsedRealtime() >= nextAvatarCatalog)) {
+                        avatarCatalogOwner = uuid; nextAvatarCatalog = SystemClock.elapsedRealtime() + 300_000
+                        scope.launch {
+                            try { refreshMarketplace(uuid) }
+                            catch (e: CancellationException) { throw e }
+                            catch (_: Exception) { /* Cached artwork and courses remain usable offline. */ }
+                        }
+                    }
                     if (uuid != null && (uuid != missionVisitOwner || SystemClock.elapsedRealtime() >= nextMissionVisit)) {
                         val secret = identity.secret()
                         // A failed/older server does not cause a request every fifteen seconds.
@@ -262,6 +274,12 @@ class LearningRepository private constructor(context: Context) {
         }
         store.saveGrant("@avatar-market", json)
         mutableMarketplace.value = AvatarCatalog.parse(json)
+        val items = mutableMarketplace.value?.items.orEmpty()
+        avatarPrefetch?.cancel()
+        avatarPrefetch = scope.launch {
+            // Sequential prefetch limits radio/CPU pressure; individual previews share per-hash locks.
+            for (item in items) { ensureActive(); AvatarImages.load(app, item.imageUrl, item.imageHash) }
+        }
     }
 
     suspend fun refreshMarketplace(uuid: String) = withContext(Dispatchers.IO) {
@@ -273,11 +291,11 @@ class LearningRepository private constructor(context: Context) {
         }
     }
 
-    suspend fun buyAvatar(uuid: String, avatar: String, operation: String): Boolean = withContext(Dispatchers.IO) {
+    suspend fun buyAvatar(uuid: String, avatar: String, operation: String, expectedPrice: Int): Boolean = withContext(Dispatchers.IO) {
         mutex.withLock {
             require(identity.profile()?.uuid == uuid)
             val secret = identity.secret()
-            val result = api.marketplace("$avatar/buy", secret, JSONObject().put("operation_uuid", operation))
+            val result = api.marketplace("$avatar/buy", secret, JSONObject().put("operation_uuid", operation).put("expected_price_coins", expectedPrice))
             acceptMarketplace(result.getJSONObject("catalog"), uuid, secret)
             result.optBoolean("purchased")
         }

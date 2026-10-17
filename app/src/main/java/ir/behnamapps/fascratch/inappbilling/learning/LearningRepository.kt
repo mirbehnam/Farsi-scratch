@@ -24,7 +24,8 @@ data class LearnerProfile(val uuid: String, val name: String, val level: Int, va
     val nameSet: Boolean = false, val nameChangesLeft: Int = 3, val courses: List<LearnerCourse> = emptyList(), val codingMs: Long = 0, val fullName: String? = null,
     val nameBlocked: Boolean = false, val nameBlockedDays: Int = 0, val nameBlockReason: String? = null,
     val registered: Boolean = false, val username: String? = null, val googleLinked: Boolean = false, val googleLabel: String? = null,
-    val supplementary: SupplementaryDetails = SupplementaryDetails(), val revision: Long = 0, val coins: Double? = null) {
+    val supplementary: SupplementaryDetails = SupplementaryDetails(), val revision: Long = 0, val coins: Double? = null,
+    val avatarId: String = "default") {
     companion object {
         fun parse(json: JSONObject) = LearnerProfile(json.getString("uuid"), json.getString("display_name"),
             json.getInt("level"), json.getLong("watch_ms"), json.getDouble("xp_into_level"), json.getDouble("xp_for_next_level"),
@@ -44,7 +45,7 @@ data class LearnerProfile(val uuid: String, val name: String, val level: Int, va
                 extra.optInt("age").takeIf { it in 1..120 }, extra.optString("province").takeIf { it in SupplementaryPolicy.provinces },
                 extra.optString("gender").takeIf { it in SupplementaryPolicy.genders },
                 extra.optJSONArray("declined_fields")?.let { a -> (0 until a.length()).map { a.optString(it) }.filter { it in setOf("age", "province", "gender") }.toSet() } ?: emptySet()) } ?: SupplementaryDetails(), json.optLong("revision"),
-            json.optDouble("coins").takeIf { json.optBoolean("wallet_available") && it.isFinite() && it >= 0 })
+            json.optDouble("coins").takeIf { json.optBoolean("wallet_available") && it.isFinite() && it >= 0 }, json.optString("avatar_id", "default"))
     }
 }
 
@@ -247,6 +248,49 @@ class LearningRepository private constructor(context: Context) {
         }
     }
     suspend fun authOptions(): JSONObject = api.auth("options")
+    private val mutableMarketplace = MutableStateFlow<AvatarCatalog?>(null)
+    internal val marketplace = mutableMarketplace.asStateFlow()
+
+    private fun acceptMarketplace(json: JSONObject, uuid: String, secret: String) {
+        require(identity.secret() == secret && identity.profile()?.uuid == uuid && json.optString("uuid") == uuid) {
+            "حساب تغییر کرده؛ بازارچه را دوباره باز کن."
+        }
+        json.optJSONObject("profile")?.let { official ->
+            require(official.getString("uuid") == uuid)
+            require(identity.accept(JSONObject().put("profile", official), secret))
+            mutable.value = store.profiles()
+        }
+        store.saveGrant("@avatar-market", json)
+        mutableMarketplace.value = AvatarCatalog.parse(json)
+    }
+
+    suspend fun refreshMarketplace(uuid: String) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            require(identity.profile()?.uuid == uuid)
+            store.grant("@avatar-market")?.takeIf { it.optString("uuid") == uuid }?.let { mutableMarketplace.value = AvatarCatalog.parse(it) }
+            val secret = identity.secret()
+            acceptMarketplace(api.marketplace("", secret), uuid, secret)
+        }
+    }
+
+    suspend fun buyAvatar(uuid: String, avatar: String, operation: String): Boolean = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            require(identity.profile()?.uuid == uuid)
+            val secret = identity.secret()
+            val result = api.marketplace("$avatar/buy", secret, JSONObject().put("operation_uuid", operation))
+            acceptMarketplace(result.getJSONObject("catalog"), uuid, secret)
+            result.optBoolean("purchased")
+        }
+    }
+
+    suspend fun equipAvatar(uuid: String, avatar: String) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            require(identity.profile()?.uuid == uuid)
+            val secret = identity.secret()
+            acceptMarketplace(api.marketplace("$avatar/equip", secret, JSONObject()), uuid, secret)
+        }
+    }
+
     private fun acceptMissions(json: JSONObject, uuid: String) {
         require(json.optString("uuid") == uuid)
         store.saveGrant("@missions", json)
@@ -304,7 +348,7 @@ class LearningRepository private constructor(context: Context) {
             delay(item.retryAfterMs + 150)
             if (identity.profile()?.uuid != uuid) return@launch
             try {
-                if (claimMission(uuid, item)) mutableMissionReward.emit(uuid to item.reward)
+                if (claimMission(uuid, item)) mutableMissionReward.emit(uuid to item.rewardCoins)
             } catch (e: CancellationException) { throw e } catch (_: Exception) { /* Recover/retry from server state next time. */ }
         }
     }

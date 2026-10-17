@@ -133,7 +133,7 @@ import kotlinx.coroutines.launch
                 val compact = maxHeight < 300.dp
                 Column {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = if (compact) 0.dp else 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        if (!compact) LearnerLevelBadge(profile.level, Modifier.size(48.dp))
+                        if (!compact) LearnerLevelBadge(profile.level, Modifier.size(48.dp), profile.avatarId)
                         Text(when (page) { 1 -> "خوش برگشتی!"; 2 -> "حسابت را بساز ✨"; else -> "ثبت‌نام و ورود" },
                             Modifier.weight(1f).padding(horizontal = 12.dp), fontWeight = FontWeight.Bold, color = Color(0xFF183F38), fontSize = if (compact) 17.sp else 20.sp)
                         if (page != 0) TextButton(enabled = !busy, onClick = { choose(0) }) { Text("بازگشت") }

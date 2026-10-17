@@ -69,7 +69,7 @@ internal class LearningStore(context: Context) : SQLiteOpenHelper(context,
             readableDatabase.rawQuery("SELECT profile FROM accounts WHERE course=?", arrayOf(course)).use { cursor ->
                 if (cursor.moveToFirst()) {
                     val previous = JSONObject(cursor.getString(0))
-                    listOf("revision", "xp", "level", "xp_into_level", "xp_for_next_level", "watch_ms", "coding_ms", "wallet_available", "coins", "spendable_coins").forEach { key ->
+                    listOf("revision", "xp", "level", "xp_into_level", "xp_for_next_level", "watch_ms", "coding_ms", "wallet_available", "coins", "spendable_coins", "avatar_id").forEach { key ->
                         if (previous.has(key)) value.put(key, previous.get(key))
                     }
                 }

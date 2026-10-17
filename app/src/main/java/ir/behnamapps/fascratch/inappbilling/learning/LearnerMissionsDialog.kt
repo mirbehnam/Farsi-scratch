@@ -59,8 +59,7 @@ internal fun LearnerMissionsDialog(profile: LearnerProfile, repository: Learning
     LaunchedEffect(profile.uuid) {
         repository.missionRewards.collect { (uuid, reward) ->
             if (uuid == profile.uuid && repository.profiles.value[LearningIdentity.KEY]?.uuid == profile.uuid) {
-                celebration = "✨ " + persianDisplay(reward.toString()) + " XP" +
-                    (if (repository.profiles.value[LearningIdentity.KEY]?.coins != null) " و " + persianDisplay(reward.toString()) + " سکه" else "") + " گرفتی؛ ممنون از همراهی‌ات!"
+                celebration = "🪙 " + persianDisplay(reward.toString()) + " سکه گرفتی؛ ممنون از همراهی‌ات!"
                 val process = android.app.ActivityManager.RunningAppProcessInfo()
                 android.app.ActivityManager.getMyMemoryState(process)
                 if (process.importance == android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND) launch { MissionRewardSound.play() }
@@ -115,8 +114,7 @@ internal fun LearnerMissionsDialog(profile: LearnerProfile, repository: Learning
                                                 try {
                                                     val awarded = repository.claimMission(profile.uuid, item)
                                                     if (awarded) {
-                                                        celebration = "✨ " + persianDisplay(item.reward.toString()) + " XP" +
-                                                            (if (item.rewardCoins > 0) " و " + persianDisplay(item.rewardCoins.toString()) + " سکه" else "") + " گرفتی؛ آفرین برنامه‌نویس!"
+                                                        celebration = "🪙 " + persianDisplay(item.rewardCoins.toString()) + " سکه گرفتی؛ آفرین برنامه‌نویس!"
                                                         launch { MissionRewardSound.play() }
                                                     }
                                                 } catch (e: CancellationException) { throw e }
@@ -155,8 +153,7 @@ private fun MissionCard(item: MissionItem, busy: Boolean, enabled: Boolean, modi
                 }
                 Surface(color = Color(0xFFFFEDAF), shape = RoundedCornerShape(9.dp)) {
                     Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
-                        Text(persianDisplay(item.reward.toString()) + " XP", color = Color(0xFF775300), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
-                        if (item.rewardCoins > 0) Text("🪙 " + persianDisplay(item.rewardCoins.toString()), color = Color(0xFF775300), style = MaterialTheme.typography.labelSmall)
+                        Text("🪙 " + persianDisplay(item.rewardCoins.toString()), color = Color(0xFF775300), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
                     }
                 }
             }
@@ -205,7 +202,7 @@ private fun MissionHelpDialog(item: MissionItem, onClose: () -> Unit) {
                         Text(persianDisplay(item.description.ifBlank { "برای تکمیل این مأموریت، هدف نوشته‌شده روی کارت را انجام بده و جایزه‌ات را دریافت کن." }), style = MaterialTheme.typography.bodyMedium)
                     }
                     Surface(color = Color(0xFFFFE7A0), shape = RoundedCornerShape(12.dp)) {
-                        Text("🎁 جایزه: " + persianDisplay(item.reward.toString()) + " XP" + (if (item.rewardCoins > 0) " + " + persianDisplay(item.rewardCoins.toString()) + " سکه" else ""), Modifier.fillMaxWidth().padding(12.dp), fontWeight = FontWeight.Bold, color = Color(0xFF775300))
+                        Text("🪙 جایزه: " + persianDisplay(item.rewardCoins.toString()) + " سکه", Modifier.fillMaxWidth().padding(12.dp), fontWeight = FontWeight.Bold, color = Color(0xFF775300))
                     }
                 }
             }

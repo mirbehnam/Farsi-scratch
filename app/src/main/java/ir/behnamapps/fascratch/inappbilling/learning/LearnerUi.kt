@@ -69,7 +69,7 @@ import kotlinx.coroutines.delay
     Box(modifier.size(badgeSize + 8.dp)
         .semantics { contentDescription = "پروفایل برنامه‌نویس، سطح ${persianDisplay(profile.level.toString())}" }
         .clickable(role = Role.Button, onClick = onClick).padding(4.dp), contentAlignment = Alignment.Center) {
-        LearnerLevelBadge(profile.level, Modifier.fillMaxSize())
+        LearnerLevelBadge(profile.level, Modifier.fillMaxSize(), profile.avatarId)
         if (profile.nameBlocked) Surface(Modifier.align(Alignment.TopEnd).size(16.dp), shape = CircleShape, color = Color(0xFFBA2525)) {
             Box(contentAlignment = Alignment.Center) { Text("!", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp) }
         }
@@ -125,12 +125,16 @@ import kotlinx.coroutines.delay
 }
 
 /** Artwork contains no baked-in text: every level, including zero, stays dynamic and Persian. */
-@Composable internal fun LearnerLevelBadge(level: Int, modifier: Modifier = Modifier) {
+@Composable internal fun LearnerLevelBadge(level: Int, modifier: Modifier = Modifier, avatarId: String? = null) {
+    val selected = if (avatarId != null) avatarId else if (androidx.compose.ui.platform.LocalInspectionMode.current) "default" else {
+        val profiles by LearningRepository.get(androidx.compose.ui.platform.LocalContext.current).profiles.collectAsState()
+        profiles[LearningIdentity.KEY]?.avatarId ?: "default"
+    }
     BoxWithConstraints(modifier, contentAlignment = Alignment.TopCenter) {
         // The plaque has fixed artwork dimensions. Do not inherit the button's much
         // taller line-height/font padding, which clips the glyphs in this small slot.
         val badgeFontSize = (maxWidth.value * (if (level < 1000) .20f else .16f) / LocalDensity.current.fontScale).sp
-        Image(painterResource(R.drawable.learner_level_badge), contentDescription = null,
+        Image(painterResource(AvatarArtwork.resource(selected)), contentDescription = null,
             contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
         // Updated artwork has a taller plaque spanning roughly 60–90% of the badge.
         Box(Modifier.offset(y = maxHeight * .60f).width(maxWidth * .80f).height(maxHeight * .30f),
@@ -156,6 +160,7 @@ import kotlinx.coroutines.delay
     var showCourses by remember(profile.uuid) { mutableStateOf(false) }
     var showSupplementary by remember(profile.uuid) { mutableStateOf(false) }
     var showMissions by remember(profile.uuid) { mutableStateOf(false) }
+    var showMarketplace by remember(profile.uuid) { mutableStateOf(false) }
     val syncStatus by repository.status.collectAsState()
     LaunchedEffect(profile.registered) { if (profile.registered) showAccount = false }
     androidx.compose.ui.window.Dialog(onDismissRequest = onClose,
@@ -173,7 +178,7 @@ import kotlinx.coroutines.delay
                 }
                 Column(Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
                     LearnerProfilePanel(profile, onAccount = { if (profile.registered) editing = true else showAccount = true }, onEditName = { if (profile.registered) editing = true else showAccount = true },
-                        onGuide = { showPointsGuide = true }, onClose = onClose)
+                        onGuide = { showPointsGuide = true }, onMarketplace = { showMarketplace = true }, onClose = onClose)
                     Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Button(onClick = { showMissions = true }, modifier = Modifier.weight(1f).heightIn(min = 48.dp), shape = RoundedCornerShape(14.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF936411))) { Text("🏆 مأموریت‌ها و جایزه‌ها", fontWeight = FontWeight.Bold) }
@@ -224,6 +229,7 @@ import kotlinx.coroutines.delay
     if (showPointsGuide) LearnerPointsGuideDialog { showPointsGuide = false }
     if (showSupplementary) LearnerSupplementaryDialog(profile, repository) { showSupplementary = false }
     if (showMissions) LearnerMissionsDialog(profile, repository) { showMissions = false }
+    if (showMarketplace) LearnerMarketplaceDialog(profile, repository) { showMarketplace = false }
 }
 
 
@@ -247,7 +253,7 @@ import kotlinx.coroutines.delay
     AnimatedVisibility(visible = shown > 0, enter = fadeIn() + slideInVertically() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
         Surface(Modifier.fillMaxWidth().padding(bottom = 8.dp), shape = RoundedCornerShape(16.dp), color = Color(0xFF21634F), shadowElevation = 4.dp) {
             Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                CatAvatar(Modifier.size(42.dp)); Column(Modifier.weight(1f)) {
+                LearnerLevelBadge(shown, Modifier.size(42.dp), profile.avatarId); Column(Modifier.weight(1f)) {
                     Text("یک قدم جلوتر!", color = Color.White, fontWeight = FontWeight.Bold)
                     Text("لول ${persianDisplay(shown.toString())}", color = Color(0xFFFFDCA1), style = MaterialTheme.typography.titleMedium)
                 }

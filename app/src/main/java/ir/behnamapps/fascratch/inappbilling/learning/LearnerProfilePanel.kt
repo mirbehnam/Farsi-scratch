@@ -42,13 +42,14 @@ import kotlin.math.ceil
     onAccount: () -> Unit,
     onEditName: () -> Unit,
     onGuide: () -> Unit,
+    onMarketplace: () -> Unit,
     onClose: () -> Unit,
 ) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val contentWidth = maxWidth.value
         CompositionLocalProvider(LocalTextStyle provides MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, lineHeight = 14.sp)) {
             Column(Modifier.fillMaxWidth()) {
-                ProfilePanelContent(profile, onAccount, onEditName, onGuide, onClose, contentWidth)
+                ProfilePanelContent(profile, onAccount, onEditName, onGuide, onMarketplace, onClose, contentWidth)
             }
         }
     }
@@ -60,6 +61,7 @@ import kotlin.math.ceil
     onAccount: () -> Unit,
     onEditName: () -> Unit,
     onGuide: () -> Unit,
+    onMarketplace: () -> Unit,
     onClose: () -> Unit,
     contentWidth: Float,
 ) {
@@ -71,7 +73,7 @@ import kotlin.math.ceil
     // RTL Row puts the avatar at the physical right, never reversed by the app's locale.
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Top) {
         // No second frame, clipping shape or sample text over the artwork's own plaque.
-        LearnerLevelBadge(profile.level, Modifier.size(avatar))
+        LearnerLevelBadge(profile.level, Modifier.size(avatar), profile.avatarId)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(if (!profile.registered) "کاربر مهمان" else if (profile.nameSet) profile.name else "برنامه‌نویس", color = Color(0xFF344F83),
@@ -79,6 +81,12 @@ import kotlin.math.ceil
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f).clickable(role = Role.Button, onClick = onEditName)
                             .semantics { contentDescription = "ویرایش نام نمایشی" })
+                    profile.coins?.let { coins ->
+                        Surface(shape = RoundedCornerShape(10.dp), color = Color(0xFFFFF1C8), border = BorderStroke(1.dp, Color(0xFFE5BE54))) {
+                            Text("🪙 " + persianDisplay(coinBalanceText(coins)), Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                color = Color(0xFF805700), fontSize = font, fontWeight = FontWeight.Bold)
+                        }
+                    }
                     ProfileRoundAction("×", "بستن پروفایل", true, onClose)
             }
             FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -86,12 +94,7 @@ import kotlin.math.ceil
                     listOf(Color(0xFF54ACFF), Color(0xFF387DE5)), Color.White, if (profile.registered) onEditName else onAccount)
                 ProfileAction("✨ راهنمای کسب امتیاز", font,
                     listOf(Color(0xFFFFE28B), Color(0xFFFFC34B)), Color(0xFF795117), onGuide)
-                profile.coins?.let { coins ->
-                    Surface(shape = RoundedCornerShape(10.dp), color = Color(0xFFFFF1C8), border = BorderStroke(1.dp, Color(0xFFE5BE54))) {
-                        Text("🪙 " + persianDisplay(coinBalanceText(coins)) + " سکه", Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-                            color = Color(0xFF805700), fontSize = font, fontWeight = FontWeight.Bold)
-                    }
-                }
+                ProfileAction("🛍 بازارچه", font, listOf(Color(0xFFAA7EF5), Color(0xFF8050D7)), Color.White, onMarketplace)
             }
             ReferenceProgress(profile, narrow)
         }

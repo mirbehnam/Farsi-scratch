@@ -1,0 +1,66 @@
+{
+  "mode": "built-in image_gen",
+  "transparent_background": true,
+  "assets": [
+    {
+      "id": "junior",
+      "prompt": "Use case: stylized-concept. Asset type: Android educational game collectible profile badge, transparent square raster. Image 1 is a style and layout reference. Generate one complete new badge matching its orange cat identity, bold crisp cartoon outlines, glossy gold circular rim, blue radial inner disk, and large EMPTY blue-gold rounded rectangular level plaque in the lower 35% of the square. Variant: Same happy orange Scratch cat, now wearing clearly visible round black eyeglasses. Curious friendly junior programmer. Keep the exact centered front-facing bust-and-paws composition. The entire badge and ears must fit inside the canvas with a 3% transparent margin; the plaque must span x=7%-93%, y=60%-92%, with a broad blank dark-blue center for dynamic Persian level text added by Android. No baked-in letters, numbers, prices, symbols or captions anywhere. No watermark. Polished coherent mobile-game artwork readable at 80 pixels, age 10–14 audience. Exterior truly transparent; all badge surfaces opaque.",
+      "source": "C:\\Users\\olobu_nanowoh\\.codex\\generated_images\\01a13e9f-6155-7ba3-a4ca-c9f9c839d5bf\\exec-0e34f815-4561-4163-bd58-6524cdc29873.png",
+      "output": "app/src/main/res/drawable-nodpi/learner_badge_junior.webp"
+    },
+    {
+      "id": "explorer",
+      "prompt": "Use case: stylized-concept. Asset: Android educational game collectible profile badge, transparent square raster. The reference establishes the orange Scratch cat identity, bold crisp cartoon outlines, glossy gold circular rim, blue radial inner disk, and large EMPTY blue-gold rounded rectangular level plaque in the lower 35%. Create one new matching badge. Variant: Green adventure visor and green scarf, curious explorer. Keep centered front-facing bust and paws resting on the plaque. Entire badge and ears fit in canvas with a small transparent margin. Plaque spans x=7%-93%, y=60%-92%, broad blank dark-blue center for dynamic Persian level text added by Android. No baked-in letters, numbers, prices, symbols, captions or watermark. Polished coherent mobile-game artwork readable at 80 pixels, child-friendly age 10–14. Exterior genuinely transparent; badge surfaces opaque.",
+      "source": "C:\\Users\\olobu_nanowoh\\.codex\\generated_images\\01a13e9f-6155-7ba3-a4ca-c9f9c839d5bf\\exec-ec5a3975-f064-4956-a1ab-6df7b096d579.png",
+      "output": "app/src/main/res/drawable-nodpi/learner_badge_explorer.webp"
+    },
+    {
+      "id": "builder",
+      "prompt": "Use case: stylized-concept. Asset: Android educational game collectible profile badge, transparent square raster. The reference establishes the orange Scratch cat identity, bold crisp cartoon outlines, glossy gold circular rim, blue radial inner disk, and large EMPTY blue-gold rounded rectangular level plaque in the lower 35%. Create one new matching badge. Variant: Yellow builder hard hat, enthusiastic project maker. Keep centered front-facing bust and paws resting on the plaque. Entire badge and ears fit in canvas with a small transparent margin. Plaque spans x=7%-93%, y=60%-92%, broad blank dark-blue center for dynamic Persian level text added by Android. No baked-in letters, numbers, prices, symbols, captions or watermark. Polished coherent mobile-game artwork readable at 80 pixels, child-friendly age 10–14. Exterior genuinely transparent; badge surfaces opaque.",
+      "source": "C:\\Users\\olobu_nanowoh\\.codex\\generated_images\\01a13e9f-6155-7ba3-a4ca-c9f9c839d5bf\\exec-e132937d-d585-4c4f-a627-3f08e088985a.png",
+      "output": "app/src/main/res/drawable-nodpi/learner_badge_builder.webp"
+    },
+    {
+      "id": "debugger",
+      "prompt": "Use case: stylized-concept. Asset: Android educational game collectible profile badge, transparent square raster. The reference establishes the orange Scratch cat identity, bold crisp cartoon outlines, glossy gold circular rim, blue radial inner disk, and large EMPTY blue-gold rounded rectangular level plaque in the lower 35%. Create one new matching badge. Variant: Turquoise over-ear headphones, friendly focused debugging expert. Keep centered front-facing bust and paws resting on the plaque. Entire badge and ears fit in canvas with a small transparent margin. Plaque spans x=7%-93%, y=60%-92%, broad blank dark-blue center for dynamic Persian level text added by Android. No baked-in letters, numbers, prices, symbols, captions or watermark. Polished coherent mobile-game artwork readable at 80 pixels, child-friendly age 10–14. Exterior genuinely transparent; badge surfaces opaque.",
+      "source": "C:\\Users\\olobu_nanowoh\\.codex\\generated_images\\01a13e9f-6155-7ba3-a4ca-c9f9c839d5bf\\exec-a41d0b06-e57c-455d-8c8b-bf4dc2717c20.png",
+      "output": "app/src/main/res/drawable-nodpi/learner_badge_debugger.webp"
+    },
+    {
+      "id": "designer",
+      "prompt": "Use case: stylized-concept. Asset: Android educational game collectible profile badge, transparent square raster. The reference establishes the orange Scratch cat identity, bold crisp cartoon outlines, glossy gold circular rim, blue radial inner disk, and large EMPTY blue-gold rounded rectangular level plaque in the lower 35%. Create one new matching badge. Variant: Purple artistic beret and purple artist outfit, creative cheerful designer. Keep centered front-facing bust and paws resting on the plaque. Entire badge and ears fit in canvas with a small transparent margin. Plaque spans x=7%-93%, y=60%-92%, broad blank dark-blue center for dynamic Persian level text added by Android. No baked-in letters, numbers, prices, symbols, captions or watermark. Polished coherent mobile-game artwork readable at 80 pixels, child-friendly age 10–14. Exterior genuinely transparent; badge surfaces opaque.",
+      "source": "C:\\Users\\olobu_nanowoh\\.codex\\generated_images\\01a13e9f-6155-7ba3-a4ca-c9f9c839d5bf\\exec-d5732bda-81c3-4bde-86ff-6230f393c5d2.png",
+      "output": "app/src/main/res/drawable-nodpi/learner_badge_designer.webp"
+    },
+    {
+      "id": "roboticist",
+      "prompt": "Use case: stylized-concept. Asset: Android educational game collectible profile badge, transparent square raster. The reference establishes the orange Scratch cat identity, bold crisp cartoon outlines, glossy gold circular rim, blue radial inner disk, and large EMPTY blue-gold rounded rectangular level plaque in the lower 35%. Create one new matching badge. Variant: Futuristic blue goggles and light blue robotic shoulder armor, friendly robotics maker. Keep centered front-facing bust and paws resting on the plaque. Entire badge and ears fit in canvas with a small transparent margin. Plaque spans x=7%-93%, y=60%-92%, broad blank dark-blue center for dynamic Persian level text added by Android. No baked-in letters, numbers, prices, symbols, captions or watermark. Polished coherent mobile-game artwork readable at 80 pixels, child-friendly age 10–14. Exterior genuinely transparent; badge surfaces opaque.",
+      "source": "C:\\Users\\olobu_nanowoh\\.codex\\generated_images\\01a13e9f-6155-7ba3-a4ca-c9f9c839d5bf\\exec-0b1c1ab3-2504-432e-8ffd-38a4c9628800.png",
+      "output": "app/src/main/res/drawable-nodpi/learner_badge_roboticist.webp"
+    },
+    {
+      "id": "architect",
+      "prompt": "Use case: stylized-concept. Asset: Android educational game collectible profile badge, transparent square raster. The reference establishes the orange Scratch cat identity, bold crisp cartoon outlines, glossy gold circular rim, blue radial inner disk, and large EMPTY blue-gold rounded rectangular level plaque in the lower 35%. Create one new matching badge. Variant: Elegant white and blue smart outfit, structured architectural motif without text. Keep centered front-facing bust and paws resting on the plaque. Entire badge and ears fit in canvas with a small transparent margin. Plaque spans x=7%-93%, y=60%-92%, broad blank dark-blue center for dynamic Persian level text added by Android. No baked-in letters, numbers, prices, symbols, captions or watermark. Polished coherent mobile-game artwork readable at 80 pixels, child-friendly age 10–14. Exterior genuinely transparent; badge surfaces opaque.",
+      "source": "C:\\Users\\olobu_nanowoh\\.codex\\generated_images\\01a13e9f-6155-7ba3-a4ca-c9f9c839d5bf\\exec-b4326d2f-5c15-41fa-8121-e4e917755231.png",
+      "output": "app/src/main/res/drawable-nodpi/learner_badge_architect.webp"
+    },
+    {
+      "id": "wizard",
+      "prompt": "Use case: stylized-concept. Asset: Android educational game collectible profile badge, transparent square raster. The reference establishes the orange Scratch cat identity, bold crisp cartoon outlines, glossy gold circular rim, blue radial inner disk, and large EMPTY blue-gold rounded rectangular level plaque in the lower 35%. Create one new matching badge. Variant: Purple wizard hat and subtle magical sparkles, whimsical coding wizard. Keep centered front-facing bust and paws resting on the plaque. Entire badge and ears fit in canvas with a small transparent margin. Plaque spans x=7%-93%, y=60%-92%, broad blank dark-blue center for dynamic Persian level text added by Android. No baked-in letters, numbers, prices, symbols, captions or watermark. Polished coherent mobile-game artwork readable at 80 pixels, child-friendly age 10–14. Exterior genuinely transparent; badge surfaces opaque.",
+      "source": "C:\\Users\\olobu_nanowoh\\.codex\\generated_images\\01a13e9f-6155-7ba3-a4ca-c9f9c839d5bf\\exec-ad510aea-607a-4949-ac28-03273630d99b.png",
+      "output": "app/src/main/res/drawable-nodpi/learner_badge_wizard.webp"
+    },
+    {
+      "id": "senior",
+      "prompt": "Use case: stylized-concept. Asset: Android educational game collectible profile badge, transparent square raster. The reference establishes the orange Scratch cat identity, bold crisp cartoon outlines, glossy gold circular rim, blue radial inner disk, and large EMPTY blue-gold rounded rectangular level plaque in the lower 35%. Create one new matching badge. Variant: Midnight blue and gold professional outfit, confident calm senior programmer. Keep centered front-facing bust and paws resting on the plaque. Entire badge and ears fit in canvas with a small transparent margin. Plaque spans x=7%-93%, y=60%-92%, broad blank dark-blue center for dynamic Persian level text added by Android. No baked-in letters, numbers, prices, symbols, captions or watermark. Polished coherent mobile-game artwork readable at 80 pixels, child-friendly age 10–14. Exterior genuinely transparent; badge surfaces opaque.",
+      "source": "C:\\Users\\olobu_nanowoh\\.codex\\generated_images\\01a13e9f-6155-7ba3-a4ca-c9f9c839d5bf\\exec-619fe1df-1d05-432a-8e23-371e69d198be.png",
+      "output": "app/src/main/res/drawable-nodpi/learner_badge_senior.webp"
+    },
+    {
+      "id": "full_stack",
+      "prompt": "Use case: stylized-concept. Asset type: Android educational game collectible profile badge, transparent square raster. Image 1 is a style and layout reference. Generate one complete new badge matching its orange cat identity, bold crisp cartoon outlines, glossy gold circular rim, blue radial inner disk, and large EMPTY blue-gold rounded rectangular level plaque in the lower 35% of the square. Variant: Orange Scratch cat with a black ninja-style lower-face mask, a charcoal hood behind the ears, narrowed determined eyes and a serious fierce-but-child-friendly expression. No violence, weapons or frightening imagery. Keep the exact centered front-facing bust-and-paws composition. The entire badge and ears must fit inside the canvas with a 3% transparent margin; the plaque must span x=7%-93%, y=60%-92%, with a broad blank dark-blue center for dynamic Persian level text added by Android. No baked-in letters, numbers, prices, symbols or captions anywhere. No watermark. Polished coherent mobile-game artwork readable at 80 pixels, age 10–14 audience. Exterior truly transparent; all badge surfaces opaque.",
+      "source": "C:\\Users\\olobu_nanowoh\\.codex\\generated_images\\01a13e9f-6155-7ba3-a4ca-c9f9c839d5bf\\exec-9caaa07b-fa4a-45f0-bff2-ed6cd04137a3.png",
+      "output": "app/src/main/res/drawable-nodpi/learner_badge_full_stack.webp"
+    }
+  ]
+}

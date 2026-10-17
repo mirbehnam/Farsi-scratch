@@ -260,6 +260,20 @@ class LearningRepository private constructor(context: Context) {
         }
     }
     suspend fun authOptions(): JSONObject = api.auth("options")
+    internal suspend fun leaderboard(expectedUuid: String): LeaderboardBoard = withContext(Dispatchers.IO) {
+        require(identity.profile()?.uuid == expectedUuid)
+        val secret = identity.secret()
+        val json = api.leaderboard("", secret)
+        require(identity.secret() == secret && identity.profile()?.uuid == expectedUuid && json.optString("viewer_uuid") == expectedUuid)
+        LeaderboardBoard.parse(json)
+    }
+    internal suspend fun showcase(expectedUuid: String, targetUuid: String): LearnerShowcase = withContext(Dispatchers.IO) {
+        require(identity.profile()?.uuid == expectedUuid && targetUuid.matches(Regex("[a-fA-F0-9-]{36}")))
+        val secret = identity.secret()
+        val json = api.leaderboard(targetUuid, secret)
+        require(identity.secret() == secret && identity.profile()?.uuid == expectedUuid)
+        LearnerShowcase.parse(json).also { require(it.learner.uuid == targetUuid) }
+    }
     private val mutableMarketplace = MutableStateFlow<AvatarCatalog?>(null)
     internal val marketplace = mutableMarketplace.asStateFlow()
 

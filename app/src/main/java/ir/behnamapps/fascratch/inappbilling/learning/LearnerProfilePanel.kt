@@ -44,12 +44,13 @@ import kotlin.math.ceil
     onGuide: () -> Unit,
     onMarketplace: () -> Unit,
     onClose: () -> Unit,
+    onLeaderboard: () -> Unit = {},
 ) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val contentWidth = maxWidth.value
         CompositionLocalProvider(LocalTextStyle provides MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, lineHeight = 14.sp)) {
             Column(Modifier.fillMaxWidth()) {
-                ProfilePanelContent(profile, onAccount, onEditName, onGuide, onMarketplace, onClose, contentWidth)
+                ProfilePanelContent(profile, onAccount, onEditName, onGuide, onMarketplace, onClose, contentWidth, onLeaderboard)
             }
         }
     }
@@ -64,6 +65,7 @@ import kotlin.math.ceil
     onMarketplace: () -> Unit,
     onClose: () -> Unit,
     contentWidth: Float,
+    onLeaderboard: () -> Unit,
 ) {
     val config = LocalConfiguration.current
     val narrow = contentWidth <= 700
@@ -104,7 +106,7 @@ import kotlin.math.ceil
         ReferenceStat("زمان مشاهده آموزش", persianDisplay(learningDuration(profile.watchMs)), 0, Modifier.weight(1f), narrow)
         ReferenceStat("زمان برنامه‌نویسی", persianDisplay(learningDuration(profile.codingMs)), 1, Modifier.weight(1f), narrow)
         ReferenceStat("رتبه در جدول کاربران", profile.rank?.takeIf { profile.registered }?.let { persianDisplay(it.toString()) } ?: "—", 2, Modifier.weight(1f), narrow,
-            if (!profile.registered) "پس از تکمیل ثبت‌نام" else if (!profile.nameSet) "نام نمایشی را ثبت کن" else null)
+            if (!profile.registered) "پس از تکمیل ثبت‌نام" else if (!profile.nameSet) "نام نمایشی را ثبت کن" else null, onLeaderboard)
     }
 }
 
@@ -155,7 +157,7 @@ import kotlin.math.ceil
     }
 }
 
-@Composable private fun ReferenceStat(title: String, value: String, kind: Int, modifier: Modifier, narrow: Boolean, hint: String? = null) {
+@Composable private fun ReferenceStat(title: String, value: String, kind: Int, modifier: Modifier, narrow: Boolean, hint: String? = null, onAction: (() -> Unit)? = null) {
     val backgrounds = listOf(0xFFFFF2DF, 0xFFE4F4FF, 0xFFEAF7E7)
     val borders = listOf(0xFFFFDDA5, 0xFFC2E5FA, 0xFFCCEAC8)
     val icons = listOf(0xFFFFE0AB, 0xFFC7EAFF, 0xFFD1EFCB)
@@ -171,7 +173,13 @@ import kotlin.math.ceil
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(title, color = Color(labels[kind]), fontSize = if (narrow) 11.sp else 12.sp)
-                Text(value, color = Color(values[kind]), fontSize = if (narrow) 16.sp else 18.sp, lineHeight = 22.sp, fontWeight = FontWeight.Bold)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text(value, Modifier.weight(1f), color = Color(values[kind]), fontSize = if (narrow) 16.sp else 18.sp, lineHeight = 22.sp, fontWeight = FontWeight.Bold)
+                    if (onAction != null) Box(Modifier.clip(RoundedCornerShape(8.dp)).background(Color(0xFF438B59))
+                        .clickable(role = Role.Button, onClick = onAction).padding(horizontal = 7.dp, vertical = 7.dp)) {
+                        Text("مشاهده رتبه‌ها", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                    }
+                }
                 hint?.let { Text(it, color = Color(0xFF728881), fontSize = 9.sp) }
             }
         }

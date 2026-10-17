@@ -177,6 +177,7 @@ import kotlinx.coroutines.delay
     var showSupplementary by remember(profile.uuid) { mutableStateOf(false) }
     var showMissions by remember(profile.uuid) { mutableStateOf(false) }
     var showMarketplace by remember(profile.uuid) { mutableStateOf(false) }
+    var showLeaderboard by remember(profile.uuid) { mutableStateOf(false) }
     val syncStatus by repository.status.collectAsState()
     LaunchedEffect(profile.registered) { if (profile.registered) showAccount = false }
     androidx.compose.ui.window.Dialog(onDismissRequest = onClose,
@@ -194,7 +195,8 @@ import kotlinx.coroutines.delay
                 }
                 Column(Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
                     LearnerProfilePanel(profile, onAccount = { if (profile.registered) editing = true else showAccount = true }, onEditName = { if (profile.registered) editing = true else showAccount = true },
-                        onGuide = { showPointsGuide = true }, onMarketplace = { showMarketplace = true }, onClose = onClose)
+                        onGuide = { showPointsGuide = true }, onMarketplace = { showMarketplace = true }, onClose = onClose,
+                        onLeaderboard = { showLeaderboard = true })
                     Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Button(onClick = { showMissions = true }, modifier = Modifier.weight(1f).heightIn(min = 48.dp), shape = RoundedCornerShape(14.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF936411))) { Text("🏆 مأموریت‌ها و جایزه‌ها", fontWeight = FontWeight.Bold) }
@@ -246,6 +248,7 @@ import kotlinx.coroutines.delay
     if (showSupplementary) LearnerSupplementaryDialog(profile, repository) { showSupplementary = false }
     if (showMissions) LearnerMissionsDialog(profile, repository) { showMissions = false }
     if (showMarketplace) LearnerMarketplaceDialog(profile, repository) { showMarketplace = false }
+    if (showLeaderboard) LearnerLeaderboardPage(profile.uuid, repository) { showLeaderboard = false }
 }
 
 

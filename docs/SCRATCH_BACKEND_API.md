@@ -2,6 +2,8 @@
 
 ## رتبه‌ها و ویترین افتخارات
 
+پنجرهٔ مشترک رتبه‌ها و ویترین، دقیقاً از محدودهٔ دیالوگ پروفایل/ورود استفاده می‌کند: `decorFitsSystemWindows=true`، حذف no-limits و وسط‌چینی پنجره، safeDrawing/IME padding و حاشیهٔ ۱۶dp، سپس پنل ۹۲٪ عرض امن با سقف ۹۶۰dp. ردیف کنترل‌های رتبه‌ها در عرض کم چندخطی می‌شود و عنوان‌ها کوتاه‌سازی دارند تا RTL یا فونت بزرگ باعث خروج از سمت راست نشود. تأیید بصری روی گوشی landscape با ناچ همچنان لازم است.
+
 با هدر نشست جاری `X-Scratch-Account`:
 
 - `GET learning/leaderboard`: `data={viewer_uuid,viewer_rank,total,top,nearby,generated_at}`. top حداکثر ۵۰ نفر، nearby ده نفر بالا + خود کاربر + ده نفر پایین. برای مهمان یا نام غیرمجاز، nearby=[] و viewer_rank=null است، ولی top قابل مشاهده می‌ماند.

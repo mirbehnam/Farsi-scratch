@@ -31,6 +31,7 @@ import ir.behnamapps.fascratch.inappbilling.presentation.persianDisplay
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable internal fun LearnerLeaderboardPage(viewer: String, repository: LearningRepository, onClose: () -> Unit) {
     val profiles by repository.profiles.collectAsState()
     var board by remember(viewer) { mutableStateOf<LeaderboardBoard?>(null) }
@@ -60,20 +61,20 @@ import kotlinx.coroutines.launch
     }
     LeaderboardWindow(onClose) {
         Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Column(Modifier.weight(1f)) {
-                    Text("🏆 رتبه‌های برنامه‌نویس‌ها", fontSize = 21.sp, fontWeight = FontWeight.Black, color = Color(0xFF384885))
-                    Text(board?.let { "${persianDisplay(it.total.toString())} برنامه‌نویس در رقابت" } ?: "یاد بگیر، بساز و بالاتر برو!", style = MaterialTheme.typography.bodySmall, color = Color(0xFF78819D))
+                    Text("🏆 رتبه‌های برنامه‌نویس‌ها", fontSize = 21.sp, fontWeight = FontWeight.Black, color = Color(0xFF384885), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(board?.let { "${persianDisplay(it.total.toString())} برنامه‌نویس در رقابت" } ?: "یاد بگیر، بساز و بالاتر برو!", style = MaterialTheme.typography.bodySmall, color = Color(0xFF78819D), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 TextButton(enabled = !loading, onClick = { scope.launch { refresh() } }) { Text("تازه‌سازی") }
                 IconButton(onClick = onClose) { Text("×", fontSize = 26.sp) }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 FilledTonalButton(enabled = board != null, onClick = { scope.launch { list.animateScrollToItem(0) } }) { Text("۵۰ نفر برتر") }
                 FilledTonalButton(enabled = board?.nearby?.isNotEmpty() == true, onClick = {
                     board?.let { data -> scope.launch { list.animateScrollToItem(nearbyScrollIndex(data.top.size, data.nearby.size, data.nearby.indexOfFirst { it.uuid == viewer })) } }
                 }) { Text("اطراف رتبهٔ من") }
-                board?.viewerRank?.let { Text("رتبهٔ تو: ${persianDisplay(it.toString())}", Modifier.align(Alignment.CenterVertically), color = Color(0xFF4A7E62), fontWeight = FontWeight.Bold) }
+                board?.viewerRank?.let { Text("رتبهٔ تو: ${persianDisplay(it.toString())}", Modifier.padding(vertical = 12.dp), color = Color(0xFF4A7E62), fontWeight = FontWeight.Bold) }
             }
             if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
             error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
@@ -96,10 +97,12 @@ import kotlinx.coroutines.launch
 
 @Composable private fun LeaderboardWindow(onClose: () -> Unit, content: @Composable () -> Unit) {
     LearnerDialogTheme {
-        Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = true)) {
             LearnerDialogWindowBounds()
             Box(Modifier.learnerSafeDialogBounds(), contentAlignment = Alignment.Center) {
-                Surface(Modifier.fillMaxSize(), shape = RoundedCornerShape(24.dp), color = Color(0xFFF8F7FD), border = BorderStroke(2.dp, Color.White)) { content() }
+                // Match the established profile/account dialogs: centered, 92% of safe width,
+                // capped at 960dp, rather than filling the edge-to-edge Activity's width.
+                Surface(Modifier.learnerDialogPanelBounds(), shape = RoundedCornerShape(24.dp), color = Color(0xFFF8F7FD), border = BorderStroke(2.dp, Color.White)) { content() }
             }
         }
     }
@@ -148,8 +151,8 @@ import kotlinx.coroutines.launch
     LaunchedEffect(profiles[LearningIdentity.KEY]?.uuid) { if (profiles[LearningIdentity.KEY]?.uuid != viewer) onClose() }
     LeaderboardWindow(onClose) {
         Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("✨ ویترین افتخارات", Modifier.weight(1f), fontWeight = FontWeight.Black, fontSize = 21.sp, color = Color(0xFF534580))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("✨ ویترین افتخارات", Modifier.weight(1f), fontWeight = FontWeight.Black, fontSize = 21.sp, color = Color(0xFF534580), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 TextButton(enabled = !loading, onClick = { scope.launch { refresh() } }) { Text("تازه‌سازی") }
                 TextButton(onClick = onClose) { Text("بازگشت ›") }
             }

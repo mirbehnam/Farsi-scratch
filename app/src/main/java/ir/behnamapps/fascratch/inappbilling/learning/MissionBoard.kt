@@ -13,6 +13,8 @@ data class MissionItem(val id: String, val title: String, val metric: String, va
 
 data class MissionBoard(val uuid: String, val available: Boolean, val items: List<MissionItem>, val rewardedAd: RewardedAdOffer? = null) {
     val ordered: List<MissionItem> get() = items.sortedBy { when (it.status) { "ready" -> 0; "active" -> 1; else -> 2 } }
+    internal val gridEntries: List<MissionGridEntry> get() =
+        listOfNotNull(rewardedAd?.let { MissionGridEntry.Ad(it) }) + ordered.map { MissionGridEntry.Task(it) }
     companion object {
         fun parse(json: JSONObject): MissionBoard {
             val rows = json.optJSONArray("items")
@@ -29,4 +31,10 @@ data class MissionBoard(val uuid: String, val available: Boolean, val items: Lis
             } ?: emptyList(), RewardedAdOffer.parse(json.optJSONObject("rewarded_ad")))
         }
     }
+}
+
+internal sealed interface MissionGridEntry {
+    val key: String
+    data class Ad(val offer: RewardedAdOffer) : MissionGridEntry { override val key = "rewarded_ad" }
+    data class Task(val mission: MissionItem) : MissionGridEntry { override val key get() = mission.id }
 }

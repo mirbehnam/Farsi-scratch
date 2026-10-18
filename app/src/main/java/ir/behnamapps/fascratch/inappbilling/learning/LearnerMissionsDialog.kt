@@ -105,48 +105,54 @@ internal fun LearnerMissionsDialog(profile: LearnerProfile, repository: Learning
                             Text(celebration.orEmpty(), Modifier.fillMaxWidth().padding(10.dp), color = Color(0xFF775300), fontWeight = FontWeight.Bold)
                         }
                     }
-                    if (adOffer != null) RewardedMissionCard(adOffer, adState, enabled = busy == null && !loading && current?.enabled == true) {
-                        busy = "rewarded_ad"; error = null
-                        scope.launch {
-                            try {
-                                if (RewardedAdManager.isLoaded(adOffer)) {
-                                    adTicket = repository.reserveRewardedAd(profile.uuid, java.util.UUID.randomUUID().toString())
-                                } else { RewardedAdManager.prepare(context, adOffer); error = "تبلیغ هنوز آماده نیست؛ کمی بعد تلاش کن." }
-                            } catch (e: CancellationException) { throw e }
-                            catch (_: Exception) { error = "شروع تبلیغ تأیید نشد؛ فهرست را تازه کن و سهمیه یا اینترنت را بررسی کن." }
-                            finally { busy = null }
-                        }
-                    }
                     when {
                         board == null -> if (!loading) Text("فهرست مأموریت‌ها هنوز دریافت نشده است.")
                         !board.available -> Text("مأموریت‌ها هنوز در سرور آماده نشده‌اند.")
                         else -> LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 8.dp)) {
-                            items(board.ordered.chunked(2), key = { pair -> pair.joinToString { it.id } }) { pair ->
+                            items(board.gridEntries.chunked(2), key = { pair -> pair.joinToString { it.key } }) { pair ->
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    pair.forEach { item ->
-                                        MissionCard(item, busy == item.id, busy == null && !loading && current?.enabled == true,
-                                            Modifier.weight(1f), onInfo = { help = item }, onReview = {
-                                                busy = item.id; error = null
-                                                if (!MissionActions.openStore(context, BuildConfig.FLAVOR)) {
-                                                    error = "فروشگاه باز نشد؛ نصب بودن فروشگاه یا مرورگر را بررسی کن."; busy = null
-                                                } else scope.launch {
-                                                    try { repository.startStoreReview(profile.uuid) }
-                                                    catch (e: CancellationException) { throw e }
-                                                    catch (_: Exception) { error = "شروع مأموریت ثبت نشد؛ با اینترنت متصل دوباره تلاش کن." }
+                                    pair.forEach { entry ->
+                                        if (entry is MissionGridEntry.Ad) {
+                                            RewardedMissionCard(entry.offer, adState,
+                                                enabled = busy == null && !loading && current?.enabled == true,
+                                                modifier = Modifier.weight(1f)) {
+                                                busy = "rewarded_ad"; error = null
+                                                scope.launch {
+                                                    try {
+                                                        if (RewardedAdManager.isLoaded(entry.offer)) {
+                                                            adTicket = repository.reserveRewardedAd(profile.uuid, java.util.UUID.randomUUID().toString())
+                                                        } else { RewardedAdManager.prepare(context, entry.offer); error = "تبلیغ هنوز آماده نیست؛ کمی بعد تلاش کن." }
+                                                    } catch (e: CancellationException) { throw e }
+                                                    catch (_: Exception) { error = "شروع تبلیغ تأیید نشد؛ فهرست را تازه کن و سهمیه یا اینترنت را بررسی کن." }
                                                     finally { busy = null }
                                                 }
-                                            }) {
-                                            busy = item.id; error = null; celebration = null
-                                            scope.launch {
-                                                try {
-                                                    val awarded = repository.claimMission(profile.uuid, item)
-                                                    if (awarded) {
-                                                        celebration = "🪙 " + persianDisplay(item.rewardCoins.toString()) + " سکه گرفتی؛ آفرین برنامه‌نویس!"
-                                                        MissionRewardSound.play()
+                                            }
+                                        } else if (entry is MissionGridEntry.Task) {
+                                            val item = entry.mission
+                                            MissionCard(item, busy == item.id, busy == null && !loading && current?.enabled == true,
+                                                Modifier.weight(1f), onInfo = { help = item }, onReview = {
+                                                    busy = item.id; error = null
+                                                    if (!MissionActions.openStore(context, BuildConfig.FLAVOR)) {
+                                                        error = "فروشگاه باز نشد؛ نصب بودن فروشگاه یا مرورگر را بررسی کن."; busy = null
+                                                    } else scope.launch {
+                                                        try { repository.startStoreReview(profile.uuid) }
+                                                        catch (e: CancellationException) { throw e }
+                                                        catch (_: Exception) { error = "شروع مأموریت ثبت نشد؛ با اینترنت متصل دوباره تلاش کن." }
+                                                        finally { busy = null }
                                                     }
-                                                } catch (e: CancellationException) { throw e }
-                                                catch (_: Exception) { error = "دریافت تأیید نشد؛ اینترنت را بررسی و فهرست را تازه کن. جایزهٔ دریافت‌نشده محفوظ است." }
-                                                finally { busy = null }
+                                                }) {
+                                                busy = item.id; error = null; celebration = null
+                                                scope.launch {
+                                                    try {
+                                                        val awarded = repository.claimMission(profile.uuid, item)
+                                                        if (awarded) {
+                                                            celebration = "🪙 " + persianDisplay(item.rewardCoins.toString()) + " سکه گرفتی؛ آفرین برنامه‌نویس!"
+                                                            MissionRewardSound.play()
+                                                        }
+                                                    } catch (e: CancellationException) { throw e }
+                                                    catch (_: Exception) { error = "دریافت تأیید نشد؛ اینترنت را بررسی و فهرست را تازه کن. جایزهٔ دریافت‌نشده محفوظ است." }
+                                                    finally { busy = null }
+                                                }
                                             }
                                         }
                                     }
@@ -174,18 +180,21 @@ internal fun LearnerMissionsDialog(profile: LearnerProfile, repository: Learning
     }
 }
 
-@Composable private fun RewardedMissionCard(offer: RewardedAdOffer, state: RewardedAdManager.State, enabled: Boolean, onWatch: () -> Unit) {
-    Surface(shape = RoundedCornerShape(16.dp), color = Color(0xFFF0E8FF), border = BorderStroke(1.dp, Color(0xFFD9C7F7))) {
-        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("🎬", fontSize = 26.sp)
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text("یک تبلیغ، یک جایزه", fontWeight = FontWeight.Bold, color = Color(0xFF5D3D8C))
-                Text(persianDisplay("${offer.rewardCoins} سکه + ${offer.rewardXp} XP · ${offer.remaining} از ${offer.limit} فرصت · هر ${offer.windowMinutes} دقیقه"), style = MaterialTheme.typography.labelMedium)
-                Text(if (offer.remaining == 0) "سهمیهٔ این بازه تمام شده؛ بعداً دوباره سر بزن." else state.message ?: if (state.loaded) "تبلیغ آماده است" else "فعلاً ویدیویی در دسترس نیست", style = MaterialTheme.typography.labelSmall, color = Color(0xFF79648D))
+@Composable private fun RewardedMissionCard(offer: RewardedAdOffer, state: RewardedAdManager.State, enabled: Boolean,
+    modifier: Modifier = Modifier, onWatch: () -> Unit) {
+    Surface(modifier, shape = RoundedCornerShape(18.dp), color = Color(0xFFF0E8FF), border = BorderStroke(1.dp, Color(0xFFD9C7F7))) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("🎬", fontSize = 24.sp)
+                Text("تماشای تبلیغ", Modifier.weight(1f), fontWeight = FontWeight.Bold, color = Color(0xFF5D3D8C), style = MaterialTheme.typography.titleSmall)
+                Surface(color = Color(0xFFFFEDAF), shape = RoundedCornerShape(9.dp)) {
+                    Text("🪙 " + persianDisplay(offer.rewardCoins.toString()), Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        color = Color(0xFF775300), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                }
             }
-            Button(onClick = onWatch, enabled = enabled && state.loaded && !state.busy && offer.remaining > 0,
+            Button(onClick = onWatch, enabled = enabled && state.loaded && !state.busy && offer.remaining > 0, modifier = Modifier.align(Alignment.End),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8050D7)), shape = RoundedCornerShape(11.dp)) {
-                Text(if (state.busy) "در حال نمایش…" else "مشاهده ویدیو")
+                Text(if (state.busy) "در حال نمایش…" else if (offer.remaining == 0) "بعداً" else if (!state.loaded) "آماده نیست" else "مشاهده ویدیو", style = MaterialTheme.typography.labelMedium)
             }
         }
     }
@@ -202,8 +211,7 @@ internal fun LearnerMissionsDialog(profile: LearnerProfile, repository: Learning
                         TextButton(onClick = onCancel) { Text("×") }
                     }
                     Column(Modifier.weight(1f, fill = false).verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(persianDisplay("🪙 ${ticket.coins} سکه  +  ${ticket.xp} XP"), fontWeight = FontWeight.Black, color = Color(0xFF8050D7), fontSize = 22.sp)
-                        Text("اگر تبلیغ را کامل تماشا کنی، این جایزه به حسابت اضافه می‌شود. بستن زودهنگام تبلیغ جایزه ندارد.", style = MaterialTheme.typography.bodyMedium)
+                        Text(persianDisplay("🪙 ${ticket.coins} سکه"), fontWeight = FontWeight.Black, color = Color(0xFF8050D7), fontSize = 22.sp)
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Button(onClick = onWatch, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8050D7))) { Text("مشاهده") }
@@ -308,6 +316,12 @@ private fun GameMissionProgress(progress: Float) {
 private fun MissionsPreview() {
     LearnerDialogTheme {
         Column(Modifier.background(Color(0xFFFFF9EC)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                RewardedMissionCard(RewardedAdOffer("preview", "preview", 150, 150, 2, 2, 120, null, 0),
+                    RewardedAdManager.State(loaded = true), true, Modifier.weight(1f)) { }
+                MissionCard(MissionItem("daily", "سلام، برنامه‌نویس!", "visit", 1, 1, 10, "today", "ready", rewardCoins = 10),
+                    false, true, Modifier.weight(1f)) { }
+            }
             listOf("active" to 12L, "ready" to 30L, "claimed" to 30L).forEach { (status, minutes) ->
                 MissionCard(MissionItem("coding_30", "نیم ساعت خلق کردن", "coding_ms", 1800000, minutes * 60000, 50, "once", status), false, true) { }
             }

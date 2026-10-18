@@ -152,6 +152,9 @@ class LearningRepository private constructor(context: Context) {
             }
             mutable.value = store.profiles()
         }
+        identity.profile()?.uuid?.let { uuid ->
+            try { retryRewardedAd(uuid) } catch (e: CancellationException) { throw e } catch (_: Exception) { }
+        }
         if (store.pending().isNotEmpty()) flushNow()
     } }
     fun refreshProfile() { visit(); flushNow() }
@@ -330,6 +333,7 @@ class LearningRepository private constructor(context: Context) {
         scheduleReviewReward(uuid, mutableMissions.value!!)
     }
     suspend fun refreshMissions(uuid: String) = withContext(Dispatchers.IO) {
+        try { retryRewardedAd(uuid) } catch (e: CancellationException) { throw e } catch (_: Exception) { }
         mutex.withLock {
             require(identity.profile()?.uuid == uuid) { "حساب تغییر کرده؛ صفحه را دوباره باز کن." }
             store.grant("@missions")?.takeIf { it.optString("uuid") == uuid }?.let { mutableMissions.value = MissionBoard.parse(it) }
@@ -396,6 +400,58 @@ class LearningRepository private constructor(context: Context) {
             mutable.value = store.profiles()
             acceptMissions(result.getJSONObject("missions"), uuid)
             result.optBoolean("awarded")
+        }
+    }
+
+    internal suspend fun reserveRewardedAd(uuid: String, operation: String): RewardedAdTicket = withContext(Dispatchers.IO) {
+        retryRewardedAd(uuid) // A previous pending receipt must be settled before another can replace it.
+        mutex.withLock {
+            require(identity.profile()?.uuid == uuid)
+            val secret = identity.secret()
+            val result = api.missions("ads/reserve", secret, JSONObject().put("uuid", operation))
+            require(identity.secret() == secret && identity.profile()?.uuid == uuid)
+            RewardedAdTicket.parse(result)
+        }
+    }
+
+    internal suspend fun startRewardedAd(uuid: String, ticket: String) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            require(identity.profile()?.uuid == uuid)
+            val secret = identity.secret()
+            api.missions("ads/start", secret, JSONObject().put("uuid", ticket))
+            require(identity.secret() == secret && identity.profile()?.uuid == uuid)
+        }
+    }
+
+    internal suspend fun finishRewardedAd(uuid: String, ticket: String, rewarded: Boolean) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            require(identity.profile()?.uuid == uuid)
+            // Persist BEFORE networking, encrypted in the existing private learning store.
+            store.saveGrant("@ad-result:$uuid", JSONObject().put("uuid", ticket).put("rewarded", rewarded).put("owner", uuid))
+        }
+        retryRewardedAd(uuid)
+    }
+
+    private suspend fun retryRewardedAd(uuid: String) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            if (identity.profile()?.uuid != uuid) return@withLock
+            val pending = store.grant("@ad-result:$uuid")?.takeIf { it.optString("owner") == uuid && it.has("uuid") } ?: return@withLock
+            val secret = identity.secret()
+            try {
+                val result = api.missions("ads/" + (if (pending.getBoolean("rewarded")) "complete" else "cancel"), secret,
+                    JSONObject().put("uuid", pending.getString("uuid")).put("is_rewarded", true))
+                require(identity.secret() == secret && identity.profile()?.uuid == uuid)
+                val official = result.getJSONObject("profile")
+                require(identity.accept(JSONObject().put("profile", official), secret))
+                mutable.value = store.profiles()
+                acceptMissions(result.getJSONObject("missions"), uuid)
+                store.saveGrant("@ad-result:$uuid", JSONObject())
+                if (result.optBoolean("awarded")) mutableMissionReward.emit(uuid to result.optInt("reward_coins"))
+            } catch (e: CancellationException) { throw e }
+            catch (e: CourseFailure) {
+                if (e.status in setOf(403, 404, 410, 422)) store.saveGrant("@ad-result:$uuid", JSONObject())
+                throw e
+            }
         }
     }
     suspend fun saveSupplementary(expectedUuid: String, details: SupplementaryDetails) = withContext(Dispatchers.IO) {

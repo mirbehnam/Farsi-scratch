@@ -46,8 +46,16 @@ internal fun LearnerMissionsDialog(profile: LearnerProfile, repository: Learning
     var error by remember { mutableStateOf<String?>(null) }
     var celebration by remember { mutableStateOf<String?>(null) }
     var help by remember(profile.uuid) { mutableStateOf<MissionItem?>(null) }
+    var adTicket by remember(profile.uuid) { mutableStateOf<RewardedAdTicket?>(null) }
+    val adState by RewardedAdManager.state.collectAsState()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val adOffer = board?.rewardedAd
+    LaunchedEffect(adOffer?.appId, adOffer?.placementId, adOffer?.remaining) {
+        if (adOffer != null && adOffer.remaining > 0) {
+            while (true) { RewardedAdManager.prepare(context, adOffer); delay(30_000) }
+        }
+    }
     suspend fun refresh() {
         loading = true; error = null
         try { repository.refreshMissions(profile.uuid) }
@@ -56,6 +64,13 @@ internal fun LearnerMissionsDialog(profile: LearnerProfile, repository: Learning
         finally { loading = false }
     }
     LaunchedEffect(profile.uuid) { refresh() }
+    LaunchedEffect(adOffer?.retryAtMs, adOffer?.remaining) {
+        val offer = adOffer
+        if (offer != null && offer.remaining == 0 && offer.retryAtMs != null) {
+            delay((offer.retryAtMs - offer.serverTimeMs).coerceIn(1_000, 604_800_000))
+            refresh()
+        }
+    }
     LaunchedEffect(profile.uuid) {
         repository.missionRewards.collect { (uuid, reward) ->
             if (uuid == profile.uuid && repository.profiles.value[LearningIdentity.KEY]?.uuid == profile.uuid) {
@@ -88,6 +103,18 @@ internal fun LearnerMissionsDialog(profile: LearnerProfile, repository: Learning
                     AnimatedVisibility(celebration != null) {
                         Surface(color = Color(0xFFFFE9A3), shape = RoundedCornerShape(12.dp)) {
                             Text(celebration.orEmpty(), Modifier.fillMaxWidth().padding(10.dp), color = Color(0xFF775300), fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    if (adOffer != null) RewardedMissionCard(adOffer, adState, enabled = busy == null && !loading && current?.enabled == true) {
+                        busy = "rewarded_ad"; error = null
+                        scope.launch {
+                            try {
+                                if (RewardedAdManager.isLoaded(adOffer)) {
+                                    adTicket = repository.reserveRewardedAd(profile.uuid, java.util.UUID.randomUUID().toString())
+                                } else { RewardedAdManager.prepare(context, adOffer); error = "تبلیغ هنوز آماده نیست؛ کمی بعد تلاش کن." }
+                            } catch (e: CancellationException) { throw e }
+                            catch (_: Exception) { error = "شروع تبلیغ تأیید نشد؛ فهرست را تازه کن و سهمیه یا اینترنت را بررسی کن." }
+                            finally { busy = null }
                         }
                     }
                     when {
@@ -133,6 +160,59 @@ internal fun LearnerMissionsDialog(profile: LearnerProfile, repository: Learning
         }
     }
     help?.let { item -> MissionHelpDialog(item) { help = null } }
+    adTicket?.let { ticket ->
+        RewardedAdConfirmation(ticket, onCancel = {
+            adTicket = null
+            scope.launch {
+                try { repository.finishRewardedAd(profile.uuid, ticket.uuid, false) }
+                catch (e: CancellationException) { throw e } catch (_: Exception) { }
+            }
+        }, onWatch = {
+            adTicket = null
+            RewardedAdManager.show(profile.uuid, ticket, repository)
+        })
+    }
+}
+
+@Composable private fun RewardedMissionCard(offer: RewardedAdOffer, state: RewardedAdManager.State, enabled: Boolean, onWatch: () -> Unit) {
+    Surface(shape = RoundedCornerShape(16.dp), color = Color(0xFFF0E8FF), border = BorderStroke(1.dp, Color(0xFFD9C7F7))) {
+        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("🎬", fontSize = 26.sp)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text("یک تبلیغ، یک جایزه", fontWeight = FontWeight.Bold, color = Color(0xFF5D3D8C))
+                Text(persianDisplay("${offer.rewardCoins} سکه + ${offer.rewardXp} XP · ${offer.remaining} از ${offer.limit} فرصت · هر ${offer.windowMinutes} دقیقه"), style = MaterialTheme.typography.labelMedium)
+                Text(if (offer.remaining == 0) "سهمیهٔ این بازه تمام شده؛ بعداً دوباره سر بزن." else state.message ?: if (state.loaded) "تبلیغ آماده است" else "فعلاً ویدیویی در دسترس نیست", style = MaterialTheme.typography.labelSmall, color = Color(0xFF79648D))
+            }
+            Button(onClick = onWatch, enabled = enabled && state.loaded && !state.busy && offer.remaining > 0,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8050D7)), shape = RoundedCornerShape(11.dp)) {
+                Text(if (state.busy) "در حال نمایش…" else "مشاهده ویدیو")
+            }
+        }
+    }
+}
+
+@Composable private fun RewardedAdConfirmation(ticket: RewardedAdTicket, onCancel: () -> Unit, onWatch: () -> Unit) {
+    Dialog(onDismissRequest = onCancel, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        LearnerDialogWindowBounds()
+        Box(Modifier.learnerSafeDialogBounds(), contentAlignment = Alignment.Center) {
+            Surface(Modifier.widthIn(max = 520.dp).fillMaxWidth().heightIn(max = 300.dp), shape = RoundedCornerShape(24.dp), color = Color(0xFFFFFBEE), border = BorderStroke(2.dp, Color(0xFFE9D5A4))) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("🎁 جایزهٔ تماشای کامل", Modifier.weight(1f), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                        TextButton(onClick = onCancel) { Text("×") }
+                    }
+                    Column(Modifier.weight(1f, fill = false).verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(persianDisplay("🪙 ${ticket.coins} سکه  +  ${ticket.xp} XP"), fontWeight = FontWeight.Black, color = Color(0xFF8050D7), fontSize = 22.sp)
+                        Text("اگر تبلیغ را کامل تماشا کنی، این جایزه به حسابت اضافه می‌شود. بستن زودهنگام تبلیغ جایزه ندارد.", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Button(onClick = onWatch, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8050D7))) { Text("مشاهده") }
+                        OutlinedButton(onClick = onCancel) { Text("الان نه") }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable

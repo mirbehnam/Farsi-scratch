@@ -11,7 +11,7 @@ data class MissionItem(val id: String, val title: String, val metric: String, va
     val dayCaption: String get() = if (nextCycleTomorrow) "$progress از $target روز · چرخهٔ بعد از فردا" else "$progress از $target روز · امروز ${todayCodingMs / 60000} از ۲۰ دقیقه"
 }
 
-data class MissionBoard(val uuid: String, val available: Boolean, val items: List<MissionItem>) {
+data class MissionBoard(val uuid: String, val available: Boolean, val items: List<MissionItem>, val rewardedAd: RewardedAdOffer? = null) {
     val ordered: List<MissionItem> get() = items.sortedBy { when (it.status) { "ready" -> 0; "active" -> 1; else -> 2 } }
     companion object {
         fun parse(json: JSONObject): MissionBoard {
@@ -26,7 +26,7 @@ data class MissionBoard(val uuid: String, val available: Boolean, val items: Lis
                         row.optString("description"), row.optString("action").takeIf { it == "review" }, row.optLong("retry_after_ms").coerceIn(0, 10000), row.optLong("today_coding_ms").coerceAtLeast(0),
                         row.optInt("reward_coins").coerceAtLeast(0), row.optBoolean("repeatable"), row.optInt("completed_count").coerceAtLeast(0), row.optInt("pending_rewards").coerceAtLeast(0), row.optBoolean("achievement_unlocked"), row.optBoolean("next_cycle_starts_tomorrow"))
                 }.getOrNull() }
-            } ?: emptyList())
+            } ?: emptyList(), RewardedAdOffer.parse(json.optJSONObject("rewarded_ad")))
         }
     }
 }

@@ -204,6 +204,7 @@ private data class HallParticle(val x: Float, val y: Float, val radius: Float, v
         id.startsWith("coding") -> "⚡"
         id.startsWith("watch") || id == "lessons_10" -> "★"
         id == "saved_project" -> "◆"
+        id == "avatars_8" -> "🛠"
         else -> "✦"
     }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

@@ -64,7 +64,7 @@ internal fun LearnerMissionsDialog(profile: LearnerProfile, repository: Learning
         finally { loading = false }
     }
     LaunchedEffect(profile.uuid) { refresh() }
-    LaunchedEffect(adOffer?.retryAtMs, adOffer?.remaining) {
+    LaunchedEffect(adOffer?.retryAtMs, adOffer?.remaining, adOffer?.serverTimeMs) {
         val offer = adOffer
         if (offer != null && offer.remaining == 0 && offer.retryAtMs != null) {
             delay((offer.retryAtMs - offer.serverTimeMs).coerceIn(1_000, 604_800_000))
@@ -182,6 +182,15 @@ internal fun LearnerMissionsDialog(profile: LearnerProfile, repository: Learning
 
 @Composable private fun RewardedMissionCard(offer: RewardedAdOffer, state: RewardedAdManager.State, enabled: Boolean,
     modifier: Modifier = Modifier, onWatch: () -> Unit) {
+    val waitMs by produceState(initialValue = rewardedAdWaitMs(offer), key1 = offer) {
+        val initial = rewardedAdWaitMs(offer)
+        val start = android.os.SystemClock.elapsedRealtime()
+        value = initial
+        while (value > 0 && offer.remaining == 0) {
+            delay(1_000)
+            value = (initial - (android.os.SystemClock.elapsedRealtime() - start)).coerceAtLeast(0)
+        }
+    }
     Surface(modifier, shape = RoundedCornerShape(18.dp), color = Color(0xFFF0E8FF), border = BorderStroke(1.dp, Color(0xFFD9C7F7))) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -192,6 +201,9 @@ internal fun LearnerMissionsDialog(profile: LearnerProfile, repository: Learning
                         color = Color(0xFF775300), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
                 }
             }
+            if (offer.remaining == 0) Text(persianDisplay(
+                if (offer.retryAtMs == null) "زمان نوبت بعد پس از اتصال مشخص می‌شود" else rewardedAdWaitText(waitMs)),
+                color = Color(0xFF684B93), style = MaterialTheme.typography.labelMedium)
             Button(onClick = onWatch, enabled = enabled && state.loaded && !state.busy && offer.remaining > 0, modifier = Modifier.align(Alignment.End),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8050D7)), shape = RoundedCornerShape(11.dp)) {
                 Text(if (state.busy) "در حال نمایش…" else if (offer.remaining == 0) "بعداً" else if (!state.loaded) "آماده نیست" else "مشاهده ویدیو", style = MaterialTheme.typography.labelMedium)
@@ -227,7 +239,7 @@ internal fun LearnerMissionsDialog(profile: LearnerProfile, repository: Learning
 private fun MissionCard(item: MissionItem, busy: Boolean, enabled: Boolean, modifier: Modifier = Modifier,
     onInfo: () -> Unit = {}, onReview: () -> Unit = {}, onClaim: () -> Unit) {
     val claimed = item.status == "claimed"
-    val icon = when (item.id) { "daily" -> "☀️"; "first_code" -> "🚀"; "coding_30", "coding_5h", "coding_15h" -> "🧩"; "coding_week", "coding_month" -> "🔥"; "store_review" -> "⭐"; "saved_project" -> "💾"; "details" -> "🎒"; else -> "🎬" }
+    val icon = when (item.id) { "avatars_8" -> "🛠️"; "daily" -> "☀️"; "first_code" -> "🚀"; "coding_30", "coding_5h", "coding_15h" -> "🧩"; "coding_week", "coding_month" -> "🔥"; "store_review" -> "⭐"; "saved_project" -> "💾"; "details" -> "🎒"; else -> "🎬" }
     Surface(modifier, shape = RoundedCornerShape(18.dp), color = if (claimed) Color(0xFFF0F6EE) else Color.White,
         border = BorderStroke(if (item.ready) 2.dp else 1.dp, if (item.ready) Color(0xFFE7B442) else Color(0xFFE5DFD2)), shadowElevation = 2.dp) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -256,6 +268,7 @@ private fun MissionCard(item: MissionItem, busy: Boolean, enabled: Boolean, modi
                         "details" -> "${item.progress} از ${item.target} گزینه"
                         "coding_days" -> item.dayCaption
                         "lessons" -> "${item.progress} از ${item.target} قسمت"
+                        "avatars" -> "${item.progress} از ${item.target} آیکون خریداری‌شده"
                         "review_ms" -> if (item.action == "review") "یک نظر و امتیاز برای ما" else if (claimed) "ممنون از همراهی‌ات" else "جایزه پس از ۱۰ ثانیه"
                         else -> if (item.fraction >= 1f) "تکمیل شد" else "منتظر اولین قدم تو"
                     }

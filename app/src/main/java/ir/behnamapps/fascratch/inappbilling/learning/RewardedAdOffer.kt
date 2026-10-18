@@ -17,6 +17,21 @@ data class RewardedAdOffer(val appId: String, val placementId: String, val rewar
     }
 }
 
+/** Server-relative duration; never trust the phone's wall clock to unlock a reward. */
+internal fun rewardedAdWaitMs(offer: RewardedAdOffer): Long =
+    if (offer.remaining > 0) 0 else offer.retryAtMs?.let { (it - offer.serverTimeMs).coerceIn(0, 604_800_000) } ?: 0
+
+internal fun rewardedAdWaitText(ms: Long): String {
+    if (ms <= 0) return "در حال بررسی نوبت بعد…"
+    val minutes = (ms / 60_000 + if (ms % 60_000 > 0) 1 else 0)
+    val hours = minutes / 60
+    return "نوبت بعد: " + when {
+        hours == 0L -> "$minutes دقیقه دیگر"
+        minutes % 60 == 0L -> "$hours ساعت دیگر"
+        else -> "$hours ساعت و ${minutes % 60} دقیقه دیگر"
+    }
+}
+
 internal data class RewardedAdTicket(val uuid: String, val placement: String, val coins: Int, val xp: Int, val expiresAtMs: Long) {
     companion object {
         fun parse(json: JSONObject) = RewardedAdTicket(json.getString("uuid"), json.getString("placement_id"),

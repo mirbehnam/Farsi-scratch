@@ -22,6 +22,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
@@ -145,20 +148,26 @@ import kotlinx.coroutines.delay
         val loaded = AvatarImages.load(context, url, hash)
         if (loaded != null) artwork = loaded.asImageBitmap()
     }
-    BoxWithConstraints(modifier, contentAlignment = Alignment.TopCenter) {
-        // The plaque has fixed artwork dimensions. Do not inherit the button's much
-        // taller line-height/font padding, which clips the glyphs in this small slot.
-        val badgeFontSize = (maxWidth.value * (if (level < 1000) .20f else .16f) / LocalDensity.current.fontScale).sp
-        if (artwork != null) Image(artwork!!, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
-        else Image(painterResource(AvatarArtwork.resource(selected)), contentDescription = null,
-            contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
-        // Updated artwork has a taller plaque spanning roughly 60–90% of the badge.
-        Box(Modifier.offset(y = maxHeight * .60f).width(maxWidth * .80f).height(maxHeight * .30f),
-            contentAlignment = Alignment.Center) {
-            Text("سطح ${persianDisplay(level.toString())}", color = Color(0xFFFFD44F), fontWeight = FontWeight.Black,
-                style = MaterialTheme.typography.labelSmall.copy(fontSize = badgeFontSize,
-                    lineHeight = badgeFontSize * 1.15f, platformStyle = PlatformTextStyle(includeFontPadding = false)),
-                textAlign = TextAlign.Center, maxLines = 1)
+    val badgeFont = remember { FontFamily(Font(R.font.shabnam)) }
+    BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
+        val side = AvatarBadgeLayout.side(maxWidth.value, maxHeight.value).dp
+        val density = LocalDensity.current
+        val badgeFontSize = with(density) { (side * AvatarBadgeLayout.fontRatio(level)).toSp() }
+        val shadowSize = with(density) { (side * AvatarBadgeLayout.SHADOW).toPx() }
+        // Fit both layers to the identical square, not the possibly rectangular caller slot.
+        Box(Modifier.size(side), contentAlignment = Alignment.TopCenter) {
+            if (artwork != null) Image(artwork!!, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
+            else Image(painterResource(AvatarArtwork.resource(selected)), contentDescription = null,
+                contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
+            Box(Modifier.offset(y = side * AvatarBadgeLayout.TEXT_TOP).width(side * AvatarBadgeLayout.TEXT_WIDTH).height(side * AvatarBadgeLayout.TEXT_HEIGHT),
+                contentAlignment = Alignment.Center) {
+                Text("سطح ${persianDisplay(level.toString())}", color = Color(0xFFFFD44F), fontWeight = FontWeight.Black,
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = badgeFontSize,
+                        fontFamily = badgeFont, letterSpacing = 0.sp,
+                        shadow = Shadow(Color(0xFF18356F), Offset(0f, shadowSize), shadowSize),
+                        lineHeight = badgeFontSize * AvatarBadgeLayout.LINE_HEIGHT, platformStyle = PlatformTextStyle(includeFontPadding = false)),
+                    textAlign = TextAlign.Center, maxLines = 1, softWrap = false)
+            }
         }
     }
 }

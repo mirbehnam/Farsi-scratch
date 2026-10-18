@@ -21,7 +21,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.platform.LocalInspectionMode
-import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -30,10 +30,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.window.DialogWindowProvider
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
@@ -50,24 +46,18 @@ private val HallMuted = Color(0xFFADA8C1)
     LearnerDialogTheme {
         MaterialTheme(colorScheme = darkColorScheme(primary = HallGold, onPrimary = Color(0xFF34220B),
             surface = Color(0xFF171627), onSurface = HallInk, background = Color(0xFF10101D)), typography = MaterialTheme.typography) {
-            Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+            Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = true)) {
                 LearnerDialogWindowBounds()
-                val view = LocalView.current
-                DisposableEffect(view) {
-                    val window = (view.parent as? DialogWindowProvider)?.window
-                    if (window != null) {
-                        WindowCompat.setDecorFitsSystemWindows(window, false)
-                        WindowInsetsControllerCompat(window, view).apply {
-                            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                            hide(WindowInsetsCompat.Type.systemBars())
+                // Use the same centered, inset-aware bounds as the proven profile dialogs.
+                // Do not change immersive flags while Compose is measuring an RTL dialog.
+                Box(Modifier.learnerSafeDialogBounds(), contentAlignment = Alignment.Center) {
+                    Surface(Modifier.learnerDialogPanelBounds().clipToBounds(), shape = RoundedCornerShape(20.dp), color = Color(0xFF10101D)) {
+                        Box(Modifier.fillMaxSize()) {
+                            HallArchitecture()
+                            HallDust()
+                            content()
                         }
                     }
-                    onDispose { /* Only the dialog window is immersive; the host Activity is untouched. */ }
-                }
-                Box(Modifier.fillMaxSize().background(Color(0xFF10101D))) {
-                    HallArchitecture()
-                    HallDust()
-                    Box(Modifier.fillMaxSize().safeDrawingPadding()) { content() }
                 }
             }
         }

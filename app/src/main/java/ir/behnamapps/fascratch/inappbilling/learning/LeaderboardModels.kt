@@ -24,7 +24,8 @@ internal data class LeaderboardBoard(val viewer: String, val viewerRank: Int?, v
 }
 internal data class ShowcaseAvatar(val id: String, val title: String, val equipped: Boolean, val url: String?, val hash: String?)
 internal data class ShowcaseTrophy(val id: String, val title: String)
-internal data class LearnerShowcase(val learner: RankedLearner, val memberDays: Long, val avatars: List<ShowcaseAvatar>, val trophies: List<ShowcaseTrophy>) {
+internal data class ShowcaseStats(val watchMs: Long = 0, val codingMs: Long = 0, val completedLessons: Int = 0)
+internal data class LearnerShowcase(val learner: RankedLearner, val memberDays: Long, val avatars: List<ShowcaseAvatar>, val trophies: List<ShowcaseTrophy>, val stats: ShowcaseStats? = null) {
     companion object {
         fun parse(json: JSONObject): LearnerShowcase {
             val images = json.optJSONArray("avatars")
@@ -34,7 +35,8 @@ internal data class LearnerShowcase(val learner: RankedLearner, val memberDays: 
                     ShowcaseAvatar(it.getString("id"), it.optString("title").take(80), it.optBoolean("equipped"),
                         it.optString("image_url").takeUnless { s -> s.isBlank() || s == "null" }, it.optString("image_sha256").takeIf(AvatarImages::validHash))
                 } },
-                (0 until (trophies?.length() ?: 0).coerceAtMost(100)).map { i -> trophies!!.getJSONObject(i).let { ShowcaseTrophy(it.getString("id"), it.getString("title").take(100)) } })
+                (0 until (trophies?.length() ?: 0).coerceAtMost(100)).map { i -> trophies!!.getJSONObject(i).let { ShowcaseTrophy(it.getString("id"), it.getString("title").take(100)) } },
+                json.optJSONObject("stats")?.let { ShowcaseStats(it.optLong("watch_ms").coerceAtLeast(0), it.optLong("coding_ms").coerceAtLeast(0), it.optInt("completed_lessons").coerceAtLeast(0)) })
         }
     }
 }

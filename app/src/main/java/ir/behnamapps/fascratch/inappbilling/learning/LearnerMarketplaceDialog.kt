@@ -73,7 +73,7 @@ import java.util.UUID
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Column(Modifier.weight(1f)) {
-                            Text("🛍 بازارچهٔ گربه‌ها", color = Color(0xFF4B347E), fontWeight = FontWeight.Black, fontSize = 20.sp)
+                            Text("🛍 بازارچه", color = Color(0xFF4B347E), fontWeight = FontWeight.Black, fontSize = 20.sp)
                             Text("ظاهر دلخواهت را انتخاب کن", color = Color(0xFF7D6B98), style = MaterialTheme.typography.bodySmall)
                         }
                         Surface(color = Color(0xFFFFE7A0), shape = RoundedCornerShape(12.dp)) {

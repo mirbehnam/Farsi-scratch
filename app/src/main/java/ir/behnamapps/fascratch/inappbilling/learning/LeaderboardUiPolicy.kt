@@ -14,3 +14,8 @@ internal fun membershipDuration(days: Long): String {
         else -> "${value / 365} سال و ${value % 365 / 30} ماه همراه اسکرچ"
     }
 }
+
+internal fun showcaseTime(ms: Long): String {
+    val minutes = ms.coerceAtLeast(0) / 60_000
+    return if (minutes < 60) "$minutes دقیقه" else if (minutes % 60 == 0L) "${minutes / 60} ساعت" else "${minutes / 60} ساعت و ${minutes % 60} دقیقه"
+}

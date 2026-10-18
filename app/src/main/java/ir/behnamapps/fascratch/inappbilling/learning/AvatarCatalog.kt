@@ -6,6 +6,12 @@ import org.json.JSONObject
 internal data class AvatarItem(val id: String, val title: String, val price: Int, val description: String, val owned: Boolean, val equipped: Boolean,
     val imageUrl: String? = null, val imageHash: String? = null, val forSale: Boolean = true)
 internal data class AvatarCatalog(val uuid: String, val available: Boolean, val items: List<AvatarItem>) {
+    /** Free built-in appearance belongs in the same grid; never send it through the buy flow. */
+    fun displayItems(selectedAvatarId: String): List<AvatarItem> =
+        listOf(AvatarItem("default", "گربهٔ پیش‌فرض", 0, "", owned = true,
+            equipped = selectedAvatarId == "default", forSale = false)) +
+            items.filterNot { it.id == "default" }.map { it.copy(equipped = it.id == selectedAvatarId) }
+
     companion object {
         fun parse(json: JSONObject): AvatarCatalog {
             val rows = json.optJSONArray("items")

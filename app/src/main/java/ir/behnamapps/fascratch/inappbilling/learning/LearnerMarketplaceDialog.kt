@@ -89,13 +89,9 @@ import java.util.UUID
                         catalog == null -> if (!loading) Text("برای دیدن بازارچه به اینترنت متصل شو.")
                         !catalog.available -> Text("بازارچه هنوز در سرور آماده نشده است.")
                         else -> {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("آیکون‌های خریداری‌شده همیشه برای این حساب می‌مانند.", Modifier.weight(1f), color = Color(0xFF7D6B98), style = MaterialTheme.typography.labelSmall)
-                                TextButton(enabled = !busy && !loading && current?.avatarId != "default", onClick = { equip("default") }) { Text("گربهٔ پیش‌فرض") }
-                            }
                             LazyVerticalGrid(columns = GridCells.Adaptive(155.dp), modifier = Modifier.weight(1f),
                                 horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 6.dp)) {
-                                items(catalog.items, key = { it.id }) { item ->
+                                items(catalog.displayItems(current?.avatarId ?: "default"), key = { it.id }) { item ->
                                     AvatarCard(item, current?.level ?: profile.level,
                                         enabled = !busy && !loading && current?.enabled == true && current.coins != null,
                                         affordable = (current?.coins ?: 0.0) >= item.price) {
@@ -130,9 +126,9 @@ import java.util.UUID
 
 @Preview(name = "بازارچه - همه آیکون‌ها", widthDp = 900, heightDp = 450, showBackground = true, locale = "fa")
 @Composable private fun AvatarMarketplacePreview() {
-    val ids = listOf("junior", "explorer", "builder", "debugger", "designer", "roboticist", "architect", "wizard", "senior", "full_stack")
-    val titles = listOf("جونیور", "کاوشگر", "سازنده", "باگ‌یاب", "طراح خلاق", "ربات‌ساز", "معمار کد", "جادوگر کد", "سینیور", "فول‌استک")
-    val prices = listOf(100, 200, 350, 550, 800, 1100, 1500, 2100, 3000, 4000)
+    val ids = listOf("default", "junior", "explorer", "builder", "debugger", "designer", "roboticist", "architect", "wizard", "senior", "full_stack")
+    val titles = listOf("گربهٔ پیش‌فرض", "جونیور", "کاوشگر", "سازنده", "باگ‌یاب", "طراح خلاق", "ربات‌ساز", "معمار کد", "جادوگر کد", "سینیور", "فول‌استک")
+    val prices = listOf(0, 100, 200, 350, 550, 800, 1100, 1500, 2100, 3000, 4000)
     LearnerDialogTheme {
         LazyVerticalGrid(GridCells.Fixed(5), contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(ids.indices.toList()) { i -> AvatarCard(AvatarItem(ids[i], titles[i], prices[i], "یک ظاهر تازه برای برنامه‌نویس خلاق", i == 0, i == 0), 12, true, i < 4) {} }
@@ -162,7 +158,7 @@ import java.util.UUID
             LearnerLevelBadge(level, Modifier.size(100.dp), item.id, item.imageUrl, item.imageHash)
             Text(item.title, fontWeight = FontWeight.Bold, color = Color(0xFF4B347E), maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(item.description, style = MaterialTheme.typography.labelSmall, color = Color(0xFF81748E), maxLines = 2, minLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(if (item.owned) "✓ خریداری‌شده" else "🪙 ${persianDisplay(item.price.toString())} سکه", color = if (item.owned) Color(0xFF267250) else Color(0xFF916116), style = MaterialTheme.typography.labelMedium)
+            Text(if (item.id == "default") "رایگان" else if (item.owned) "✓ خریداری‌شده" else "🪙 ${persianDisplay(item.price.toString())} سکه", color = if (item.owned) Color(0xFF267250) else Color(0xFF916116), style = MaterialTheme.typography.labelMedium)
             Button(onClick = onClick, enabled = enabled && !item.equipped && (item.owned || (affordable && item.forSale)), modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8050D7)), shape = RoundedCornerShape(11.dp), contentPadding = PaddingValues(8.dp)) {
                 Text(if (item.equipped) "فعال ✓" else if (item.owned) "انتخاب" else if (!item.forSale) "فروش متوقف" else if (!affordable) "سکه کافی نیست" else "خرید", style = MaterialTheme.typography.labelMedium)

@@ -82,8 +82,11 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
             val json = runCatching { JSONObject(String(bytes, Charsets.UTF_8)) }.getOrNull()
             if (status !in 200..299) {
                 val code = json?.optJSONObject("error")?.optString("code").orEmpty()
+                val trafficMessage = ir.behnamapps.fascratch.inappbilling.domain.TrafficErrorMessage.message(status, code,
+                    connection.getHeaderField("Retry-After")?.toLongOrNull()
+                        ?: json?.optJSONObject("error")?.optLong("retry_after")?.takeIf { it > 0 })
                 throw CourseFailure(when {
-                    status == 429 -> "درخواست‌های زیادی ارسال شده؛ یک دقیقه صبر کنید."
+                    trafficMessage != null -> trafficMessage
                     path.startsWith("accounts/auth/google/native/") && status == 422 -> "ورود گوگل تأیید نشد؛ دوباره تلاش کن یا با نام کاربری وارد شو."
                     path.startsWith("accounts/auth/google/native/") && status == 410 -> "زمان ورود گوگل تمام شد؛ دوباره تلاش کن."
                     path.startsWith("accounts/auth/") && code == "validation_failed" ->

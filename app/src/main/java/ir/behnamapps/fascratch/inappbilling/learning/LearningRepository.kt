@@ -451,7 +451,7 @@ class LearningRepository private constructor(context: Context) {
                 if (result.optBoolean("confirmed") || result.optBoolean("awarded")) mutableMissionReward.emit(uuid to result.optInt("reward_coins"))
             } catch (e: CancellationException) { throw e }
             catch (e: CourseFailure) {
-                if (e.status in setOf(403, 404, 410, 422)) store.saveGrant("@ad-result:$uuid", JSONObject())
+                if (e.code != "ip_blocked" && e.status in setOf(403, 404, 410, 422)) store.saveGrant("@ad-result:$uuid", JSONObject())
                 throw e
             }
         }

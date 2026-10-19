@@ -270,7 +270,7 @@ class TrainingController(
         } else try {
             downloads.download(lesson, access(course), progress)
         } catch (error: CourseFailure) {
-            if (error.status != 401 && error.status != 403) throw error
+            if (error.code == "ip_blocked" || (error.status != 401 && error.status != 403)) throw error
             downloads.download(lesson, access(course, force = true), progress)
         }
         mutable.update { it.copy(downloaded = it.downloaded + lesson.id, message = null) }

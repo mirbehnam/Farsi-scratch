@@ -173,6 +173,13 @@ import kotlinx.coroutines.delay
 }
 
 @Composable fun LearnerDialog(course: Course?, profile: LearnerProfile, repository: LearningRepository, onClose: () -> Unit) {
+    val commands by ir.behnamapps.fascratch.inappbilling.data.ClientCommands.state.collectAsState()
+    val context = LocalContext.current
+    LaunchedEffect(Unit) { ir.behnamapps.fascratch.inappbilling.data.ClientCommands.refresh(context) }
+    if (commands.profileStop != null) {
+        LearnerDialogTheme { ProfileStopNotice(commands.profileStop!!, onClose) }
+        return
+    }
     val profiles by repository.profiles.collectAsState()
     val current = profiles[LearningIdentity.KEY] ?: profile
     LearnerDialogTheme { LearnerProfileDialog(course, current, repository, onClose) }

@@ -6,6 +6,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ClientCommandPolicyTest {
+    @Test fun exactVersionDoesNotDisableNeighbouringVersions() {
+        val rule = TrainingVersionRule("all", 42, 42, true, "لطفاً بروزرسانی کنید")
+        assertEquals(rule.message, ClientCommandPolicy.blockedMessage(false, "", listOf(rule), "bazaar", 42))
+        assertNull(ClientCommandPolicy.blockedMessage(false, "", listOf(rule), "bazaar", 41))
+        assertNull(ClientCommandPolicy.blockedMessage(false, "", listOf(rule), "myket", 43))
+    }
+
     @Test fun rangesIncludeBothEndsAndOnlyMatchTheirStore() {
         val rule = TrainingVersionRule("myket", 10, 20, true, "بروزرسانی")
         for (version in listOf(10, 15, 20)) assertEquals("بروزرسانی", ClientCommandPolicy.blockedMessage(false, "تعمیر", listOf(rule), "myket", version))

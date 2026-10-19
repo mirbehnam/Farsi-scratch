@@ -17,7 +17,8 @@ import org.json.JSONObject
 import java.net.URL
 import javax.net.ssl.HttpsURLConnection
 
-internal data class ClientCommandState(val initialized: Boolean = false, val blockedMessage: String? = null, val generation: Long = 0, val cacheEpoch: Long = 0)
+internal data class ProfileStop(val message: String, val icon: String, val imageUrl: String?, val imageHash: String?)
+internal data class ClientCommandState(val initialized: Boolean = false, val blockedMessage: String? = null, val generation: Long = 0, val cacheEpoch: Long = 0, val profileStop: ProfileStop? = null)
 
 /** Public control plane only. Never clears credentials, learning outbox or downloaded lessons. */
 internal object ClientCommands {
@@ -33,7 +34,7 @@ internal object ClientCommands {
             if (!mutable.value.initialized) {
                 val cached = runCatching { JSONObject(prefs.getString("config", "{}")!!) }.getOrNull()
                 mutable.value = ClientCommandState(true, runCatching { cached?.takeIf { it.optInt("schema") == 1 }?.let { blockedMessage(it, BuildConfig.FLAVOR, BuildConfig.VERSION_CODE) } }.getOrNull(),
-                    prefs.getLong("applied_generation", 0))
+                    prefs.getLong("applied_generation", 0), profileStop = cached?.let { profileStop(it) })
             }
             val now = SystemClock.elapsedRealtime()
             if (attemptedAt?.let { now - it < 25_000 } == true) return@withLock
@@ -55,7 +56,7 @@ internal object ClientCommands {
             val generation = config.getLong("cache_generation")
             val message = blockedMessage(config, BuildConfig.FLAVOR, BuildConfig.VERSION_CODE)
             prefs.edit().putString("config", config.toString()).commit()
-            mutable.value = mutable.value.copy(blockedMessage = message)
+            mutable.value = mutable.value.copy(blockedMessage = message, profileStop = profileStop(config))
             var applied = prefs.getLong("applied_generation", 0)
             val previous = applied
             if (ClientCommandPolicy.needsCacheClear(generation, applied)) {
@@ -69,8 +70,20 @@ internal object ClientCommands {
             }
             prefs.edit().putString("config", config.toString()).putLong("applied_generation", applied).commit()
             mutable.value = ClientCommandState(true, message, applied,
-                mutable.value.cacheEpoch + if (applied > previous) 1 else 0)
+                mutable.value.cacheEpoch + if (applied > previous) 1 else 0, profileStop(config))
         }
+    }
+
+    internal fun profileStop(config: JSONObject): ProfileStop? {
+        val stop = config.optJSONObject("profile_stop") ?: return null
+        if (!stop.optBoolean("enabled", false)) return null
+        val message = stop.optString("message").take(1000).trim()
+        if (message.isEmpty()) return null
+        val icon = stop.optString("icon").takeIf { it in setOf("update", "maintenance", "notice", "none", "custom") } ?: "none"
+        val hash = stop.optString("image_hash").takeIf { it.matches(Regex("[a-f0-9]{64}")) }
+        // Build the image URL from our API origin, never from an arbitrary admin-provided URL.
+        val url = hash?.let { BuildConfig.COURSE_API_BASE.trimEnd('/') + "/control-images/" + it }
+        return ProfileStop(message, icon, url, hash)
     }
 
     internal fun blockedMessage(config: JSONObject, flavor: String, version: Int): String? {

@@ -22,7 +22,7 @@ data class MissionBoard(val uuid: String, val available: Boolean, val items: Lis
                 (0 until it.length()).mapNotNull { index -> runCatching {
                     val row = it.getJSONObject(index)
                     val id = row.getString("id")
-                    require(id in setOf("first_code", "coding_30", "watch_10", "watch_60", "daily", "details", "coding_week", "coding_month", "store_review", "lessons_10", "coding_5h", "saved_project", "coding_15h", "avatars_8"))
+                    require(id in setOf("first_code", "coding_30", "watch_10", "watch_60", "daily", "details", "coding_week", "coding_month", "store_review", "lessons_10", "lessons_17", "coding_5h", "saved_project", "coding_15h", "avatars_8"))
                     MissionItem(id, row.getString("title"), row.getString("metric"), row.getLong("target").coerceAtLeast(1),
                         row.getLong("progress").coerceAtLeast(0), row.getInt("reward_xp").coerceAtLeast(0), row.getString("period"), row.getString("status"),
                         row.optString("description"), row.optString("action").takeIf { it == "review" }, row.optLong("retry_after_ms").coerceIn(0, 10000), row.optLong("today_coding_ms").coerceAtLeast(0),

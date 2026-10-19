@@ -35,7 +35,7 @@ class SubtitleDownloads(context: Context, private val api: CourseApi) {
             val bytes = try {
                 if (connection.responseCode != 200) throw CourseFailure("دریافت زیرنویس انجام نشد؛ اینترنت یا دسترسی درس را بررسی کنید.", connection.responseCode)
                 connection.inputStream.use { it.readBytesBounded(SubtitleTrack.MAX_BYTES) }
-            } finally { connection.disconnect() }
+            } finally { api.finishConnection(connection) }
             val track = verified(lesson, bytes)
             check(root.isDirectory || root.mkdirs())
             val stream = target.startWrite()

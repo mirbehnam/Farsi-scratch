@@ -671,7 +671,8 @@ private fun FarsiScratchApp(activity: MainActivity) {
     var permissionRequestInProgress by remember { mutableStateOf(false) }
     var permissionResult by remember { mutableStateOf<Boolean?>(null) }
     var isExpired by remember { mutableStateOf(System.currentTimeMillis() >= BuildConfig.EXPIRATION_TIME_MILLIS) }
-    ir.behnamapps.fascratch.inappbilling.learning.CodingTimeEffect(activity, screen == AppScreen.Scratch && !isExpired && !showNotificationPermission)
+    var quickLessonsVisible by remember { mutableStateOf(false) }
+    ir.behnamapps.fascratch.inappbilling.learning.CodingTimeEffect(activity, screen == AppScreen.Scratch && !isExpired && !showNotificationPermission && !quickLessonsVisible)
 
     LaunchedEffect(permissionResult) {
         val granted = permissionResult ?: return@LaunchedEffect
@@ -734,6 +735,7 @@ private fun FarsiScratchApp(activity: MainActivity) {
                     )
                     AppScreen.Scratch -> ScratchScreen(
                         activity = activity,
+                        onQuickLessonsVisibility = { quickLessonsVisible = it },
                         onHome = { showExit = true }
                     )
                 }
@@ -1136,7 +1138,7 @@ private fun ExitDialog(onDismiss: () -> Unit, onExit: () -> Unit) {
 }
 
 @Composable
-private fun ScratchScreen(activity: MainActivity, onHome: () -> Unit) {
+private fun ScratchScreen(activity: MainActivity, onQuickLessonsVisibility: (Boolean) -> Unit, onHome: () -> Unit) {
     var isLoading by remember { mutableStateOf(true) }
     var progress by remember { mutableIntStateOf(0) }
     var webView by remember { mutableStateOf<WebView?>(null) }
@@ -1208,6 +1210,7 @@ private fun ScratchScreen(activity: MainActivity, onHome: () -> Unit) {
             ) {
                 Text("⌨", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
             }
+            ir.behnamapps.fascratch.inappbilling.presentation.ScratchQuickLessonsShortcut(activity, onQuickLessonsVisibility)
             Spacer(Modifier.weight(1f))
             Box(Modifier.size(8.dp).clip(CircleShape).background(ScratchOrange))
             Spacer(Modifier.height(8.dp))

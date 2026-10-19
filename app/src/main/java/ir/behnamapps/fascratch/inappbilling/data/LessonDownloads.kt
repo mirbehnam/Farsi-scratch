@@ -7,6 +7,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.io.RandomAccessFile
 import java.security.MessageDigest
@@ -18,6 +20,7 @@ class LessonDownloads(context: Context, private val api: CourseApi) {
     fun completed(lesson: Lesson): File? = File(root, CoursePolicy.downloadKey(lesson)).takeIf { it.isFile && it.length() == lesson.bytes }
 
     suspend fun download(lesson: Lesson, access: CourseAccess?, progress: (Float) -> Unit): File = withContext(Dispatchers.IO) {
+        transferMutex.withLock {
         require(lesson.isPreview || access?.courseId == lesson.courseId)
         val target = File(root, CoursePolicy.downloadKey(lesson))
         completed(lesson)?.let { return@withContext it }
@@ -65,7 +68,7 @@ class LessonDownloads(context: Context, private val api: CourseApi) {
                     output.fd.sync()
                 }
             } catch (error: CourseFailure) { throw error }
-            finally { connection.disconnect() }
+            finally { api.finishConnection(connection) }
         }
         val digest = MessageDigest.getInstance("SHA-256")
         partial.inputStream().use { input ->
@@ -85,7 +88,10 @@ class LessonDownloads(context: Context, private val api: CourseApi) {
         check(partial.renameTo(target))
         progress(1f)
         target
+        }
     }
+
+    companion object { private val transferMutex = Mutex() }
 
     fun delete(lesson: Lesson) {
         val target = File(root, CoursePolicy.downloadKey(lesson))

@@ -13,6 +13,12 @@ import java.util.Locale
 import javax.net.ssl.HttpsURLConnection
 
 class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
+    internal var requestOwner: RequestConnections? = null
+
+    fun finishConnection(connection: HttpsURLConnection) {
+        requestOwner?.finished(connection)
+        connection.disconnect()
+    }
     private val identity = context?.let { ir.behnamapps.fascratch.inappbilling.learning.LearningIdentity.get(it) }
     private val base = BuildConfig.COURSE_API_BASE.trimEnd('/')
 
@@ -27,7 +33,7 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
                 ?.let { CatalogLayoutUpdate.Html(it) } ?: CatalogLayoutUpdate.Unavailable
         } catch (error: kotlinx.coroutines.CancellationException) { throw error }
         catch (_: Exception) { CatalogLayoutUpdate.Unavailable }
-        finally { connection.disconnect() }
+        finally { finishConnection(connection) }
     }
 
     fun connection(path: String, token: String? = null, accountSecret: String? = null): HttpsURLConnection {
@@ -46,7 +52,7 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
                 require(token.matches(Regex("[a-f0-9]{64}")))
                 setRequestProperty("Authorization", "Bearer $token")
             }
-        }
+        }.also { requestOwner?.register(it) }
     }
 
     fun previewConnection(lesson: Lesson): HttpsURLConnection {
@@ -55,7 +61,7 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
         return (URL(target).openConnection() as HttpsURLConnection).apply {
             connectTimeout = 15_000; readTimeout = 30_000; instanceFollowRedirects = false
             setRequestProperty("Accept", "video/mp4")
-        }
+        }.also { requestOwner?.register(it) }
     }
 
     fun subtitleConnection(lesson: Lesson, access: CourseAccess?): HttpsURLConnection {
@@ -65,7 +71,7 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
         return connection.apply {
             connectTimeout = 3500; readTimeout = 5000; instanceFollowRedirects = false; useCaches = false
             setRequestProperty("Accept", "application/x-subrip")
-        }
+        }.also { requestOwner?.register(it) }
     }
 
     private suspend fun request(path: String, token: String? = null, body: JSONObject? = null, accountSecret: String? = null, timeoutMillis: Int = 30_000): JSONObject = withContext(Dispatchers.IO) {
@@ -108,7 +114,7 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
         } catch (error: kotlinx.coroutines.CancellationException) { throw error }
         catch (error: CourseFailure) { throw error }
         catch (_: Exception) { throw CourseFailure("ارتباط امن با سرور برقرار نشد؛ اینترنت را بررسی کنید.") }
-        finally { connection.disconnect() }
+        finally { finishConnection(connection) }
     }
 
     suspend fun courses(provider: String): List<Course> {

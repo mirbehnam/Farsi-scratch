@@ -20,7 +20,7 @@ import java.io.File
 internal class ZoomVideoView(context: Context, private val file: File, private val initialPosition: Int,
     private val onReady: () -> Unit, private val onError: () -> Unit, private val onTap: () -> Unit,
     private val onZoom: (Float) -> Unit, private val onDoubleTapSeek: (Int) -> Unit,
-    private val onCompleted: () -> Unit) : TextureView(context), TextureView.SurfaceTextureListener {
+    private val onCompleted: () -> Unit, private val autoPlay: Boolean = true) : TextureView(context), TextureView.SurfaceTextureListener {
     private var player: MediaPlayer? = null
     private var surface: Surface? = null
     private var ready = false
@@ -132,7 +132,8 @@ internal class ZoomVideoView(context: Context, private val file: File, private v
                         ready = true; videoWidth = it.videoWidth.toFloat(); videoHeight = it.videoHeight.toFloat()
                         transform()
                         if (resumePosition > 0) seek(resumePosition)
-                        play(); onReady()
+                        if (autoPlay) play()
+                        onReady()
                     }
                 }
                 media.setOnVideoSizeChangedListener { _, w, h -> videoWidth = w.toFloat(); videoHeight = h.toFloat(); transform() }

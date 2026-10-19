@@ -40,18 +40,20 @@ import java.util.Locale
 internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, onClose: () -> Unit,
     watchTracker: ir.behnamapps.fascratch.inappbilling.learning.WatchTracker? = null,
     nextLessonTitle: String? = null, onPlayNext: () -> Boolean = { false },
-    hasSubtitles: Boolean = false, loadSubtitles: suspend () -> SubtitleTrack? = { null }) {
+    hasSubtitles: Boolean = false, loadSubtitles: suspend () -> SubtitleTrack? = { null },
+    initialPlayback: LessonPlaybackCheckpoint = LessonPlaybackCheckpoint(),
+    onPlaybackCheckpoint: (LessonPlaybackCheckpoint) -> Unit = {}) {
     var video by remember(file) { mutableStateOf<ZoomVideoView?>(null) }
     var prepared by remember(file) { mutableStateOf(false) }
     var error by remember(file) { mutableStateOf(false) }
     var controls by remember(file) { mutableStateOf(true) }
     var zoom by remember(file) { mutableFloatStateOf(1f) }
-    var position by rememberSaveable(file.absolutePath) { mutableIntStateOf(0) }
+    var position by rememberSaveable(file.absolutePath) { mutableIntStateOf(initialPlayback.positionMs.coerceAtLeast(0)) }
     var duration by remember(file) { mutableIntStateOf(0) }
     var playing by remember(file) { mutableStateOf(false) }
     var seeking by remember { mutableStateOf<Float?>(null) }
     var interaction by remember { mutableIntStateOf(0) }
-    var speed by rememberSaveable(file.absolutePath) { mutableFloatStateOf(1f) }
+    var speed by rememberSaveable(file.absolutePath) { mutableFloatStateOf(initialPlayback.speed.takeIf { it in LessonPlayerPolicy.speeds } ?: 1f) }
     var speedMenu by remember(file) { mutableStateOf(false) }
     var speedError by remember(file) { mutableStateOf(false) }
     var completed by remember(file) { mutableStateOf(false) }
@@ -64,6 +66,7 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
     var subtitlesLoading by remember(file) { mutableStateOf(false) }
     var subtitleError by remember(file) { mutableStateOf(false) }
     val currentSubtitleLoader by rememberUpdatedState(loadSubtitles)
+    val checkpointCallback by rememberUpdatedState(onPlaybackCheckpoint)
     LaunchedEffect(file, subtitlesEnabled) {
         subtitleText = ""
         if (subtitlesEnabled) {
@@ -107,6 +110,10 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
         bars.hide(WindowInsetsCompat.Type.systemBars())
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         onDispose {
+            val finalPosition = video?.seekPosition() ?: position
+            checkpointCallback(QuickLessonPolicy.checkpoint(finalPosition, speed, !completed && (video?.isPlaying() == true || playing || (!prepared && initialPlayback.autoPlay))))
+            watchTracker?.sample(video?.position() ?: position, video?.isPlaying() == true &&
+                video?.isSeeking() != true && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
             watchTracker?.finish()
             video?.release()
             bars.systemBarsBehavior = oldBehavior
@@ -156,6 +163,7 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
                             seekHintSequence++
                         }
                     },
+                    autoPlay = initialPlayback.autoPlay,
                     onCompleted = {
                         position = video?.duration() ?: duration
                         playing = false; completed = true; controls = true

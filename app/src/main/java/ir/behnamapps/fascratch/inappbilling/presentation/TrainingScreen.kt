@@ -42,6 +42,11 @@ private enum class LessonFilter { ALL, PREVIEW, DOWNLOADED }
 @Composable
 internal fun TrainingScreen(state: TrainingState, controller: TrainingController, onBack: () -> Unit, onPlay: (Lesson) -> Unit) {
     val context = LocalContext.current
+    if (BuildConfig.BILLING_PROVIDER == "cafebazaar" && state.storeHelp != null) {
+        StoreAccountHelpDialog(state.storeHelp, state.busy, controller::dismissStoreHelp) {
+            if (purchaseNetworkAvailable(context)) controller.retryStorePurchase()
+        }
+    }
     var pendingPurchase by remember { mutableStateOf<Pair<Course, Boolean>?>(null) }
     var showProfile by remember { mutableStateOf(false) }
     val learning = controller.learning

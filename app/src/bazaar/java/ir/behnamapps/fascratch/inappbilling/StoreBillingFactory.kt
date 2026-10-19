@@ -20,6 +20,14 @@ object StoreBillingFactory {
 
 private class BazaarBilling(private val activity: ComponentActivity) : BillingGateway {
     override val provider = "cafebazaar"
+    private val accountCheck = BazaarAccountCheck(activity)
+
+    private suspend fun checkAccount() {
+        if (StoreAccountPolicy.requiresLogin(accountCheck.loggedIn())) {
+            throw CourseFailure("برای خرید یا بازیابی دوره، ابتدا وارد حساب کافه‌بازارت شو.", code = StoreAccountPolicy.LOGIN_REQUIRED)
+        }
+    }
+
     // With no public RSA configured, Poolakey delivers receipts but our server remains mandatory.
     private val payment = Payment(activity, PaymentConfiguration(
         if (BuildConfig.BILLING_PUBLIC_KEY.isBlank()) SecurityCheck.Disable else SecurityCheck.Enable(BuildConfig.BILLING_PUBLIC_KEY),
@@ -32,12 +40,13 @@ private class BazaarBilling(private val activity: ComponentActivity) : BillingGa
         suspendCancellableCoroutine<Unit> { continuation ->
             connection = payment.connect {
                 connectionSucceed { if (continuation.isActive) continuation.resume(Unit) }
-                connectionFailed { if (continuation.isActive) continuation.resumeWithException(CourseFailure("اتصال به کافه‌بازار برقرار نشد؛ نصب و ورود به بازار را بررسی کنید.")) }
+                connectionFailed { error -> if (continuation.isActive) continuation.resumeWithException(bazaarBillingFailure(error, "اتصال به کافه‌بازار برقرار نشد؛ دوباره تلاش کنید.")) }
                 disconnected { if (continuation.isActive) continuation.resumeWithException(CourseFailure("ارتباط با کافه‌بازار قطع شد.")) }
             }
         }
     }
     override suspend fun owned(sku: String): Receipt? {
+        checkAccount()
         connect()
         return suspendCancellableCoroutine { continuation ->
             payment.getPurchasedProducts {
@@ -48,11 +57,12 @@ private class BazaarBilling(private val activity: ComponentActivity) : BillingGa
                         else continuation.resume(row?.let { Receipt(it.productId, it.purchaseToken) })
                     }
                 }
-                queryFailed { if (continuation.isActive) continuation.resumeWithException(CourseFailure("بررسی خریدهای بازار انجام نشد؛ دوباره تلاش کنید.")) }
+                queryFailed { error -> if (continuation.isActive) continuation.resumeWithException(bazaarBillingFailure(error, "بررسی خریدهای بازار انجام نشد؛ دوباره تلاش کنید.")) }
             }
         }
     }
     override suspend fun purchase(sku: String): Receipt {
+        checkAccount()
         connect()
         return suspendCancellableCoroutine { continuation ->
             payment.purchaseProduct(activity.activityResultRegistry, PurchaseRequest(sku)) {
@@ -63,8 +73,8 @@ private class BazaarBilling(private val activity: ComponentActivity) : BillingGa
                     }
                 }
                 purchaseCanceled { if (continuation.isActive) continuation.resumeWithException(CourseFailure("خرید لغو شد؛ اگر قبلاً خرید کرده‌اید، بازیابی را بزنید.")) }
-                purchaseFailed { if (continuation.isActive) continuation.resumeWithException(CourseFailure("خرید انجام نشد؛ برای خرید قبلی از بازیابی استفاده کنید.")) }
-                failedToBeginFlow { if (continuation.isActive) continuation.resumeWithException(CourseFailure("صفحه پرداخت بازار باز نشد.")) }
+                purchaseFailed { error -> if (continuation.isActive) continuation.resumeWithException(bazaarBillingFailure(error, "خرید انجام نشد؛ برای خرید قبلی از بازیابی استفاده کنید.")) }
+                failedToBeginFlow { error -> if (continuation.isActive) continuation.resumeWithException(bazaarBillingFailure(error, "صفحه پرداخت بازار باز نشد؛ دوباره تلاش کنید.")) }
             }
         }
     }

@@ -19,7 +19,8 @@ data class TrainingState(
     val downloadingId: String? = null, val progress: Float = 0f, val downloaded: Set<String> = emptySet(),
     val courses: List<Course> = emptyList(), val purchasedIds: Set<String> = emptySet(), val prices: Map<String, String> = emptyMap(),
     val loadingPrices: Set<String> = emptySet(), val priceErrors: Set<String> = emptySet(),
-    val catalogLayout: CatalogLayout? = null, val catalogCacheLoaded: Boolean = true
+    val catalogLayout: CatalogLayout? = null, val catalogCacheLoaded: Boolean = true,
+    val storeHelp: String? = null
 )
 
 /** Catalog and per-course access stay separate. Store outages never block free previews. */
@@ -31,6 +32,19 @@ class TrainingController(
     private val mutable = MutableStateFlow(TrainingState(catalogCacheLoaded = false))
     val state = mutable.asStateFlow()
     private val buy = BuyCourse(api, vault)
+    private var pendingStorePurchase: Pair<Course, Boolean>? = null
+
+    fun dismissStoreHelp() {
+        pendingStorePurchase = null
+        mutable.update { it.copy(storeHelp = null) }
+    }
+
+    fun retryStorePurchase() {
+        val pending = pendingStorePurchase ?: return
+        if (state.value.busy || state.value.storeHelp == null) return
+        dismissStoreHelp()
+        purchase(pending.second, pending.first)
+    }
     private val storeMutex = Mutex()
     private fun provider() = if (billing.provider == "website") "cafebazaar" else billing.provider
     private fun priceLabel(amount: Long?) = amount?.let { NumberFormat.getIntegerInstance(Locale.US).format(it) + " تومان" }
@@ -216,7 +230,8 @@ class TrainingController(
 
     fun purchase(restoreOnly: Boolean, target: Course? = state.value.course) {
         val course = target ?: return
-        action(course.id) {
+        action(course.id, storePurchase = true) {
+            pendingStorePurchase = course to restoreOnly
             var purchaseCourse = course
             if (!restoreOnly) {
                 purchaseCourse = api.coursePricing(course, provider())
@@ -281,9 +296,9 @@ class TrainingController(
         ?.takeIf { playable(it) != null }
     fun cancelDownload() { if (state.value.downloadingId != null) activeJob?.cancel() }
 
-    private fun action(courseId: String? = state.value.course?.id, block: suspend () -> Unit) {
+    private fun action(courseId: String? = state.value.course?.id, storePurchase: Boolean = false, block: suspend () -> Unit) {
         if (state.value.busy) return
-        mutable.update { it.copy(busy = true, message = null) }
+        mutable.update { it.copy(busy = true, message = null, storeHelp = null) }
         activeJob = scope.launch {
             try { block() }
             catch (_: TimeoutCancellationException) {
@@ -296,10 +311,12 @@ class TrainingController(
                     vault.revoke(courseId)
                     mutable.update { it.copy(purchasedIds = it.purchasedIds - courseId, purchased = if (it.course?.id == courseId) false else it.purchased) }
                 }
-                mutable.update { it.copy(message = error.userMessage) }
+                mutable.update { it.copy(message = if (storePurchase && StoreAccountPolicy.hasHelp(error.code)) null else error.userMessage,
+                    storeHelp = error.code.takeIf { storePurchase && StoreAccountPolicy.hasHelp(it) }) }
             }
             catch (_: Exception) { mutable.update { it.copy(message = "عملیات کامل نشد؛ اینترنت، فضای ذخیره‌سازی و تنظیمات دوره را بررسی کنید.") } }
             finally {
+                if (state.value.storeHelp == null) pendingStorePurchase = null
                 mutable.update { it.copy(busy = false, downloadingId = null, progress = 0f) }
                 learning?.refreshProfile()
             }

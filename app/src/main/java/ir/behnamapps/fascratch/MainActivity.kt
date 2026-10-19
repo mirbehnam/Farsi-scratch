@@ -147,6 +147,21 @@ val ScratchPink = Color(0xFFCF63CF)
 val Ink = Color(0xFF17122E)
 
 class MainActivity : ComponentActivity() {
+    // Main-thread callback only; no Compose state changes or extra WebView listeners
+    // for each touch/move. The coding effect owns and removes this callback.
+    internal var editorInteractionListener: (() -> Unit)? = null
+
+    override fun onUserInteraction() {
+        super.onUserInteraction()
+        editorInteractionListener?.invoke()
+    }
+
+    override fun dispatchTouchEvent(event: android.view.MotionEvent): Boolean {
+        if (event.actionMasked == android.view.MotionEvent.ACTION_MOVE ||
+            event.actionMasked == android.view.MotionEvent.ACTION_POINTER_DOWN) editorInteractionListener?.invoke()
+        return super.dispatchTouchEvent(event)
+    }
+
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
     private var fileChooserParams: WebChromeClient.FileChooserParams? = null
     private var pendingWebPermissionRequest: PermissionRequest? = null

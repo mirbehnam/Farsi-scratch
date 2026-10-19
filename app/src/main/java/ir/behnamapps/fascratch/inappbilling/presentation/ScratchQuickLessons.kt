@@ -12,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -124,6 +125,21 @@ private fun QuickLessonPopup(activity: ComponentActivity, state: QuickLessonsSta
     Dialog(onDismissRequest = { if (state.playing != null) controller.backToLessons() else onClose() },
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         val window = (LocalView.current.parent as? DialogWindowProvider)?.window ?: activity.window
+        SideEffect {
+            if (window === activity.window) return@SideEffect
+            // Floating windows otherwise get shifted past a landscape camera cutout,
+            // while Compose still measures against the entire display width.
+            // Let the WINDOW span the display; keep CONTENT inside safeDrawing below.
+            window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
+            window.setGravity(android.view.Gravity.CENTER)
+            window.attributes = window.attributes.apply {
+                x = 0; y = 0
+                if (android.os.Build.VERSION.SDK_INT >= 30) layoutInDisplayCutoutMode = android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                else if (android.os.Build.VERSION.SDK_INT >= 28) layoutInDisplayCutoutMode = android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+            androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+            window.setLayout(android.view.WindowManager.LayoutParams.MATCH_PARENT, android.view.WindowManager.LayoutParams.MATCH_PARENT)
+        }
         val font = FontFamily(Font(R.font.shabnam))
         val typography = Typography().let { it.copy(headlineSmall = it.headlineSmall.copy(fontFamily = font),
             titleLarge = it.titleLarge.copy(fontFamily = font), titleMedium = it.titleMedium.copy(fontFamily = font), bodyLarge = it.bodyLarge.copy(fontFamily = font),
@@ -131,7 +147,8 @@ private fun QuickLessonPopup(activity: ComponentActivity, state: QuickLessonsSta
             labelLarge = it.labelLarge.copy(fontFamily = font), labelMedium = it.labelMedium.copy(fontFamily = font), labelSmall = it.labelSmall.copy(fontFamily = font)) }
         MaterialTheme(colorScheme = darkColorScheme(primary = Color(0xFFFFC36E), surface = Color(0xFF201C32), onSurface = Color.White), typography = typography) {
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl, LocalTextStyle provides LocalTextStyle.current.copy(fontFamily = font)) {
-                Surface(Modifier.fillMaxSize().safeDrawingPadding().padding(12.dp), shape = RoundedCornerShape(20.dp), color = Color(0xFF201C32)) {
+                Box(Modifier.fillMaxSize().safeDrawingPadding().padding(12.dp).clipToBounds(), contentAlignment = Alignment.Center) {
+                Surface(Modifier.fillMaxSize(), shape = RoundedCornerShape(20.dp), color = Color(0xFF201C32)) {
                     Column(Modifier.fillMaxSize()) {
                         Row(Modifier.fillMaxWidth().height(46.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             var chooseCourse by remember { mutableStateOf(false) }
@@ -179,6 +196,7 @@ private fun QuickLessonPopup(activity: ComponentActivity, state: QuickLessonsSta
                             }
                         }
                     }
+                }
                 }
             }
         }

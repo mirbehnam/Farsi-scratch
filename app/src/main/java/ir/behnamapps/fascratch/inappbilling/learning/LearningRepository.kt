@@ -445,8 +445,10 @@ class LearningRepository private constructor(context: Context) {
                 require(identity.accept(JSONObject().put("profile", official), secret))
                 mutable.value = store.profiles()
                 acceptMissions(result.getJSONObject("missions"), uuid)
+                // Keep the durable receipt until the server confirms callback or timeout fallback.
+                if (result.optBoolean("pending")) throw RewardedAdPending()
                 store.saveGrant("@ad-result:$uuid", JSONObject())
-                if (result.optBoolean("awarded")) mutableMissionReward.emit(uuid to result.optInt("reward_coins"))
+                if (result.optBoolean("confirmed") || result.optBoolean("awarded")) mutableMissionReward.emit(uuid to result.optInt("reward_coins"))
             } catch (e: CancellationException) { throw e }
             catch (e: CourseFailure) {
                 if (e.status in setOf(403, 404, 410, 422)) store.saveGrant("@ad-result:$uuid", JSONObject())

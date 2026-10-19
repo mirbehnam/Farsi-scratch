@@ -4,3 +4,6 @@ package ir.behnamapps.fascratch.inappbilling.learning
 internal object RewardedAdCompletion {
     fun earned(shown: Boolean, sdkRewarded: Boolean): Boolean = shown && sdkRewarded
 }
+
+/** A successful client SDK callback is not yet an official server-side credit. */
+internal class RewardedAdPending : Exception("Awaiting server reward settlement")

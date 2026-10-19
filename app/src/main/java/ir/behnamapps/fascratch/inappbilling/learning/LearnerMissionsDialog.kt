@@ -51,11 +51,6 @@ internal fun LearnerMissionsDialog(profile: LearnerProfile, repository: Learning
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val adOffer = board?.rewardedAd
-    LaunchedEffect(adOffer?.appId, adOffer?.placementId, adOffer?.remaining) {
-        if (adOffer != null && adOffer.remaining > 0) {
-            while (true) { RewardedAdManager.prepare(context, adOffer); delay(30_000) }
-        }
-    }
     suspend fun refresh() {
         loading = true; error = null
         try { repository.refreshMissions(profile.uuid) }
@@ -118,13 +113,23 @@ internal fun LearnerMissionsDialog(profile: LearnerProfile, repository: Learning
                                                 modifier = Modifier.weight(1f)) {
                                                 busy = "rewarded_ad"; error = null
                                                 scope.launch {
+                                                    var reserved: RewardedAdTicket? = null
+                                                    var handedOff = false
                                                     try {
-                                                        if (RewardedAdManager.isLoaded(entry.offer)) {
-                                                            adTicket = repository.reserveRewardedAd(profile.uuid, java.util.UUID.randomUUID().toString())
-                                                        } else { RewardedAdManager.prepare(context, entry.offer); error = "تبلیغ هنوز آماده نیست؛ کمی بعد تلاش کن." }
-                                                    } catch (e: CancellationException) { throw e }
+                                                        reserved = repository.reserveRewardedAd(profile.uuid, java.util.UUID.randomUUID().toString())
+                                                        RewardedAdManager.prepareTicket(context, entry.offer, reserved)
+                                                        adTicket = reserved; handedOff = true
+                                                    } catch (_: kotlinx.coroutines.TimeoutCancellationException) { error = "فعلاً ویدیویی آماده نیست؛ کمی بعد تلاش کن." }
+                                                    catch (e: CancellationException) { throw e }
                                                     catch (_: Exception) { error = "شروع تبلیغ تأیید نشد؛ فهرست را تازه کن و سهمیه یا اینترنت را بررسی کن." }
-                                                    finally { busy = null }
+                                                    finally {
+                                                        if (!handedOff) reserved?.let { ticket ->
+                                                            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                                                                runCatching { repository.finishRewardedAd(profile.uuid, ticket.uuid, false) }
+                                                            }
+                                                        }
+                                                        busy = null
+                                                    }
                                                 }
                                             }
                                         } else if (entry is MissionGridEntry.Task) {
@@ -204,9 +209,9 @@ internal fun LearnerMissionsDialog(profile: LearnerProfile, repository: Learning
             if (offer.remaining == 0) Text(persianDisplay(
                 if (offer.retryAtMs == null) "زمان نوبت بعد پس از اتصال مشخص می‌شود" else rewardedAdWaitText(waitMs)),
                 color = Color(0xFF684B93), style = MaterialTheme.typography.labelMedium)
-            Button(onClick = onWatch, enabled = enabled && state.loaded && !state.busy && offer.remaining > 0, modifier = Modifier.align(Alignment.End),
+            Button(onClick = onWatch, enabled = enabled && !state.busy && offer.remaining > 0, modifier = Modifier.align(Alignment.End),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8050D7)), shape = RoundedCornerShape(11.dp)) {
-                Text(if (state.busy) "در حال نمایش…" else if (offer.remaining == 0) "بعداً" else if (!state.loaded) "آماده نیست" else "مشاهده ویدیو", style = MaterialTheme.typography.labelMedium)
+                Text(if (state.busy) "در حال نمایش…" else if (!enabled && offer.remaining > 0) "لطفاً صبر کن…" else if (offer.remaining == 0) "بعداً" else "مشاهده ویدیو", style = MaterialTheme.typography.labelMedium)
             }
         }
     }

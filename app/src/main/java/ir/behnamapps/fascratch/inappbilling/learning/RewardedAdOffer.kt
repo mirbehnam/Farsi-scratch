@@ -32,9 +32,12 @@ internal fun rewardedAdWaitText(ms: Long): String {
     }
 }
 
-internal data class RewardedAdTicket(val uuid: String, val placement: String, val coins: Int, val xp: Int, val expiresAtMs: Long) {
+// user_id is bin2hex(random_bytes(32)) generated per reservation by OUR server.
+// It is NOT a learner UUID, login secret, email, device ID or stable tracking identifier.
+internal data class RewardedAdTicket(val uuid: String, val placement: String, val coins: Int, val xp: Int, val expiresAtMs: Long, val callbackNonce: String) {
     companion object {
         fun parse(json: JSONObject) = RewardedAdTicket(json.getString("uuid"), json.getString("placement_id"),
-            json.getInt("reward_coins"), json.getInt("reward_xp"), json.getLong("expires_at_ms"))
+            json.getInt("reward_coins"), json.getInt("reward_xp"), json.getLong("expires_at_ms"),
+            json.getString("user_id").also { require(it.matches(Regex("[a-f0-9]{64}"))) })
     }
 }

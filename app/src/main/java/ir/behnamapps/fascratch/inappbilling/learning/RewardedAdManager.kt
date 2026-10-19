@@ -9,6 +9,7 @@ import ir.behnamapps.fascratch.inappbilling.domain.CourseFailure
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 
 /** One application-scoped listener: reward delivery survives closing the missions dialog. */
 internal object RewardedAdManager {
@@ -22,8 +23,22 @@ internal object RewardedAdManager {
     private data class Showing(val owner: String, val ticket: RewardedAdTicket, val repo: LearningRepository, var shown: Boolean = false)
     private var showing: Showing? = null
     private var registered = false
+    private var preparedNonce: String? = null
 
-    fun prepare(context: Context, offer: RewardedAdOffer) {
+    /** Use a fresh SDK request so an old cached ad cannot carry a different ticket nonce. */
+    suspend fun prepareTicket(context: Context, offer: RewardedAdOffer, ticket: RewardedAdTicket) {
+        check(showing == null && !mutable.value.busy)
+        if (preparedNonce != ticket.callbackNonce) {
+            if (configuredApp != null) Adivery.onDestroy()
+            configuredApp = null; registered = false; placement = null; nextPrepare = 0
+            preparedNonce = ticket.callbackNonce
+            mutable.value = State(message = "در حال آماده‌سازی ویدیو…")
+        }
+        prepare(context, offer, ticket.callbackNonce)
+        withTimeout(30_000) { state.first { it.loaded } }
+    }
+
+    private fun prepare(context: Context, offer: RewardedAdOffer, nonce: String) {
         if (showing != null || mutable.value.busy) return
         try {
             if (configuredApp != null && configuredApp != offer.appId) {
@@ -33,15 +48,20 @@ internal object RewardedAdManager {
                 Adivery.configure(context.applicationContext as Application, offer.appId)
                 configuredApp = offer.appId
             }
+            // Random per-ad correlation nonce only; no personal/account credentials are sent.
+            Adivery.setUserId(nonce)
             if (!registered) {
                 Adivery.addGlobalListener(object : AdiveryListener() {
                     override fun onRewardedAdLoaded(placementId: String) {
+                        if (preparedNonce != nonce) return
                         if (placementId == placement && showing == null && !mutable.value.busy) mutable.value = State(loaded = true)
                     }
                     override fun onRewardedAdShown(placementId: String) {
+                        if (preparedNonce != nonce) return
                         showing?.takeIf { it.ticket.placement == placementId }?.shown = true
                     }
                     override fun onRewardedAdClosed(placementId: String, isRewarded: Boolean) {
+                        if (preparedNonce != nonce) return
                         val active = showing?.takeIf { it.ticket.placement == placementId } ?: return
                         showing = null
                         scope.launch {
@@ -80,7 +100,7 @@ internal object RewardedAdManager {
             catch (e: Exception) {
                 if (e is CourseFailure && e.status in setOf(401, 403, 404, 410, 422)) throw e
                 if (attempt == 5 || active.repo.profiles.value[LearningIdentity.KEY]?.uuid != active.owner) throw e
-                delay(minOf(120_000L, 5_000L shl attempt))
+                delay(if (e is RewardedAdPending) 2_000 else minOf(120_000L, 5_000L shl attempt))
             }
         }
     }
@@ -91,6 +111,8 @@ internal object RewardedAdManager {
         scope.launch {
             try {
                 repository.startRewardedAd(owner, ticket.uuid)
+                check(preparedNonce == ticket.callbackNonce)
+                Adivery.setUserId(ticket.callbackNonce)
                 check(Adivery.isLoaded(ticket.placement))
                 showing = Showing(owner, ticket, repository)
                 val attempt = showing

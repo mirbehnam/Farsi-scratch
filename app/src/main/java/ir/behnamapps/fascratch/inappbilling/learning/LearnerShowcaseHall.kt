@@ -138,7 +138,7 @@ private data class HallParticle(val x: Float, val y: Float, val radius: Float, v
                 item(span = { GridItemSpan(maxLineSpan) }) { HallSection("گنجینهٔ دستاوردها", data.trophies.size) }
                 if (data.trophies.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { HallEmpty("جای اولین جام اینجا محفوظ است 🏆") }
                 items(data.trophies, key = { "hall-trophy-${it.id}" }) { trophy ->
-                    HallExhibit(trophy.title, false, trophy = true) { TrophyArtifact(trophy.id) }
+                    HallExhibit(trophy.title, false, trophy = true) { AchievementTrophy(trophy) { TrophyArtifact(trophy.id) } }
                 }
             }
         }

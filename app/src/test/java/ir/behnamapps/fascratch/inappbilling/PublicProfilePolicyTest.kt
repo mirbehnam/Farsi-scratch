@@ -21,6 +21,26 @@ class PublicProfilePolicyTest {
         assertEquals("https://www.instagram.com/my.cat", PublicProfilePolicy.safeUrl("instagram", "https://instagram.com/my.cat"))
     }
 
+    @Test fun editPriceIsPerChangedSectionAndNeverChargesForRemovalOrEquivalentUrls() {
+        val oldLinks = mapOf("telegram" to "https://t.me/scratch_user", "bale" to "https://ble.ir/scratch_user")
+        assertEquals(0, PublicProfilePolicy.editCost("سلام", oldLinks, "سلام", oldLinks, 2000))
+        assertEquals(0, PublicProfilePolicy.editCost("سلام", oldLinks, "", emptyMap(), 2000))
+        assertEquals(0, PublicProfilePolicy.editCost("سلام", oldLinks, "سلام", mapOf("telegram" to "@scratch_user"), 2000))
+        assertEquals(2000, PublicProfilePolicy.editCost("سلام", oldLinks, "متن تازه", oldLinks, 2000))
+        assertEquals(2000, PublicProfilePolicy.editCost("سلام", oldLinks, "سلام", mapOf("telegram" to "new_user", "bale" to "other_user"), 2000))
+        assertEquals(4000, PublicProfilePolicy.editCost("سلام", oldLinks, "متن تازه", mapOf("telegram" to "new_user"), 2000))
+        assertEquals(0, PublicProfilePolicy.editCost("سلام", oldLinks, " سلام ", mapOf("telegram" to "https://t.me/scratch_user/"), 2000))
+    }
+
+    @Test fun inputNormalizationAcceptsHandlesAndOnlyValidPlatformUrls() {
+        assertEquals("https://t.me/scratch_user", PublicProfilePolicy.normalizeInput("telegram", " @scratch_user "))
+        assertEquals("https://www.instagram.com/my.cat", PublicProfilePolicy.normalizeInput("instagram", "my.cat"))
+        assertEquals("https://ble.ir/scratch_user", PublicProfilePolicy.normalizeInput("bale", "ble.ir/scratch_user"))
+        assertEquals("", PublicProfilePolicy.normalizeInput("telegram", " "))
+        assertNull(PublicProfilePolicy.normalizeInput("telegram", "https://evil.test/user"))
+        assertNull(PublicProfilePolicy.normalizeInput("telegram", "javascript:alert(1)"))
+    }
+
     @Test fun malformedOrDangerousLinksNeverReachAnIntent() {
         listOf("javascript:alert(1)", "http://t.me/scratch_user", "https://t.me.evil.test/scratch_user", "https://evil.test@t.me/scratch_user",
             "https://t.me:443/scratch_user", "https://t.me/scratch_user?start=1", "https://t.me/scratch_user#fragment", "https://t.me/+123456",

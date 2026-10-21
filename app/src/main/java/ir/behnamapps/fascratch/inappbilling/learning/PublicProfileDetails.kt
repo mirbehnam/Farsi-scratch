@@ -6,6 +6,7 @@ import java.net.URI
 data class PublicProfileDetails(
     val available: Boolean = false, val version: Int = 0, val canEditBio: Boolean = false, val canEditSocials: Boolean = false,
     val status: String = "empty", val reason: String? = null, val bio: String = "", val links: Map<String, String> = emptyMap(),
+    val editCostCoins: Int? = null,
 ) {
     companion object {
         fun parse(json: JSONObject?): PublicProfileDetails {
@@ -15,7 +16,8 @@ data class PublicProfileDetails(
                 json.optBoolean("can_edit_bio"), json.optBoolean("can_edit_socials"),
                 json.optString("status").takeIf { it in setOf("empty", "pending", "approved", "rejected") } ?: "empty",
                 json.optString("reason").takeUnless { it.isBlank() || it == "null" }?.take(300),
-                PublicProfilePolicy.text(draft?.optString("bio")), PublicProfilePolicy.links(draft?.optJSONObject("social_links")))
+                PublicProfilePolicy.text(draft?.optString("bio")), PublicProfilePolicy.links(draft?.optJSONObject("social_links")),
+                json.optInt("edit_cost_coins").takeIf { !json.isNull("edit_cost_coins") && it in 1..100000 })
         }
     }
 }
@@ -43,4 +45,23 @@ object PublicProfilePolicy {
     fun links(json: JSONObject?): Map<String, String> = networks.keys.mapNotNull { key ->
         safeUrl(key, json?.optString(key).orEmpty())?.let { key to it }
     }.toMap()
+
+    fun normalizeInput(network: String, input: String): String? {
+        val value = input.trim()
+        if (value.isEmpty()) return ""
+        val host = hosts[network] ?: return null
+        val candidate = if ('/' in value || ':' in value) {
+            if (value.startsWith("https://")) value.trimEnd('/') else "https://" + value.trimEnd('/')
+        } else "https://$host/" + value.trimStart('@')
+        return safeUrl(network, candidate)
+    }
+
+    fun editCost(previousBio: String, previousLinks: Map<String, String>, bio: String, links: Map<String, String>, price: Int): Int {
+        val bioChanged = bio.trim().isNotEmpty() && bio.trim() != previousBio
+        val linksChanged = links.any { (network, value) ->
+            val normalized = normalizeInput(network, value)
+            normalized != null && normalized.isNotEmpty() && normalized != previousLinks[network]
+        }
+        return (if (bioChanged) price else 0) + (if (linksChanged) price else 0)
+    }
 }

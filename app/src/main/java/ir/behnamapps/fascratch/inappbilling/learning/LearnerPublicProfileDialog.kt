@@ -26,102 +26,143 @@ import ir.behnamapps.fascratch.inappbilling.presentation.persianDisplay
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
-@Composable internal fun LearnerPublicProfileDialog(profile: LearnerProfile, repository: LearningRepository, onClose: () -> Unit) {
-    LearnerPublicProfileFormDialog(profile, onClose) { version, bio, links -> repository.savePublicProfile(profile.uuid, version, bio, links) }
+internal enum class PublicProfileSection(val title: String, val minimumLevel: Int) {
+    BIO("افزودن متن پروفایل", 16), SOCIALS("آدرس شبکه‌های اجتماعی من", 21)
 }
 
-@Composable private fun LearnerPublicProfileFormDialog(profile: LearnerProfile, onClose: () -> Unit,
-    onSave: suspend (Int, String, Map<String, String>) -> Unit) {
-    val details = remember(profile.uuid) { profile.publicProfile }
-    var bio by remember(profile.uuid) { mutableStateOf(details.bio) }
-    var links by remember(profile.uuid) { mutableStateOf(details.links) }
+@Composable internal fun PublicProfileEntryButtons(profile: LearnerProfile, enabled: Boolean, onOpen: (PublicProfileSection) -> Unit) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        PublicProfileSection.entries.forEach { section ->
+            val unlocked = profile.level >= section.minimumLevel && if (section == PublicProfileSection.BIO) profile.publicProfile.canEditBio else profile.publicProfile.canEditSocials
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text(persianDisplay(if (unlocked) "این بخش از سطح ${section.minimumLevel} فعال است" else "برای فعال شدن این دکمه باید به سطح ${section.minimumLevel} برسی"),
+                    color = Color(0xFF71629D), style = MaterialTheme.typography.labelSmall)
+                FilledTonalButton(onClick = { onOpen(section) }, enabled = enabled && unlocked, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(13.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp)) {
+                    Text((if (section == PublicProfileSection.BIO) "✦ " else "↗ ") + section.title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                }
+                Text(profile.publicProfile.editCostCoins?.let { "هر ثبت یا ویرایش: " + persianDisplay(it.toString()) + " سکه" } ?: "برای ثبت، سرور باید به‌روز شود",
+                    color = Color(0xFF8A6B35), style = MaterialTheme.typography.labelSmall)
+                val hasExisting = if (section == PublicProfileSection.BIO) profile.publicProfile.bio.isNotEmpty() else profile.publicProfile.links.isNotEmpty()
+                if (!unlocked && hasExisting) TextButton(onClick = { onOpen(section) }, enabled = enabled) { Text("مشاهده / حذف اطلاعات قبلی", style = MaterialTheme.typography.labelSmall) }
+            }
+        }
+    }
+}
+
+@Composable internal fun LearnerPublicProfileDialog(profile: LearnerProfile, repository: LearningRepository, section: PublicProfileSection, onClose: () -> Unit) {
+    LearnerPublicProfileFormDialog(profile, section, onClose) { version, bio, links, cost -> repository.savePublicProfile(profile.uuid, version, bio, links, cost) }
+}
+
+@Composable private fun LearnerPublicProfileFormDialog(profile: LearnerProfile, section: PublicProfileSection, onClose: () -> Unit,
+    onSave: suspend (Int, String, Map<String, String>, Int) -> Unit) {
+    val details = remember(profile.uuid, section) { profile.publicProfile }
+    var bio by remember(profile.uuid, section) { mutableStateOf(details.bio) }
+    var links by remember(profile.uuid, section) { mutableStateOf(details.links) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var confirmationCost by remember { mutableStateOf<Int?>(null) }
     val scope = rememberCoroutineScope()
     val focus = LocalFocusManager.current
-    // Re-evaluate server-supplied gates if an admin reduces the level while this dialog is open.
     val canBio = profile.publicProfile.canEditBio && profile.level > 15
     val canSocial = profile.publicProfile.canEditSocials && profile.level > 20
+    val linksValid = links.all { (network, value) -> PublicProfilePolicy.normalizeInput(network, value) != null }
+    val normalizedLinks = links.mapNotNull { (network, value) -> PublicProfilePolicy.normalizeInput(network, value)?.takeIf { it.isNotEmpty() }?.let { network to it } }.toMap()
+    val changed = bio.trim() != details.bio || normalizedLinks != details.links
+    val cost = PublicProfilePolicy.editCost(details.bio, details.links, bio, links, details.editCostCoins ?: 2000)
+    val enoughCoins = cost == 0 || profile.coins?.let { it >= cost } == true
+    fun submit(confirmedCost: Int) {
+        if (busy) return
+        focus.clearFocus(); busy = true; error = null
+        scope.launch {
+            try { onSave(details.version, bio, links, confirmedCost); onClose() }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { error = failure.message ?: "ذخیره نشد؛ دوباره تلاش کن." }
+            finally { busy = false }
+        }
+    }
     Dialog(onDismissRequest = { if (!busy) onClose() }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = true)) {
         LearnerDialogWindowBounds()
         Box(Modifier.learnerSafeDialogBounds(), contentAlignment = Alignment.Center) {
-            Surface(Modifier.widthIn(max = 800.dp).learnerDialogPanelBounds(), shape = RoundedCornerShape(24.dp),
-                color = Color(0xFFFFFCF6), border = BorderStroke(2.dp, Color.White)) {
+            Surface(Modifier.widthIn(max = 700.dp).learnerDialogPanelBounds(), shape = RoundedCornerShape(24.dp), color = Color(0xFFFFFCF6), border = BorderStroke(2.dp, Color.White)) {
                 Column(Modifier.background(Brush.linearGradient(listOf(Color(0xFFFFF8E7), Color(0xFFF4F1FF)))).padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("✦ معرفی من", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, color = Color(0xFF414B80))
-                            Text("یک معرفی کوتاه از دنیای خودت بنویس", style = MaterialTheme.typography.bodySmall, color = Color(0xFF7A7595))
+                            Text(section.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, color = Color(0xFF414B80))
+                            Text(persianDisplay("از سطح ${section.minimumLevel} · موجودی: ${profile.coins?.toInt() ?: 0} سکه"), style = MaterialTheme.typography.bodySmall, color = Color(0xFF7A7595))
                         }
                         IconButton(onClick = onClose, enabled = !busy) { Text("×", style = MaterialTheme.typography.headlineMedium) }
                     }
                     Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Surface(color = Color(0xFFEAE8FA), shape = RoundedCornerShape(12.dp)) {
                             Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(when (details.status) { "pending" -> "◷ در انتظار بررسی مدیر"; "approved" -> "✓ معرفی تأیید شده"; "rejected" -> "معرفی نیاز به اصلاح دارد"; else -> "معرفی عمومی تو" },
+                                Text(when (details.status) { "pending" -> "◷ در انتظار بررسی مدیر"; "approved" -> "✓ اطلاعات تأیید شده"; "rejected" -> "اطلاعات نیاز به اصلاح دارد"; else -> "پروفایل عمومی تو" },
                                     style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = Color(0xFF5A4E91))
-                                Text("بعد از تأیید مدیر، دیگران معرفی و لینک‌هایت را می‌بینند. شماره، آدرس خانه یا اطلاعات خصوصی ننویس.", style = MaterialTheme.typography.bodySmall)
+                                Text("پس از تأیید مدیر عمومی می‌شود؛ شماره یا اطلاعات خصوصی ننویس. حذف اطلاعات رایگان است.", style = MaterialTheme.typography.bodySmall)
                                 details.reason?.let { Text(it, color = Color(0xFFAE415A), style = MaterialTheme.typography.bodySmall) }
                             }
                         }
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text("دربارهٔ من", fontWeight = FontWeight.Bold, color = Color(0xFF414B80))
-                                OutlinedTextField(value = bio, onValueChange = { if (PublicProfilePolicy.length(it) <= 200) bio = it },
-                                    modifier = Modifier.fillMaxWidth(), enabled = canBio && !busy, minLines = 3, maxLines = 4,
-                                    placeholder = { Text("مثلاً: بازی می‌سازم و عاشق حل معما هستم!") },
-                                    supportingText = { Text(if (canBio) persianDisplay("${PublicProfilePolicy.length(bio)} از ۲۰۰") else "از سطح ۱۶ فعال می‌شود") },
-                                    shape = RoundedCornerShape(14.dp))
-                                if (bio.isNotEmpty()) TextButton(enabled = !busy, onClick = { bio = "" }) { Text("پاک کردن معرفی") }
-                            }
-                            Column(Modifier.weight(1.1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text("شبکه‌های اجتماعی", fontWeight = FontWeight.Bold, color = Color(0xFF414B80))
-                                if (!canSocial) Text("🔒 از سطح ۲۱ فعال می‌شود", color = Color(0xFF88729D), style = MaterialTheme.typography.bodySmall)
-                                PublicProfilePolicy.networks.entries.chunked(2).forEach { row ->
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        row.forEach { (key, label) ->
-                                            Column(Modifier.weight(1f)) {
-                                                OutlinedTextField(value = links[key].orEmpty(), onValueChange = { if (it.length <= 200) links = links + (key to it) },
-                                                    label = { Text(label) }, placeholder = { Text("@username") }, singleLine = true,
-                                                    enabled = canSocial && !busy, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp))
-                                                if (!links[key].isNullOrEmpty()) TextButton(enabled = !busy, onClick = { links = links - key }) { Text("حذف لینک") }
-                                            }
+                        if (section == PublicProfileSection.BIO) {
+                            OutlinedTextField(value = bio, onValueChange = { if (PublicProfilePolicy.length(it) <= 200) bio = it },
+                                modifier = Modifier.fillMaxWidth(), enabled = canBio && !busy, minLines = 3, maxLines = 4,
+                                placeholder = { Text("مثلاً: بازی می‌سازم و عاشق حل معما هستم!") },
+                                supportingText = { Text(if (canBio) persianDisplay("${PublicProfilePolicy.length(bio)} از ۲۰۰") else "از سطح ۱۶ فعال می‌شود") }, shape = RoundedCornerShape(14.dp))
+                            if (bio.isNotEmpty()) TextButton(enabled = !busy, onClick = { bio = "" }) { Text("پاک کردن متن پروفایل") }
+                        } else {
+                            if (!canSocial) Text("🔒 از سطح ۲۱ فعال می‌شود", color = Color(0xFF88729D), style = MaterialTheme.typography.bodySmall)
+                            PublicProfilePolicy.networks.entries.chunked(2).forEach { row ->
+                                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    row.forEach { (key, label) ->
+                                        Column(Modifier.weight(1f)) {
+                                            OutlinedTextField(value = links[key].orEmpty(), onValueChange = { if (it.length <= 200) links = links + (key to it) },
+                                                label = { Text(label) }, placeholder = { Text("@username") }, singleLine = true,
+                                                isError = PublicProfilePolicy.normalizeInput(key, links[key].orEmpty()) == null,
+                                                enabled = canSocial && !busy, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp))
+                                            if (!links[key].isNullOrEmpty()) TextButton(enabled = !busy, onClick = { links = links - key }) { Text("حذف لینک") }
                                         }
                                     }
                                 }
                             }
+                            if (!linksValid) Text("آیدی یا لینک عمومی معتبر همان شبکه را وارد کن.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
                         }
+                        if (changed && cost > 0 && !enoughCoins) Text("برای ثبت این تغییرات سکهٔ کافی نداری.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                        if (changed && cost > 0 && details.editCostCoins == null) Text("برای ثبت، سرور باید به‌روز شود.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                         error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                     }
                     Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("می‌توانی هر زمان معرفی یا لینک‌ها را پاک کنی.", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = Color(0xFF7A7595))
-                        Button(enabled = !busy && (bio != details.bio || links != details.links), shape = RoundedCornerShape(13.dp), onClick = {
-                            focus.clearFocus(); busy = true; error = null
-                            scope.launch {
-                                try { onSave(details.version, bio, links); onClose() }
-                                catch (cancelled: CancellationException) { throw cancelled }
-                                catch (failure: Exception) { error = failure.message ?: "ذخیره نشد؛ دوباره تلاش کن." }
-                                finally { busy = false }
-                            }
+                        Text(if (changed && cost == 0) "حذف اطلاعات بدون هزینه است" else "هزینهٔ ثبت: " + persianDisplay(cost.toString()) + " سکه", Modifier.weight(1f),
+                            style = MaterialTheme.typography.labelMedium, color = Color(0xFF8A6B35))
+                        Button(enabled = !busy && changed && linksValid && enoughCoins && (cost == 0 || details.editCostCoins != null), shape = RoundedCornerShape(13.dp), onClick = {
+                            if (cost > 0) confirmationCost = cost else submit(0)
                         }) {
-                            if (busy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp) else Text("ذخیره تغییرات")
+                            if (busy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp) else Text(if (cost > 0) "ثبت · " + persianDisplay(cost.toString()) + " سکه" else "ذخیره تغییرات")
                         }
                     }
                 }
             }
         }
     }
-}
-
-@androidx.compose.ui.tooling.preview.Preview(name = "معرفی من · افقی", widthDp = 900, heightDp = 420, locale = "fa")
-@androidx.compose.ui.tooling.preview.Preview(name = "معرفی من · صفحه کوچک", widthDp = 640, heightDp = 320, locale = "fa")
-@Composable private fun PublicProfileFormPreview() {
-    LearnerDialogTheme {
-        val profile = LearnerProfile("preview", "برنامه‌نویس خلاق", 21, 0, 0.0, 100.0, 3, true,
-            publicProfile = PublicProfileDetails(true, 1, true, true, "pending", bio = "من بازی‌های ماجراجویی می‌سازم! 😺"))
-        LearnerPublicProfileFormDialog(profile, {}) { _, _, _ -> }
+    confirmationCost?.let { price ->
+        AlertDialog(onDismissRequest = { confirmationCost = null }, title = { Text("تأیید ثبت اطلاعات") },
+            text = { Text(persianDisplay("برای ثبت این تغییرات $price سکه از حسابت کم می‌شود. انتشار پس از تأیید مدیر است. ادامه می‌دهی؟")) },
+            confirmButton = { TextButton(onClick = { confirmationCost = null; submit(price) }) { Text("تأیید و ثبت") } },
+            dismissButton = { TextButton(onClick = { confirmationCost = null }) { Text("بی‌خیال") } })
     }
 }
+
+@androidx.compose.ui.tooling.preview.Preview(name = "متن پروفایل · افقی", widthDp = 900, heightDp = 420, locale = "fa")
+@androidx.compose.ui.tooling.preview.Preview(name = "متن پروفایل · کوچک", widthDp = 640, heightDp = 320, locale = "fa")
+@Composable private fun PublicProfileFormPreview() {
+    LearnerDialogTheme { LearnerPublicProfileFormDialog(publicProfilePreview(), PublicProfileSection.BIO, {}) { _, _, _, _ -> } }
+}
+
+@androidx.compose.ui.tooling.preview.Preview(name = "شبکه‌های اجتماعی · افقی", widthDp = 900, heightDp = 420, locale = "fa")
+@Composable private fun PublicProfileSocialPreview() {
+    LearnerDialogTheme { LearnerPublicProfileFormDialog(publicProfilePreview(), PublicProfileSection.SOCIALS, {}) { _, _, _, _ -> } }
+}
+
+private fun publicProfilePreview() = LearnerProfile("preview", "برنامه‌نویس خلاق", 21, 0, 0.0, 100.0, 3, true, coins = 5000.0,
+    publicProfile = PublicProfileDetails(true, 1, true, true, "pending", bio = "من بازی‌های ماجراجویی می‌سازم! 😺", editCostCoins = 2000))
 
 @Composable internal fun ShowcasePublicProfile(data: LearnerShowcase) {
     val context = LocalContext.current

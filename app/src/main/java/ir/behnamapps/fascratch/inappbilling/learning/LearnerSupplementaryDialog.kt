@@ -35,9 +35,14 @@ internal fun LearnerSupplementaryDialog(profile: LearnerProfile, repository: Lea
     var declined by remember(profile.uuid) { mutableStateOf(profile.supplementary.declinedFields) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var publicSection by remember(profile.uuid) { mutableStateOf<PublicProfileSection?>(null) }
     val version = remember(profile.uuid) { profile.supplementary.version }
     val scope = rememberCoroutineScope()
     val focus = LocalFocusManager.current
+    publicSection?.let { section ->
+        LearnerPublicProfileDialog(profile, repository, section) { publicSection = null }
+        return
+    }
     Dialog(onDismissRequest = { if (!busy) onClose() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         LearnerDialogWindowBounds()
         Box(Modifier.learnerSafeDialogBounds(), contentAlignment = Alignment.Center) {
@@ -48,13 +53,14 @@ internal fun LearnerSupplementaryDialog(profile: LearnerProfile, repository: Lea
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("🎒", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(end = 12.dp))
                             Column(Modifier.weight(1f)) {
-                                Text("کمی بیشتر دربارهٔ تو", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                                Text("اطلاعات تکمیلی", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
                                 Text("همهٔ گزینه‌ها اختیاری‌اند ✨", color = Color(0xFF71629D), style = MaterialTheme.typography.bodySmall)
                             }
                             TextButton(onClick = onClose, enabled = !busy, modifier = Modifier.semantics { contentDescription = "بستن اطلاعات تکمیلی" }) { Text("×", style = MaterialTheme.typography.titleLarge) }
                         }
+                        if (profile.publicProfile.available) PublicProfileEntryButtons(profile, !busy) { publicSection = it }
                         Surface(color = Color(0xFFE9F2ED), shape = RoundedCornerShape(12.dp)) {
-                            Text("🔒 این اطلاعات خصوصی است و در جدول رتبه‌بندی نمایش داده نمی‌شود. هر زمان بخواهی می‌توانی پاکش کنی.",
+                            Text("🔒 سن، استان و جنسیت خصوصی‌اند. معرفی و لینک‌های اجتماعی فقط پس از تأیید مدیر عمومی می‌شوند.",
                                 Modifier.padding(10.dp), style = MaterialTheme.typography.bodySmall, color = Color(0xFF345B48))
                         }
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {

@@ -458,11 +458,11 @@ class LearningRepository private constructor(context: Context) {
             }
         }
     }
-    internal suspend fun savePublicProfile(expectedUuid: String, version: Int, bio: String, links: Map<String, String>) = withContext(Dispatchers.IO) {
+    internal suspend fun savePublicProfile(expectedUuid: String, version: Int, bio: String, links: Map<String, String>, confirmedCost: Int) = withContext(Dispatchers.IO) {
         mutex.withLock {
             if (identity.profile()?.uuid != expectedUuid) throw CourseFailure("حساب تغییر کرده؛ پروفایل را دوباره باز کن.", 409)
             val secret = identity.secret()
-            val body = JSONObject().put("version", version).put("bio", bio).put("social_links", JSONObject(links))
+            val body = JSONObject().put("version", version).put("bio", bio).put("social_links", JSONObject(links)).put("confirmed_cost", confirmedCost)
             val result = api.savePublicProfile(body, secret)
             if (identity.secret() != secret || result.optString("uuid") != expectedUuid) throw CourseFailure("حساب تغییر کرده؛ پروفایل را دوباره باز کن.", 409)
             store.saveProfile(LearningIdentity.KEY, result); mutable.value = store.profiles()

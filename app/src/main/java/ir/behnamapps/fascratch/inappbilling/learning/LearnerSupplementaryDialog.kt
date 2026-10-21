@@ -58,7 +58,6 @@ internal fun LearnerSupplementaryDialog(profile: LearnerProfile, repository: Lea
                             }
                             TextButton(onClick = onClose, enabled = !busy, modifier = Modifier.semantics { contentDescription = "بستن اطلاعات تکمیلی" }) { Text("×", style = MaterialTheme.typography.titleLarge) }
                         }
-                        if (profile.publicProfile.available) PublicProfileEntryButtons(profile, !busy) { publicSection = it }
                         Surface(color = Color(0xFFE9F2ED), shape = RoundedCornerShape(12.dp)) {
                             Text("🔒 سن، استان و جنسیت خصوصی‌اند. معرفی و لینک‌های اجتماعی فقط پس از تأیید مدیر عمومی می‌شوند.",
                                 Modifier.padding(10.dp), style = MaterialTheme.typography.bodySmall, color = Color(0xFF345B48))
@@ -84,6 +83,7 @@ internal fun LearnerSupplementaryDialog(profile: LearnerProfile, repository: Lea
                             }
                             FilterChip(selected = "gender" in declined, onClick = { gender = null; declined = declined + "gender" }, enabled = !busy, label = { Text("نمی‌خواهم بگویم") })
                         }
+                        if (profile.publicProfile.available) PublicProfileEntryButtons(profile, !busy) { publicSection = it }
                         error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                     }
                     HorizontalDivider(color = Color(0xFFE0E6F4))

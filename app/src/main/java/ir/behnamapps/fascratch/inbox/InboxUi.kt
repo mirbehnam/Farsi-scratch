@@ -3,10 +3,12 @@ package ir.behnamapps.fascratch.inbox
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -22,6 +24,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -29,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -58,8 +62,7 @@ import kotlinx.coroutines.launch
 
 @Composable private fun InboxEnvelope(unread: Int, modifier: Modifier, onOpen: () -> Unit) {
     Box(modifier.size(52.dp).semantics { contentDescription = "پیام‌های مدیر" + if(unread > 0) "، ${InboxPolicy.badge(unread)} پیام نخوانده" else "" }) {
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF2C7186),Color(0xFF194557))),RoundedCornerShape(17.dp))
-            .border(1.dp,Color(0xFF61C7D0),RoundedCornerShape(17.dp)).clickable(role = Role.Button,onClick = onOpen).padding(13.dp)) {
+        Box(Modifier.fillMaxSize().clickable(role = Role.Button,onClick = onOpen).padding(9.dp)) {
             Canvas(Modifier.fillMaxSize()) {
                 val stroke = 2.dp.toPx()
                 drawRoundRect(Color(0xFFFFD46D),topLeft = Offset(0f,size.height*.1f),size = androidx.compose.ui.geometry.Size(size.width,size.height*.8f),
@@ -93,6 +96,8 @@ import kotlinx.coroutines.launch
 @Composable private fun InboxContent(state: InboxState, repository: InboxRepository?, onClose: () -> Unit, onRefresh: () -> Unit, onReadAll: () -> Unit) {
     var selectedKey by remember(state.sessionKey) { mutableStateOf<String?>(null) }
     val selected = state.messages.find { it.readKey == selectedKey }
+    val listState = rememberLazyListState()
+    BackHandler(enabled = selected != null) { selectedKey = null }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(selected?.readKey,selected?.notificationVersion,state.sessionKey,lifecycle) {
         if(selected != null && repository != null) lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
@@ -102,33 +107,27 @@ import kotlinx.coroutines.launch
     Column(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(0xFFFFFAEC),Color(0xFFEDF8FA)))).padding(14.dp),verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(Modifier.fillMaxWidth(),verticalAlignment = Alignment.CenterVertically,horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Column(Modifier.weight(1f)) {
-                Text("صندوق پیام‌های تو",fontSize = 19.sp,fontWeight = FontWeight.Black,color = Color(0xFF285773),maxLines = 1,overflow = TextOverflow.Ellipsis)
-                Text(if(state.unread > 0) "${InboxPolicy.badge(state.unread)} پیام تازه داری ✨" else "خبرهای تازه از تیم اسکرچ",style = MaterialTheme.typography.labelSmall,color = Color(0xFF6B8593))
+                Text(if(selected == null) "صندوق پیام‌های تو" else "پیام برای تو",fontSize = 19.sp,fontWeight = FontWeight.Black,color = Color(0xFF285773),maxLines = 1,overflow = TextOverflow.Ellipsis)
+                if(selected == null) Text(if(state.unread > 0) "${InboxPolicy.badge(state.unread)} پیام تازه داری ✨" else "خبرهای تازه از تیم اسکرچ",style = MaterialTheme.typography.labelSmall,color = Color(0xFF6B8593))
             }
             if(state.refreshing) CircularProgressIndicator(Modifier.size(16.dp),strokeWidth = 2.dp)
-            if(state.unread > 0) TextButton(onClick = onReadAll) { Text("همه را خواندم",style = MaterialTheme.typography.labelSmall) }
-            IconButton(onClick = onRefresh,enabled = !state.refreshing,modifier = Modifier.semantics { contentDescription = "بررسی پیام‌های تازه" }) { Text("↻",fontSize = 23.sp,color = Color(0xFF2A7B89)) }
+            if(selected == null) {
+                if(state.unread > 0) TextButton(onClick = onReadAll) { Text("همه را خواندم",style = MaterialTheme.typography.labelSmall) }
+                IconButton(onClick = onRefresh,enabled = !state.refreshing,modifier = Modifier.semantics { contentDescription = "بررسی پیام‌های تازه" }) { Text("↻",fontSize = 23.sp,color = Color(0xFF2A7B89)) }
+            } else TextButton(onClick = { selectedKey = null }) { Text("بازگشت به پیام‌ها",style = MaterialTheme.typography.labelMedium) }
             IconButton(onClick = onClose,modifier = Modifier.semantics { contentDescription = "بستن پیام‌ها" }) { Text("×",fontSize = 27.sp,color = Color(0xFF996475)) }
         }
-        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-            val wide = maxWidth >= 660.dp
+        Box(Modifier.weight(1f).fillMaxWidth()) {
             if(state.messages.isEmpty()) {
                 Column(Modifier.align(Alignment.Center).padding(20.dp),horizontalAlignment = Alignment.CenterHorizontally,verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("✉",fontSize = 44.sp,color = Color(0xFF48A8B6))
                     Text(if(!state.initialized || state.refreshing) "داریم صندوقت را بررسی می‌کنیم…" else if(state.failed) "دریافت پیام‌ها فعلاً ممکن نیست؛ بعداً دوباره سر بزن." else "هنوز پیامی نداری؛ خبرهای خوب اینجا می‌آیند!",color = Color(0xFF507586))
                     if(state.failed) OutlinedButton(onClick = onRefresh,enabled = !state.refreshing) { Text("تلاش دوباره") }
                 }
-            } else Row(Modifier.fillMaxSize(),horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                if(wide || selected == null) LazyColumn(Modifier.then(if(wide) Modifier.widthIn(max = 330.dp).weight(.42f) else Modifier.fillMaxWidth()),verticalArrangement = Arrangement.spacedBy(8.dp),contentPadding = PaddingValues(bottom = 8.dp)) {
-                    items(state.messages,key = { it.readKey }) { message -> InboxRow(message,InboxPolicy.unread(message.notificationVersion,state.read[message.readKey]),selected?.readKey == message.readKey) { selectedKey = message.readKey } }
-                }
-                if(wide || selected != null) Surface(Modifier.weight(if(wide) .58f else 1f).fillMaxHeight(),shape = RoundedCornerShape(18.dp),color = Color.White,border = BorderStroke(1.dp,Color(0xFFD9EAEC))) {
-                    if(selected == null) Box(Modifier.fillMaxSize().padding(20.dp),contentAlignment = Alignment.Center) { Text("یک پیام انتخاب کن تا با هم بخوانیم ✨",color = Color(0xFF78909D)) }
-                    else Column(Modifier.fillMaxSize()) {
-                        if(!wide) TextButton(onClick = { selectedKey = null }) { Text("‹ همهٔ پیام‌ها") }
-                        key(selected.readKey) { InboxDetails(selected,state.sessionKey,repository,Modifier.weight(1f)) }
-                    }
-                }
+            } else if(selected == null) LazyColumn(Modifier.fillMaxSize(),state = listState,verticalArrangement = Arrangement.spacedBy(8.dp),contentPadding = PaddingValues(bottom = 8.dp)) {
+                items(state.messages,key = { it.readKey }) { message -> InboxRow(message,InboxPolicy.unread(message.notificationVersion,state.read[message.readKey]),false) { selectedKey = message.readKey } }
+            } else Surface(Modifier.fillMaxSize(),shape = RoundedCornerShape(18.dp),color = Color.White,border = BorderStroke(1.dp,Color(0xFFD9EAEC))) {
+                key(selected.readKey) { InboxDetails(selected,state.sessionKey,repository,Modifier.fillMaxSize()) }
             }
         }
     }
@@ -151,13 +150,24 @@ private fun symbol(kind: String) = when(kind) { "celebration" -> "🎉"; "lesson
 }
 
 @Composable private fun InboxDetails(message: InboxMessage, session: String?, repository: InboxRepository?, modifier: Modifier) {
+    // Physical placement stays consistent even when opened from an LTR host.
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+        Row(modifier.fillMaxSize().padding(14.dp),horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+            InboxMessageCopy(message,Modifier.weight(if(message.image != null) .6f else 1f).fillMaxHeight())
+            if(message.image != null) Box(Modifier.weight(.4f).fillMaxHeight(),contentAlignment = Alignment.Center) {
+                InboxPicture(message,session,repository,Modifier.fillMaxSize())
+            }
+        }
+    }
+}
+
+@Composable private fun InboxMessageCopy(message: InboxMessage, modifier: Modifier) {
     val context = LocalContext.current
     var linkFailed by remember(message.readKey) { mutableStateOf(false) }
-    Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(modifier.verticalScroll(rememberScrollState()),verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(symbol(message.kind) + " " + message.title,fontSize = 21.sp,fontWeight = FontWeight.Black,color = Color(0xFF2B566A))
         Text(message.dateLabel + if(message.scope == "personal") " · پیام شخصی" else "",style = MaterialTheme.typography.labelSmall,color = Color(0xFF8A9A9F))
         if(message.body.isNotEmpty()) Text(message.body,color = Color(0xFF425D6C),style = MaterialTheme.typography.bodyMedium)
-        if(message.image != null) InboxPicture(message,session,repository)
         message.buttons.forEach { button ->
             Button(onClick = {
                 linkFailed = false
@@ -171,14 +181,14 @@ private fun symbol(kind: String) = when(kind) { "celebration" -> "🎉"; "lesson
     }
 }
 
-@Composable private fun InboxPicture(message: InboxMessage, session: String?, repository: InboxRepository?) {
+@Composable private fun InboxPicture(message: InboxMessage, session: String?, repository: InboxRepository?, modifier: Modifier) {
     var bitmap by remember(message.readKey,message.image?.hash,session) { mutableStateOf<Bitmap?>(null) }
     var retry by remember(message.readKey) { mutableIntStateOf(0) }
     var loading by remember { mutableStateOf(true) }
     LaunchedEffect(message.readKey,message.image?.hash,session,retry) {
         loading = true; bitmap = repository?.bitmap(message,session); loading = false
     }
-    Surface(Modifier.fillMaxWidth().height(180.dp),shape = RoundedCornerShape(14.dp),color = Color(0xFFF0F6F7)) {
+    Surface(modifier,shape = RoundedCornerShape(14.dp),color = Color(0xFFF0F6F7)) {
         val image = bitmap
         if(image != null) Image(image.asImageBitmap(),"تصویر پیام",Modifier.fillMaxSize(),contentScale = ContentScale.Fit)
         else Column(Modifier.fillMaxSize(),horizontalAlignment = Alignment.CenterHorizontally,verticalArrangement = Arrangement.Center) {
@@ -194,5 +204,15 @@ private fun symbol(kind: String) = when(kind) { "celebration" -> "🎉"; "lesson
     LearnerDialogTheme {
         val message = InboxMessage("a",1,1,"یک خبر خوب برای برنامه‌نویس‌ها!","یک پروژهٔ تازه بساز و ایده‌هایت را به زندگی بیاور ✨","celebration",true,1,null,"۱۴۰۵/۰۸/۰۱",emptyList(),null,"public")
         InboxContent(InboxState(listOf(message,message.copy(id = "b",title = "پیام مخصوص تو",scope = "personal")),initialized = true),null,{},{},{})
+    }
+}
+
+@Preview(name = "جزئیات پیام · لنداسکیپ",widthDp = 900,heightDp = 420,locale = "fa",showBackground = true)
+@Preview(name = "جزئیات پیام · کوچک",widthDp = 640,heightDp = 320,locale = "fa",showBackground = true)
+@Composable private fun InboxDetailsPreview() {
+    LearnerDialogTheme {
+        val message = InboxMessage("preview",1,1,"یک خبر خوب برای برنامه‌نویس‌ها!","سلام! یک پروژهٔ تازه بساز و ایده‌هایت را به زندگی بیاور ✨\nاین پیام از طرف تیم اسکرچ برای تو فرستاده شده است.","celebration",true,1,null,"۱۴۰۵/۰۸/۰۱",
+            listOf(InboxButton("بیشتر بدان","https://behnamapp.ir")),InboxImage("","a".repeat(64),1,800,600),"public")
+        Surface(Modifier.fillMaxSize(),color = Color.White) { InboxDetails(message,null,null,Modifier.fillMaxSize()) }
     }
 }

@@ -25,7 +25,8 @@ data class LearnerProfile(val uuid: String, val name: String, val level: Int, va
     val nameBlocked: Boolean = false, val nameBlockedDays: Int = 0, val nameBlockReason: String? = null,
     val registered: Boolean = false, val username: String? = null, val googleLinked: Boolean = false, val googleLabel: String? = null,
     val supplementary: SupplementaryDetails = SupplementaryDetails(), val revision: Long = 0, val coins: Double? = null,
-    val avatarId: String = "default", val avatarImageUrl: String? = null, val avatarImageHash: String? = null, val avatarImageRevision: Long = 0) {
+    val avatarId: String = "default", val avatarImageUrl: String? = null, val avatarImageHash: String? = null, val avatarImageRevision: Long = 0,
+    val publicProfile: PublicProfileDetails = PublicProfileDetails()) {
     companion object {
         fun parse(json: JSONObject) = LearnerProfile(json.getString("uuid"), json.getString("display_name"),
             json.getInt("level"), json.getLong("watch_ms"), json.getDouble("xp_into_level"), json.getDouble("xp_for_next_level"),
@@ -46,7 +47,8 @@ data class LearnerProfile(val uuid: String, val name: String, val level: Int, va
                 extra.optString("gender").takeIf { it in SupplementaryPolicy.genders },
                 extra.optJSONArray("declined_fields")?.let { a -> (0 until a.length()).map { a.optString(it) }.filter { it in setOf("age", "province", "gender") }.toSet() } ?: emptySet()) } ?: SupplementaryDetails(), json.optLong("revision"),
             json.optDouble("coins").takeIf { json.optBoolean("wallet_available") && it.isFinite() && it >= 0 }, json.optString("avatar_id", "default"),
-            json.optString("avatar_image_url").takeIf { it.isNotBlank() && it != "null" }, json.optString("avatar_image_sha256").takeIf { AvatarImages.validHash(it) }, json.optLong("avatar_image_revision"))
+            json.optString("avatar_image_url").takeIf { it.isNotBlank() && it != "null" }, json.optString("avatar_image_sha256").takeIf { AvatarImages.validHash(it) }, json.optLong("avatar_image_revision"),
+            PublicProfileDetails.parse(json.optJSONObject("public_profile")))
     }
 }
 
@@ -456,6 +458,17 @@ class LearningRepository private constructor(context: Context) {
             }
         }
     }
+    internal suspend fun savePublicProfile(expectedUuid: String, version: Int, bio: String, links: Map<String, String>) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            if (identity.profile()?.uuid != expectedUuid) throw CourseFailure("حساب تغییر کرده؛ پروفایل را دوباره باز کن.", 409)
+            val secret = identity.secret()
+            val body = JSONObject().put("version", version).put("bio", bio).put("social_links", JSONObject(links))
+            val result = api.savePublicProfile(body, secret)
+            if (identity.secret() != secret || result.optString("uuid") != expectedUuid) throw CourseFailure("حساب تغییر کرده؛ پروفایل را دوباره باز کن.", 409)
+            store.saveProfile(LearningIdentity.KEY, result); mutable.value = store.profiles()
+        }
+    }
+
     suspend fun saveSupplementary(expectedUuid: String, details: SupplementaryDetails) = withContext(Dispatchers.IO) {
         mutex.withLock {
             if (identity.profile()?.uuid != expectedUuid) throw CourseFailure("حساب تغییر کرده؛ پروفایل را دوباره باز کن.", 409)

@@ -86,6 +86,11 @@ internal class LearningStore(context: Context) : SQLiteOpenHelper(context,
                 .put("age", details.age ?: JSONObject.NULL).put("province", details.province ?: JSONObject.NULL)
                 .put("gender", details.gender ?: JSONObject.NULL).put("declined_fields", org.json.JSONArray(details.declinedFields.toList())))
         }
+        if (old != null && old.uuid == next.uuid && old.publicProfile.version > next.publicProfile.version) {
+            readableDatabase.rawQuery("SELECT profile FROM accounts WHERE course=?", arrayOf(course)).use { cursor ->
+                if (cursor.moveToFirst()) JSONObject(cursor.getString(0)).optJSONObject("public_profile")?.let { value.put("public_profile", it) }
+            }
+        }
         val effective = LearnerProfile.parse(value)
         writableDatabase.execSQL("INSERT OR IGNORE INTO accounts(course) VALUES(?)", arrayOf(course))
         writableDatabase.update("accounts", ContentValues().apply {

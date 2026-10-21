@@ -68,6 +68,8 @@ import kotlin.math.ceil
     onLeaderboard: () -> Unit,
 ) {
     val config = LocalConfiguration.current
+    var publicEditor by remember(profile.uuid) { mutableStateOf(false) }
+    if (publicEditor) LearnerPublicProfileDialog(profile, LearningRepository.get(androidx.compose.ui.platform.LocalContext.current)) { publicEditor = false }
     val narrow = contentWidth <= 700
     val short = config.screenHeightDp <= 470 && config.screenWidthDp >= 780
     val avatar = if (narrow) 88.dp else 104.dp
@@ -97,6 +99,8 @@ import kotlin.math.ceil
                 ProfileAction("✨ راهنمای کسب امتیاز", font,
                     listOf(Color(0xFFFFE28B), Color(0xFFFFC34B)), Color(0xFF795117), onGuide)
                 ProfileAction("🛍 بازارچه", font, listOf(Color(0xFFAA7EF5), Color(0xFF8050D7)), Color.White, onMarketplace)
+                if (profile.publicProfile.available) ProfileAction(if (profile.level > 15) "✦ معرفی من" else "🔒 معرفی · سطح ۱۶", font,
+                    listOf(Color(0xFF39AFAB), Color(0xFF238B99)), Color.White, { publicEditor = true })
             }
             ReferenceProgress(profile, narrow)
         }

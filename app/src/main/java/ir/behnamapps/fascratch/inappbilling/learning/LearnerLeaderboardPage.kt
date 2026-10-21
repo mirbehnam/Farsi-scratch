@@ -114,7 +114,15 @@ import kotlinx.coroutines.launch
             }
             LearnerLevelBadge(learner.level, Modifier.size(48.dp), learner.avatarId, learner.imageUrl, learner.imageHash)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                Text(learner.name + if (own) " · تو" else "", fontWeight = FontWeight.Bold, color = Color(0xFF354772), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    val availableWidth = maxWidth
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Text(learner.name + if (own) " · تو" else "", modifier = if (learner.bio.isNotBlank() && availableWidth > 220.dp) Modifier.widthIn(max = availableWidth * .55f) else Modifier.weight(1f),
+                            fontWeight = FontWeight.Bold, color = Color(0xFF354772), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (learner.bio.isNotBlank() && availableWidth > 220.dp) Text("· " + learner.bio, Modifier.weight(1f), color = Color(0xFF77839B),
+                            style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
                 Text("سطح ${persianDisplay(learner.level.toString())} · ${persianDisplay(coinBalanceText(learner.xp))} XP", color = Color(0xFF7E89A4), style = MaterialTheme.typography.labelSmall)
             }
             Text("افتخارات ‹", color = Color(0xFF8770BC), style = MaterialTheme.typography.labelSmall)

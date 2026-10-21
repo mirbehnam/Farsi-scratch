@@ -3,12 +3,12 @@ package ir.behnamapps.fascratch.inappbilling.learning
 import org.json.JSONObject
 
 internal data class RankedLearner(val uuid: String, val name: String, val rank: Int, val level: Int, val xp: Double,
-    val avatarId: String, val imageUrl: String?, val imageHash: String?) {
+    val avatarId: String, val imageUrl: String?, val imageHash: String?, val bio: String = "") {
     companion object {
         fun parse(json: JSONObject) = RankedLearner(json.getString("uuid"), json.getString("display_name").take(100), json.getInt("rank").coerceAtLeast(1),
             json.getInt("level").coerceAtLeast(0), json.optDouble("xp", 0.0).takeIf { it.isFinite() && it >= 0 } ?: 0.0,
             json.optString("avatar_id", "default"), json.optString("image_url").takeUnless { it.isBlank() || it == "null" },
-            json.optString("image_sha256").takeIf { AvatarImages.validHash(it) })
+            json.optString("image_sha256").takeIf { AvatarImages.validHash(it) }, PublicProfilePolicy.text(json.optString("bio")))
     }
 }
 internal data class LeaderboardBoard(val viewer: String, val viewerRank: Int?, val total: Int, val top: List<RankedLearner>, val nearby: List<RankedLearner>) {
@@ -25,7 +25,8 @@ internal data class LeaderboardBoard(val viewer: String, val viewerRank: Int?, v
 internal data class ShowcaseAvatar(val id: String, val title: String, val equipped: Boolean, val url: String?, val hash: String?)
 internal data class ShowcaseTrophy(val id: String, val title: String, val imageUrl: String? = null, val imageHash: String? = null)
 internal data class ShowcaseStats(val watchMs: Long = 0, val codingMs: Long = 0, val completedLessons: Int = 0)
-internal data class LearnerShowcase(val learner: RankedLearner, val memberDays: Long, val avatars: List<ShowcaseAvatar>, val trophies: List<ShowcaseTrophy>, val stats: ShowcaseStats? = null) {
+internal data class LearnerShowcase(val learner: RankedLearner, val memberDays: Long, val avatars: List<ShowcaseAvatar>, val trophies: List<ShowcaseTrophy>, val stats: ShowcaseStats? = null,
+    val socialLinks: Map<String, String> = emptyMap()) {
     companion object {
         fun parse(json: JSONObject): LearnerShowcase {
             val images = json.optJSONArray("avatars")
@@ -40,7 +41,8 @@ internal data class LearnerShowcase(val learner: RankedLearner, val memberDays: 
                         it.optString("image_url").takeUnless { value -> value.isBlank() || value == "null" },
                         it.optString("image_sha256").takeIf(AvatarImages::validHash))
                 } },
-                json.optJSONObject("stats")?.let { ShowcaseStats(it.optLong("watch_ms").coerceAtLeast(0), it.optLong("coding_ms").coerceAtLeast(0), it.optInt("completed_lessons").coerceAtLeast(0)) })
+                json.optJSONObject("stats")?.let { ShowcaseStats(it.optLong("watch_ms").coerceAtLeast(0), it.optLong("coding_ms").coerceAtLeast(0), it.optInt("completed_lessons").coerceAtLeast(0)) },
+                PublicProfilePolicy.links(json.optJSONObject("social_links")))
         }
     }
 }

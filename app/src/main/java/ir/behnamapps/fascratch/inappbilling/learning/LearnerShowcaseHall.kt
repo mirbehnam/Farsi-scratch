@@ -113,6 +113,7 @@ private data class HallParticle(val x: Float, val y: Float, val radius: Float, v
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Column(Modifier.width(railWidth).fillMaxHeight().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 ShowcaseIdentity(data)
+                ShowcasePublicProfile(data)
                 val stats = listOf(
                     Triple("🎬", "تماشای آموزش", data.stats?.let { showcaseTime(it.watchMs) } ?: "—"),
                     Triple("🧩", "برنامه‌نویسی", data.stats?.let { showcaseTime(it.codingMs) } ?: "—"),

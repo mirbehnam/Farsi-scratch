@@ -346,8 +346,13 @@ fun HomeScreen(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
+                        .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
+                        .absolutePadding(left = 76.dp)
                         .padding(bottom = verticalPadding)
                 )
+                ir.behnamapps.fascratch.inbox.HomeInboxButton(Modifier.align(androidx.compose.ui.AbsoluteAlignment.BottomLeft)
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Left + WindowInsetsSides.Bottom))
+                    .absolutePadding(left = horizontalPadding,bottom = verticalPadding))
             }
         }
     }

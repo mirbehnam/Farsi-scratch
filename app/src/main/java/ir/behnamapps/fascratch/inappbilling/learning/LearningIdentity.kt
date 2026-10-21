@@ -41,6 +41,7 @@ class LearningIdentity private constructor(context: Context) {
             store.clearCurrentGrants(); PurchaseVault(app).revokeAll()
         }
         store.saveProfile(KEY, profile)
+        if (previous != profile.getString("uuid") || suppliedSecret != null) ir.behnamapps.fascratch.inbox.InboxRepository.identityChanged(app)
         mutableChanges.value += 1
         return true
     }
@@ -53,6 +54,7 @@ class LearningIdentity private constructor(context: Context) {
         val fresh = ByteArray(32).also { SecureRandom().nextBytes(it) }.joinToString("") { "%02x".format(it.toInt() and 255) }
         store.saveGrant(KEY, JSONObject().put("secret", fresh).put("requires_recovery", true))
         recoveryRequired = true
+        ir.behnamapps.fascratch.inbox.InboxRepository.identityChanged(app)
         mutableChanges.value += 1
         return true
     }

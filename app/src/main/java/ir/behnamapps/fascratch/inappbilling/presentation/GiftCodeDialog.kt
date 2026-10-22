@@ -11,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
@@ -23,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import ir.behnamapps.fascratch.inappbilling.learning.LearningRepository
+import ir.behnamapps.fascratch.inappbilling.learning.LearnerDialogWindowBounds
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
@@ -74,12 +76,13 @@ internal fun GiftCodeDialog(repository: LearningRepository, guest: Boolean, onRe
             else Text(if (result != null) "چه خوب!" else "دریافت هدیه", maxLines = 1)
         }
     }
-    // Insets are handled once by Compose, in the dialog's own edge-to-edge window.
-    Dialog(onDismissRequest = { if (!busy) onClose() }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+    Dialog(onDismissRequest = { if (!busy) onClose() }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = true)) {
+        // Use the same centered, bounded window as profile dialogs, including RTL devices.
+        LearnerDialogWindowBounds()
         val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
-        BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding().padding(horizontal = 16.dp, vertical = 8.dp), contentAlignment = Alignment.Center) {
+        BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding().padding(horizontal = 16.dp, vertical = 8.dp).clipToBounds(), contentAlignment = Alignment.Center) {
             val compact = keyboardVisible || maxHeight < 280.dp
-            Surface(Modifier.widthIn(max = if (compact) 760.dp else 620.dp).fillMaxWidth().heightIn(max = maxHeight), shape = RoundedCornerShape(24.dp), color = Color(0xFFF8FAF4)) {
+            Surface(Modifier.widthIn(max = if (compact) 760.dp else 620.dp).fillMaxWidth(.92f).heightIn(max = maxHeight), shape = RoundedCornerShape(24.dp), color = Color(0xFFF8FAF4)) {
                 // No weighted middle section: it could collapse the field to zero height in landscape.
                 Column(Modifier.verticalScroll(rememberScrollState()).padding(if (compact) 10.dp else 20.dp), verticalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 12.dp)) {
                     if (!compact || result != null) {

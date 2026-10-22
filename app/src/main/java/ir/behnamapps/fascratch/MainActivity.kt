@@ -1453,13 +1453,14 @@ private fun ScratchTextInputBar(
         mutableStateOf(
             TextFieldValue(
                 text = session.text,
-                selection = TextRange(session.selectionStart, session.selectionEnd)
+                selection = TextRange(session.text.length)
             )
         )
     }
 
     LaunchedEffect(session.id) {
         focusRequester.requestFocus()
+        onValueChange(value)
         keyboardController?.show()
     }
     LaunchedEffect(session.text, session.selectionStart, session.selectionEnd) {
@@ -1476,7 +1477,7 @@ private fun ScratchTextInputBar(
     }
 
     Surface(
-        modifier = Modifier.fillMaxWidth().height(52.dp),
+        modifier = Modifier.fillMaxWidth().height(56.dp),
         color = Color(0xFFF8F7FC),
         shape = RoundedCornerShape(14.dp),
         shadowElevation = 8.dp
@@ -1524,10 +1525,22 @@ private fun ScratchTextInputBar(
             )
             TextButton(
                 onClick = {
+                    value = TextFieldValue(text = "", selection = TextRange.Zero)
+                    onValueChange(value)
+                    focusRequester.requestFocus()
+                    keyboardController?.show()
+                },
+                enabled = value.text.isNotEmpty(),
+                modifier = Modifier.height(48.dp)
+            ) {
+                Text("پاک کردن")
+            }
+            TextButton(
+                onClick = {
                     keyboardController?.hide()
                     onDone()
                 },
-                modifier = Modifier.height(42.dp)
+                modifier = Modifier.height(48.dp)
             ) {
                 Text("تأیید", color = ScratchPurple, fontWeight = FontWeight.Bold)
             }

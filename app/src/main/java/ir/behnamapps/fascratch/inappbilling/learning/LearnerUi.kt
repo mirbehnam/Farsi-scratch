@@ -95,7 +95,7 @@ import kotlinx.coroutines.delay
     }
     LaunchedEffect(screenKey, resumed) {
         delayFinished = false
-        if (resumed) { delay(2_000); delayFinished = true }
+        if (resumed) { delay(500); delayFinished = true }
     }
     val visible = resumed && delayFinished && !profile?.uuid.isNullOrBlank()
     val opacity by androidx.compose.animation.core.animateFloatAsState(

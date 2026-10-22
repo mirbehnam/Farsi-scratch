@@ -37,7 +37,7 @@ internal class QuickLessonData(context: Context) : QuickLessonSource {
             ?.takeIf { it.expiresAtMillis > System.currentTimeMillis() + 60_000 }?.let { return it }
         // Works for a valid guest account too; never launches store inventory or rotates accounts by receipt.
         return api.accountAccess(course, force).also { access ->
-            if (profile?.registered != true) withContext(Dispatchers.IO) { vault.saveAccess(access) }
+            if (profile?.registered != true && profile?.courses?.none { it.uuid == course.id && it.accessSource == "gift" } != false) withContext(Dispatchers.IO) { vault.saveAccess(access) }
         }
     }
 

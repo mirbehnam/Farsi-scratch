@@ -33,7 +33,7 @@ class LearningIdentity private constructor(context: Context) {
         if (previous != null && previous != profile.getString("uuid") && suppliedSecret == null) return false
         val nextSecret = suppliedSecret ?: secret()
         val restored = profile.optBoolean("registered") || profile.optJSONArray("courses")?.let { courses ->
-            (0 until courses.length()).any { courses.getJSONObject(it).optBoolean("purchased") && courses.getJSONObject(it).optBoolean("access_enabled") }
+            (0 until courses.length()).any { courses.getJSONObject(it).optBoolean("access_enabled") }
         } == true
         recoveryRequired = requiresRecovery() && !restored
         store.saveGrant(KEY, JSONObject().put("secret", nextSecret).put("requires_recovery", recoveryRequired))

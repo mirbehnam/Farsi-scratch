@@ -49,6 +49,7 @@ internal fun TrainingScreen(state: TrainingState, controller: TrainingController
     }
     var pendingPurchase by remember { mutableStateOf<Pair<Course, Boolean>?>(null) }
     var showProfile by remember { mutableStateOf(false) }
+    var showGift by remember { mutableStateOf(false) }
     val learning = controller.learning
     val profiles by learning?.profiles?.collectAsState() ?: remember { mutableStateOf(emptyMap<String, LearnerProfile>()) }
     val selectedProfile = profiles[LearningIdentity.KEY]
@@ -60,7 +61,10 @@ internal fun TrainingScreen(state: TrainingState, controller: TrainingController
         }, { controller.download(it) },
         controller::cancelDownload, onPlay, controller::refreshPrices, controller::catalogReady, controller::catalogFailed,
         learnerHeader = { DelayedLearnerChip(selectedProfile, state.course?.id ?: "catalog", badgeSize = 64.dp) { learning?.refreshProfile(); showProfile = true } },
-        learnerCelebration = { if (state.course != null && selectedProfile != null && learning != null) LevelCelebration(state.course.id, selectedProfile, learning) })
+        learnerCelebration = { if (state.course != null && selectedProfile != null && learning != null) LevelCelebration(state.course.id, selectedProfile, learning) },
+        onGift = { showGift = true })
+    if (showGift && learning != null) GiftCodeDialog(learning, selectedProfile?.registered != true,
+        onRedeemed = { state.course?.let { controller.select(it) } ?: controller.load() }, onClose = { showGift = false })
     if (showProfile && selectedProfile != null && learning != null)
         LearnerDialog(state.course, selectedProfile, learning) { showProfile = false }
     pendingPurchase?.let { pending ->
@@ -86,14 +90,14 @@ internal fun TrainingContent(
     onPurchase: (Course, Boolean) -> Unit, onDownload: (Lesson) -> Unit,
     onCancelDownload: () -> Unit, onPlay: (Lesson) -> Unit, onRefreshPrices: () -> Unit = onRefresh,
     onCatalogReady: (CatalogLayout) -> Unit = {}, onCatalogFailed: (CatalogLayout) -> Unit = {},
-    learnerHeader: @Composable () -> Unit = {}, learnerCelebration: @Composable () -> Unit = {}
+    learnerHeader: @Composable () -> Unit = {}, learnerCelebration: @Composable () -> Unit = {}, onGift: () -> Unit = {}
 ) {
     var filter by rememberSaveable(state.course?.id) { mutableStateOf(LessonFilter.ALL) }
     var optionsExpanded by remember(state.course?.id) { mutableStateOf(false) }
     val canBuy = BuildConfig.BILLING_PROVIDER != "website"
     var failedLayout by remember { mutableStateOf<String?>(null) }
     val courseOptions: @Composable () -> Unit = {
-        CourseOptions(state, optionsExpanded, { optionsExpanded = it }, onRefresh, onRefreshPrices, onPurchase)
+        CourseOptions(state, optionsExpanded, { optionsExpanded = it }, onRefresh, onRefreshPrices, onPurchase, onGift)
     }
     Column(Modifier.fillMaxSize().background(Paper).windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 16.dp)) {
         Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -112,6 +116,10 @@ internal fun TrainingContent(
             if (state.course == null) courseOptions()
         }
         learnerCelebration()
+        state.course?.id?.let { state.giftAccess[it] }?.let { until ->
+            Text("🎁 فعال با کد هدیه · تا " + giftExpiryLabel(until), color = PreviewGreen,
+                style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(bottom = 6.dp))
+        }
         // Bound long server messages so retry/details remain reachable on short displays.
         state.message?.let { message ->
             Surface(Modifier.fillMaxWidth().padding(bottom = 8.dp), shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.errorContainer) {
@@ -176,7 +184,7 @@ private fun CourseCard(course: Course, state: TrainingState, onSelect: (Course) 
             InstructorName(course)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Column(Modifier.weight(1f)) {
-                    if (owned) Text("✓ خریداری شده", color = PreviewGreen, fontWeight = FontWeight.Bold)
+                    if (owned) Text(if (course.id in state.giftAccess) "🎁 فعال با کد هدیه" else "✓ خریداری شده", color = PreviewGreen, fontWeight = FontWeight.Bold)
                     else CourseOfferPrice(course, state.prices[course.id],
                         if (BuildConfig.BILLING_PROVIDER == "website") "نسخهٔ وب‌سایت" else if (course.id in state.priceErrors) "قیمت دریافت نشد" else "قیمت در حال دریافت")
                 }
@@ -205,12 +213,13 @@ private fun CourseMetadata(course: Course) {
 
 @Composable
 private fun CourseOptions(state: TrainingState, expanded: Boolean, onExpanded: (Boolean) -> Unit,
-    onRefresh: () -> Unit, onRefreshPrices: () -> Unit, onPurchase: (Course, Boolean) -> Unit) {
+    onRefresh: () -> Unit, onRefreshPrices: () -> Unit, onPurchase: (Course, Boolean) -> Unit, onGift: () -> Unit) {
     Box {
         IconButton(onClick = { onExpanded(true) }, modifier = Modifier.semantics { contentDescription = "گزینه‌های بیشتر" }) {
             Text("⋮", fontSize = 28.sp, color = Ink)
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { onExpanded(false) }) {
+            DropdownMenuItem(text = { Text("🎁  کد هدیه") }, enabled = !state.busy, onClick = { onExpanded(false); onGift() })
             DropdownMenuItem(text = { Text("تازه‌سازی") }, enabled = !state.busy, onClick = { onExpanded(false); onRefresh() })
             if (BuildConfig.BILLING_PROVIDER != "website") {
                 DropdownMenuItem(text = { Text("تازه‌سازی قیمت") }, enabled = !state.busy, onClick = { onExpanded(false); onRefreshPrices() })

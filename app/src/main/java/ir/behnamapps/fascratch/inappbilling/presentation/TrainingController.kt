@@ -20,7 +20,7 @@ data class TrainingState(
     val courses: List<Course> = emptyList(), val purchasedIds: Set<String> = emptySet(), val prices: Map<String, String> = emptyMap(),
     val loadingPrices: Set<String> = emptySet(), val priceErrors: Set<String> = emptySet(),
     val catalogLayout: CatalogLayout? = null, val catalogCacheLoaded: Boolean = true,
-    val storeHelp: String? = null
+    val storeHelp: String? = null, val giftAccess: Map<String, Long> = emptyMap()
 )
 
 /** Catalog and per-course access stay separate. Store outages never block free previews. */
@@ -72,7 +72,8 @@ class TrainingController(
     private fun ownsCourse(id: String): Boolean {
         if (learning?.requiresRecovery() == true) return false
         val profile = learning?.profiles?.value?.get(ir.behnamapps.fascratch.inappbilling.learning.LearningIdentity.KEY)
-        return if (profile?.registered == true) profile.courses.any { it.uuid == id && it.purchased && it.enabled } else vault.wasVerified(id)
+        if (profile?.courses?.any { it.uuid == id && it.canAccess() } == true) return true
+        return if (profile?.registered == true) false else vault.wasVerified(id)
     }
 
     init {
@@ -80,6 +81,8 @@ class TrainingController(
             learning?.profiles?.collect {
                 if (learning.requiresRecovery()) cancelDownload()
                 mutable.update { current -> current.copy(purchasedIds = current.courses.filter { ownsCourse(it.id) }.map { it.id }.toSet(),
+                    giftAccess = it[ir.behnamapps.fascratch.inappbilling.learning.LearningIdentity.KEY]?.courses.orEmpty()
+                        .filter { c -> c.accessSource == "gift" && c.canAccess() }.associate { c -> c.uuid to c.accessUntilMs!! },
                     purchased = current.course?.let { ownsCourse(it.id) } ?: false,
                     message = if (learning.requiresRecovery()) "نشست حساب پایان یافته؛ دوباره وارد حساب شو یا خرید را بازیابی کن. فایل‌هایت محفوظ هستند." else current.message) }
             }
@@ -155,8 +158,9 @@ class TrainingController(
 
     private fun updateAccess(course: Course, enabled: Boolean) {
         if (enabled) learning?.prepare(course)
-        mutable.update { it.copy(purchasedIds = if (enabled) it.purchasedIds + course.id else it.purchasedIds - course.id,
-            purchased = if (it.course?.id == course.id) enabled else it.purchased) }
+        val allowed = enabled || ownsCourse(course.id)
+        mutable.update { it.copy(purchasedIds = if (allowed) it.purchasedIds + course.id else it.purchasedIds - course.id,
+            purchased = if (it.course?.id == course.id) allowed else it.purchased) }
     }
 
     // Serial SDK access prevents competing inventory/payment callbacks. No global UI/download lock.
@@ -171,6 +175,7 @@ class TrainingController(
             for (course in courses) {
                 if (learning?.requiresRecovery() == true) break
                 if (pauseStoreSync) break
+                if (learning?.profiles?.value?.get(ir.behnamapps.fascratch.inappbilling.learning.LearningIdentity.KEY)?.courses?.any { it.uuid == course.id && it.accessSource == "gift" && it.canAccess() } == true) continue
                 // An explicitly signed-in account is authoritative. Automatic inventory must not switch it.
                 if (learning?.profiles?.value?.get(ir.behnamapps.fascratch.inappbilling.learning.LearningIdentity.KEY)?.registered == true) continue
                 try {
@@ -249,7 +254,8 @@ class TrainingController(
 
     private suspend fun access(course: Course, force: Boolean = false): CourseAccess {
         if (learning?.requiresRecovery() == true) throw CourseFailure("نشست پایان یافته؛ وارد حساب شو یا خرید را بازیابی کن.")
-        if (learning?.profiles?.value?.get(ir.behnamapps.fascratch.inappbilling.learning.LearningIdentity.KEY)?.registered == true)
+        val profile = learning?.profiles?.value?.get(ir.behnamapps.fascratch.inappbilling.learning.LearningIdentity.KEY)
+        if (profile?.registered == true || profile?.courses?.any { it.uuid == course.id && it.accessSource == "gift" && it.canAccess() } == true)
             return api.accountAccess(course, force)
         val saved = vault.access(course.id)
         if (!force && saved != null && saved.expiresAtMillis > System.currentTimeMillis() + 60_000) return saved

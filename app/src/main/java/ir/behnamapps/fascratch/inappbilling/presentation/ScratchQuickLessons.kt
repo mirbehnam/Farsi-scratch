@@ -47,7 +47,7 @@ internal fun ScratchQuickLessonsShortcut(activity: ComponentActivity, onVisibili
     val learning = remember(app) { LearningRepository.get(app) }
     val profiles by learning.profiles.collectAsState()
     val profile = profiles[LearningIdentity.KEY]
-    val owned = profile?.courses.orEmpty().filter { it.purchased && it.enabled }.map { it.uuid }.toSet()
+    val owned = profile?.courses.orEmpty().filter { it.canAccess() }.map { it.uuid }.toSet()
     val eligible = QuickLessonPolicy.shortcutVisible(profile?.enabled == true, learning.requiresRecovery(), owned)
     var session by remember { mutableStateOf<QuickLessonsController?>(null) }
     var owner by remember { mutableStateOf<String?>(null) }
@@ -75,7 +75,7 @@ internal fun ScratchQuickLessonsShortcut(activity: ComponentActivity, onVisibili
                     val controller = QuickLessonsController({ QuickLessonData(app) }, owns = { courseId ->
                         val actual = learning.profiles.value[LearningIdentity.KEY]
                         actual?.uuid == accountId && actual.enabled && !learning.requiresRecovery() &&
-                            actual.courses.any { it.uuid == courseId && it.purchased && it.enabled }
+                            actual.courses.any { it.uuid == courseId && it.canAccess() }
                     }, prepareWatch = { learning.prepare(it) })
                     session = controller; notify(true)
                     if (ClientCommands.state.value.blockedMessage == null) controller.load()

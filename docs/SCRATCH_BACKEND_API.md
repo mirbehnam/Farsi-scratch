@@ -1,5 +1,15 @@
 # قرارداد API بک‌اند دوره‌های اسکرچ فارسی
 
+## کد هدیه
+
+`POST /scratch/v1/gift-codes/redeem` با هدر نشست `X-Scratch-Account` و بدنه `{"code":"HELLO-123"}`. پاسخ `data` شامل `awarded`، `redemption_uuid`، `type` (`coins`، `xp`، `course`)، `amount`، `course_uuid`، `access_until` و `profile` است. سکه و XP مستقل‌اند؛ تکرار دریافت پاداش تازه نمی‌دهد. حساب مهمان نیز مجاز است.
+
+برای خطای ۴۲۲، `error.code` تعیین‌کننده پیام و گرافیک است: `gift_expired`، `gift_exhausted`، `gift_deleted`، `gift_disabled`، `gift_not_started`، `gift_not_found`، `gift_course_owned`، `gift_not_better` و `gift_course_unavailable`. خطای شبکه یا ۴۲۹ نباید به عنوان «کد نامعتبر» نمایش داده شود. گرافیک محلی Compose است و دانلود ندارد.
+
+دوره هدیه در پروفایل با `access_source=gift` و `access_until` مشخص است؛ `purchased` همچنان مخصوص خرید واقعی است. حتی مهمان برای این دوره از `accounts/auth/course-access` استفاده می‌کند و دسترسی را در vault خرید دائمی ثبت نمی‌کند. زمان انقضا محلی بررسی می‌شود؛ تعلیق و حذف مدیر پس از همگام‌سازی اعمال می‌شوند. فایل‌های دانلودشده حذف نمی‌شوند. ثبت زمان درس از همان grant یادگیری استفاده می‌کند که به دریافت هدیه متصل و حداکثر تا پایان دسترسی معتبر است.
+
+نیازمند مایگریشن اسکرچ `2026_10_22_000040_create_gift_codes` در سرور است. سقف پیش‌فرض ۵ تلاش برای حساب و ۳۰ برای IP در دقیقه، قابل تنظیم در پنل امنیت است.
+
 ## ارتقای تأیید جایزهٔ ادیوری
 
 شرح کامل در [تبلیغ جایزه‌ای](SCRATCH_REWARDED_ADS.md) است. پاسخ `ads/reserve` اکنون `user_id` تصادفی مخصوص همان نوبت دارد؛ باید پیش از بارگذاری تبلیغ به `Adivery.setUserId` داده شود، نه UUID حساب یا secret ورود. `ads/complete` در انتظار تأیید با `pending:true` و پس از پرداخت با `confirmed:true` پاسخ می‌دهد. `verification_source` منبع پرداخت (`adivery` یا `timeout`) و `verified_by_adivery` دریافت webhook واقعی را مشخص می‌کنند. callback ادیوری و پرداخت جایگزین پیش‌فرض دوثانیه‌ای از یک سهمیهٔ سروری استفاده می‌کنند. هیچ کلید محرمانهٔ webhook در کلاینت وجود ندارد. این نسخه به مایگریشن ۲۵ و تنظیم کلید callback در سرور نیاز دارد؛ URL نهایی در پنل ادمین مأموریت‌ها نمایش داده می‌شود.

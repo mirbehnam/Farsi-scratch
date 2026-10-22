@@ -75,6 +75,9 @@ class TrainingActivity : ComponentActivity() {
                     LaunchedEffect(commands.blockedMessage) {
                         if (commands.blockedMessage != null) { playing = null; controller.cancelDownload() }
                     }
+                    LaunchedEffect(state.purchased, playing?.lessonId) {
+                        if (playing?.subtitleLesson?.isPreview == false && !state.purchased) playing = null
+                    }
                     LaunchedEffect(commands.cacheEpoch) {
                         if (commands.cacheEpoch != observedCacheEpoch) {
                             observedCacheEpoch = commands.cacheEpoch

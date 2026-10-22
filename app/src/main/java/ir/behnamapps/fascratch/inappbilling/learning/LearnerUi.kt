@@ -226,17 +226,20 @@ import kotlinx.coroutines.delay
                         Spacer(Modifier.height(12.dp))
                         NameRestrictionNotice(profile)
                     }
-                    val purchased = profile.courses.filter { it.purchased }
+                    val purchased = profile.courses.filter { it.purchased || it.accessSource == "gift" }
                     if (purchased.isNotEmpty()) {
                         TextButton(onClick = { showCourses = !showCourses }) {
-                            Text("دوره‌های خریداری‌شده " + if (showCourses) "⌃" else "⌄", color = Color(0xFF505DC0))
+                            Text("دوره‌های من " + if (showCourses) "⌃" else "⌄", color = Color(0xFF505DC0))
                         }
                         if (showCourses) purchased.forEach { item ->
                             Surface(Modifier.fillMaxWidth().padding(bottom = 6.dp), shape = RoundedCornerShape(14.dp), color = Color(0xFFEAF7E7)) {
                                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Text("✓ " + item.title, Modifier.weight(1f), fontWeight = FontWeight.Bold, color = Color(0xFF407D48))
-                                    Text(persianDisplay(learningDuration(item.watchMs)) + " مشاهده" +
-                                        if (item.enabled) "" else " · دسترسی غیرفعال", style = MaterialTheme.typography.bodySmall)
+                                    Column {
+                                        Text(persianDisplay(learningDuration(item.watchMs)) + " مشاهده" +
+                                            if (item.canAccess()) "" else " · دسترسی غیرفعال", style = MaterialTheme.typography.bodySmall)
+                                        if (item.accessSource == "gift") Text("🎁 کد هدیه · تا " + (item.accessUntilMs?.let { ir.behnamapps.fascratch.inappbilling.presentation.giftExpiryLabel(it) } ?: "—"), style = MaterialTheme.typography.labelSmall)
+                                    }
                                 }
                             }
                         }

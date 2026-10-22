@@ -93,6 +93,10 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
                         ?: json?.optJSONObject("error")?.optLong("retry_after")?.takeIf { it > 0 })
                 throw CourseFailure(when {
                     trafficMessage != null -> trafficMessage
+                    path == "gift-codes/redeem" && code.startsWith("gift_") -> json?.optJSONObject("error")?.optString("message")?.takeIf { it.isNotBlank() } ?: "این هدیه در دسترس نیست."
+                    path == "gift-codes/redeem" && code == "validation_failed" -> json?.optJSONObject("error")?.optJSONObject("fields")?.optJSONArray("code")?.optString(0) ?: "کد هدیه معتبر نیست."
+                    path == "gift-codes/redeem" && status == 503 -> "دریافت هدیه فعلاً در دسترس نیست؛ کمی بعد تلاش کن."
+                    path == "gift-codes/redeem" && status == 401 -> "حساب را تازه‌سازی کن و دوباره کد را وارد کن."
                     path.startsWith("accounts/auth/google/native/") && status == 422 -> "ورود گوگل تأیید نشد؛ دوباره تلاش کن یا با نام کاربری وارد شو."
                     path.startsWith("accounts/auth/google/native/") && status == 410 -> "زمان ورود گوگل تمام شد؛ دوباره تلاش کن."
                     path.startsWith("accounts/auth/") && code == "validation_failed" ->
@@ -213,6 +217,7 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
         request("learning/$path", token, body).getJSONObject("data")
 
     suspend fun auth(path: String, body: JSONObject? = null): JSONObject = request("accounts/auth/$path", body = body).getJSONObject("data")
+    suspend fun redeemGift(code: String, session: String): JSONObject = request("gift-codes/redeem", body = JSONObject().put("code", code.trim()), accountSecret = session).getJSONObject("data")
     suspend fun saveSupplementary(body: JSONObject, session: String): JSONObject =
         request("learning/profile/supplementary", body = body, accountSecret = session).getJSONObject("data")
     suspend fun savePublicProfile(body: JSONObject, session: String): JSONObject =

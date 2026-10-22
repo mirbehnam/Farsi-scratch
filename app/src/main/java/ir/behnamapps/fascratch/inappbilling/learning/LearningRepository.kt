@@ -13,12 +13,17 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
 
-data class LearnerCourse(val uuid: String, val title: String, val watchMs: Long, val purchased: Boolean, val enabled: Boolean)
+data class LearnerCourse(val uuid: String, val title: String, val watchMs: Long, val purchased: Boolean, val enabled: Boolean,
+    val accessSource: String? = null, val accessUntilMs: Long? = null) {
+    fun canAccess(now: Long = System.currentTimeMillis()): Boolean = enabled &&
+        (if (accessSource == "gift") accessUntilMs != null && now < accessUntilMs else purchased)
+}
 data class LearnerProfile(val uuid: String, val name: String, val level: Int, val watchMs: Long,
     val xpIntoLevel: Double, val xpForNext: Double, val rank: Int?, val enabled: Boolean,
     val nameSet: Boolean = false, val nameChangesLeft: Int = 3, val courses: List<LearnerCourse> = emptyList(), val codingMs: Long = 0, val fullName: String? = null,
@@ -34,7 +39,9 @@ data class LearnerProfile(val uuid: String, val name: String, val level: Int, va
             json.optJSONObject("name_policy")?.optBoolean("is_set") ?: (json.optString("display_name") != "هنرجو"),
             json.optJSONObject("name_policy")?.optInt("remaining_changes", 3) ?: 3,
             json.optJSONArray("courses")?.let { rows -> (0 until rows.length()).map { i -> rows.getJSONObject(i).let {
-                LearnerCourse(it.getString("uuid"), it.getString("title"), it.optLong("watch_ms"), it.optBoolean("purchased"), it.optBoolean("access_enabled"))
+                LearnerCourse(it.getString("uuid"), it.getString("title"), it.optLong("watch_ms"), it.optBoolean("purchased"), it.optBoolean("access_enabled"),
+                    it.optString("access_source").takeUnless { source -> source.isBlank() || source == "null" },
+                    runCatching { java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", java.util.Locale.US).parse(it.getString("access_until"))?.time }.getOrNull())
             } } } ?: emptyList(), json.optLong("coding_ms"), json.optString("full_name").takeUnless { it.isBlank() || it == "null" },
             json.optJSONObject("name_moderation")?.optBoolean("is_blocked") ?: false,
             (json.optJSONObject("name_moderation")?.optInt("remaining_days") ?: 0).coerceAtLeast(0),
@@ -105,6 +112,19 @@ class LearningRepository private constructor(context: Context) {
             else "ثبت پیشرفت انجام نشد؛ اتصال را بررسی کنید. اطلاعات ذخیره‌شده برای ارسال مجدد حفظ می‌شود."
     }
     init {
+        // One local timer per nearest gift expiry, not a network poll or a per-second loop.
+        scope.launch {
+            mutable.collectLatest { snapshot ->
+                val expiry = snapshot.values.flatMap { it.courses }.filter { it.enabled && it.accessSource == "gift" }
+                    .mapNotNull { it.accessUntilMs }.minOrNull() ?: return@collectLatest
+                delay((expiry - System.currentTimeMillis()).coerceAtLeast(1L))
+                mutex.withLock {
+                    mutable.value = mutable.value.mapValues { (_, profile) -> profile.copy(courses = profile.courses.map { course ->
+                        if (course.accessSource == "gift" && !course.canAccess()) course.copy(enabled = false) else course
+                    }) }
+                }
+            }
+        }
         scope.launch { identity.changes.collect { mutex.withLock { mutable.value = store.profiles() } } }
         scope.launch { mutex.withLock { mutable.value = store.profiles() }; if (store.pending().isNotEmpty()) schedule() }
         // Only monitor while an Activity is resumed. Offline/network failures retain cached access.
@@ -163,7 +183,7 @@ class LearningRepository private constructor(context: Context) {
 
     private suspend fun access(course: Course, force: Boolean = false): String {
         if (requiresRecovery()) throw CourseFailure("نشست قبلی پایان یافته؛ وارد حساب شو یا خرید را بازیابی کن.")
-        if (identity.profile()?.registered == true) return api.accountAccess(course, force).token
+        if (identity.profile()?.registered == true || identity.profile()?.courses?.any { it.uuid == course.id && it.accessSource == "gift" && it.canAccess() } == true) return api.accountAccess(course, force).token
         val vault = PurchaseVault(app)
         require(vault.wasVerified(course.id))
         val current = vault.access(course.id)
@@ -230,7 +250,8 @@ class LearningRepository private constructor(context: Context) {
     private fun ownsCourse(id: String): Boolean {
         if (requiresRecovery()) return false
         val profile = identity.profile()
-        return if (profile?.registered == true) profile.courses.any { it.uuid == id && it.purchased && it.enabled }
+        if (profile?.courses?.any { it.uuid == id && it.canAccess() } == true) return true
+        return if (profile?.registered == true) false
             else PurchaseVault(app).wasVerified(id)
     }
     internal fun retryPreparation(course: String, lesson: Lesson) {
@@ -262,6 +283,19 @@ class LearningRepository private constructor(context: Context) {
             val result = api.learning("profile", body = JSONObject().put("display_name", value.trim())
                 .put("full_name", fullName?.trim()?.takeIf { it.isNotEmpty() } ?: JSONObject.NULL))
             store.saveProfile(LearningIdentity.KEY, result); mutable.value = store.profiles()
+        }
+    }
+    suspend fun redeemGift(code: String): JSONObject = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            api.account()
+            val session = identity.secret()
+            val result = api.redeemGift(code, session)
+            require(identity.accept(JSONObject().put("profile", result.getJSONObject("profile")), session)) { "حساب تغییر کرده؛ دوباره بررسی کن." }
+            mutable.value = store.profiles()
+            result.optString("course_uuid").takeIf { it.isNotBlank() && it != "null" }?.let { courseId ->
+                knownCourses[courseId]?.let { prepare(it, forceGrant = true) }
+            }
+            result
         }
     }
     suspend fun authOptions(): JSONObject = api.auth("options")

@@ -505,12 +505,12 @@ class MainActivity : ComponentActivity() {
         activeScratchWebView?.evaluateJavascript(script, null)
     }
 
-    fun finishScratchTextInput() {
+    fun finishScratchTextInput(submit: Boolean = false) {
         val session = scratchTextInputSession ?: return
         scratchTextInputSession = null
         val script = """
             window.__farsiScratchNativeInput &&
-                window.__farsiScratchNativeInput.finish(${JSONObject.quote(session.id)});
+                window.__farsiScratchNativeInput.finish(${JSONObject.quote(session.id)}, $submit);
         """.trimIndent()
         activeScratchWebView?.evaluateJavascript(script, null)
     }
@@ -1289,7 +1289,8 @@ private fun ScratchScreen(activity: MainActivity, onQuickLessonsVisibility: (Boo
                 ScratchTextInputBar(
                     session = session,
                     onValueChange = { activity.updateScratchTextInput(session.id, it) },
-                    onDone = activity::finishScratchTextInput
+                    onDone = { activity.finishScratchTextInput(submit = true) },
+                    onDismiss = { activity.finishScratchTextInput() }
                 )
             }
         }
@@ -1445,7 +1446,8 @@ private fun ScratchKeyButton(
 private fun ScratchTextInputBar(
     session: ScratchTextInputSession,
     onValueChange: (TextFieldValue) -> Unit,
-    onDone: () -> Unit
+    onDone: () -> Unit,
+    onDismiss: () -> Unit
 ) {
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -1473,7 +1475,7 @@ private fun ScratchTextInputBar(
     }
     BackHandler {
         keyboardController?.hide()
-        onDone()
+        onDismiss()
     }
 
     Surface(

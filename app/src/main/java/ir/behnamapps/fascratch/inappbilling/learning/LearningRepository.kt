@@ -313,6 +313,18 @@ class LearningRepository private constructor(context: Context) {
         require(identity.secret() == secret && identity.profile()?.uuid == expectedUuid)
         LearnerShowcase.parse(json).also { require(it.learner.uuid == targetUuid) }
     }
+    internal suspend fun recordShowcaseVisit(expectedUuid: String, targetUuid: String) = withContext(Dispatchers.IO) {
+        if (expectedUuid == targetUuid) return@withContext
+        mutex.withLock {
+            require(identity.profile()?.uuid == expectedUuid && targetUuid.matches(Regex("[a-fA-F0-9-]{36}")))
+            val known = mutableMissions.value?.takeIf { it.uuid == expectedUuid }?.items?.firstOrNull { it.id == "showcase_10" }
+            if (known?.status == "claimed" || known?.status == "ready") return@withLock
+            val secret = identity.secret()
+            val result = api.showcaseVisit(targetUuid, secret)
+            require(identity.secret() == secret && identity.profile()?.uuid == expectedUuid)
+            acceptMissions(result, expectedUuid)
+        }
+    }
     private val mutableMarketplace = MutableStateFlow<AvatarCatalog?>(null)
     internal val marketplace = mutableMarketplace.asStateFlow()
 

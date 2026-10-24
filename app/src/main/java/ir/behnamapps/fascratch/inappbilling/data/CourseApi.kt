@@ -228,6 +228,9 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
     suspend fun leaderboard(path: String, session: String): JSONObject =
         request("learning/leaderboard" + if (path.isEmpty()) "" else "/$path", accountSecret = session).getJSONObject("data")
 
+    suspend fun showcaseVisit(target: String, session: String): JSONObject =
+        request("learning/leaderboard/$target/visit", body = JSONObject(), accountSecret = session).getJSONObject("data")
+
     suspend fun missions(path: String, session: String, body: JSONObject? = null): JSONObject =
         request("learning/missions" + if (path.isEmpty()) "" else "/$path", body = body, accountSecret = session).getJSONObject("data")
 

@@ -144,6 +144,14 @@ import kotlinx.coroutines.launch
         finally { loading = false }
     }
     LaunchedEffect(target) { refresh() }
+    // One background POST after successful display; fetching or listing players earns nothing.
+    LaunchedEffect(viewer, data?.learner?.uuid) {
+        if (data?.learner?.uuid == target && viewer != target) {
+            try { repository.recordShowcaseVisit(viewer, target) }
+            catch (e: CancellationException) { throw e }
+            catch (_: Exception) { /* A later visit can retry; never interrupt browsing the hall. */ }
+        }
+    }
     LaunchedEffect(profiles[LearningIdentity.KEY]?.uuid) { if (profiles[LearningIdentity.KEY]?.uuid != viewer) onClose() }
     ShowcaseHallWindow(onClose) {
         Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

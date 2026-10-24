@@ -244,7 +244,7 @@ internal fun LearnerMissionsDialog(profile: LearnerProfile, repository: Learning
 private fun MissionCard(item: MissionItem, busy: Boolean, enabled: Boolean, modifier: Modifier = Modifier,
     onInfo: () -> Unit = {}, onReview: () -> Unit = {}, onClaim: () -> Unit) {
     val claimed = item.status == "claimed"
-    val icon = when (item.id) { "avatars_8" -> "🛠️"; "daily" -> "☀️"; "first_code" -> "🚀"; "coding_30", "coding_5h", "coding_15h" -> "🧩"; "coding_week", "coding_month" -> "🔥"; "store_review" -> "⭐"; "saved_project" -> "💾"; "details" -> "🎒"; else -> "🎬" }
+    val icon = when (item.id) { "showcase_10" -> "🏛️"; "avatars_8" -> "🛠️"; "daily" -> "☀️"; "first_code" -> "🚀"; "coding_30", "coding_5h", "coding_15h" -> "🧩"; "coding_week", "coding_month" -> "🔥"; "store_review" -> "⭐"; "saved_project" -> "💾"; "details" -> "🎒"; else -> "🎬" }
     Surface(modifier, shape = RoundedCornerShape(18.dp), color = if (claimed) Color(0xFFF0F6EE) else Color.White,
         border = BorderStroke(if (item.ready) 2.dp else 1.dp, if (item.ready) Color(0xFFE7B442) else Color(0xFFE5DFD2)), shadowElevation = 2.dp) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -274,6 +274,7 @@ private fun MissionCard(item: MissionItem, busy: Boolean, enabled: Boolean, modi
                         "coding_days" -> item.dayCaption
                         "lessons" -> "${item.progress} از ${item.target} قسمت"
                         "avatars" -> "${item.progress} از ${item.target} آیکون خریداری‌شده"
+                        "showcase_visits" -> "${item.progress} از ${item.target} تالار متفاوت"
                         "review_ms" -> if (item.action == "review") "یک نظر و امتیاز برای ما" else if (claimed) "ممنون از همراهی‌ات" else "جایزه پس از ۱۰ ثانیه"
                         else -> if (item.fraction >= 1f) "تکمیل شد" else "منتظر اولین قدم تو"
                     }

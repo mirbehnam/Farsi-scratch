@@ -18,4 +18,14 @@ class MissionGridOrderTest {
     @Test fun disabledAdsLeaveNoBlankCellOrDedicatedRow() {
         assertEquals(listOf("daily"), MissionBoard("account", true, listOf(task)).gridEntries.map { it.key })
     }
+
+    @Test fun hallVisitorMissionIsAcceptedAndAppearsWithIndependentRewards() {
+        assertTrue("Hall visits must not be discarded by the API parser", "showcase_10" in MissionBoard.supportedMissionIds)
+        val visit = MissionItem("showcase_10", "گردشگر تالارها", "showcase_visits", 10, 4, 30, "once", "active", rewardCoins = 150)
+        val entry = MissionBoard("account", true, listOf(task, visit)).gridEntries.last() as MissionGridEntry.Task
+        assertEquals("showcase_10", entry.key)
+        assertEquals(150, entry.mission.rewardCoins)
+        assertEquals(30, entry.mission.reward)
+        assertEquals(.4f, entry.mission.fraction)
+    }
 }

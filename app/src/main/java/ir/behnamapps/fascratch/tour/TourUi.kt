@@ -13,14 +13,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.*
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.*
@@ -131,11 +130,15 @@ private data class TourPlayback(val item: TourVideo, val file: File, val coverag
 
 @Composable private fun TourContent(state: TourState, repository: TourRepository?, error: TourNotice?, close: () -> Unit, cancel: () -> Unit,
     refresh: () -> Unit = {}, retry: () -> Unit = {}, select: (TourVideo) -> Unit) {
-    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    val pulse = tourPlayPulse(state.downloading == null && state.items.any { it.key !in state.completed })
+    Column(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFFFFFAF0), Color(0xFFF1F6FD)))).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("یک گشت کوتاه در اسکرچ", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color(0xFF203E59))
-                Text("یاد بگیر، امتحان کن، بساز!", style = MaterialTheme.typography.bodySmall, color = Color(0xFF657681))
+            Image(painterResource(R.drawable.home_tour_video_icon), contentDescription = null, modifier = Modifier.size(34.dp))
+            Spacer(Modifier.width(10.dp))
+            Text("تور نرم‌افزار", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold, color = Color(0xFF203E59))
+            if (state.items.size > 1) {
+                TourTag(persianDisplay("${state.items.count { it.key in state.completed }} از ${state.items.size} دیده شده"), Color(0xFF1C7A5C), Color(0xFFE0F2E8))
+                Spacer(Modifier.width(8.dp))
             }
             if (state.items.isNotEmpty()) TextButton(onClick = refresh, enabled = !state.refreshing && state.downloading == null) {
                 Text(if (state.refreshing) "در حال دریافت…" else "تازه‌سازی")
@@ -154,36 +157,14 @@ private data class TourPlayback(val item: TourVideo, val file: File, val coverag
             }
         }
         if (state.items.isEmpty()) TourEmptyState(state, Modifier.weight(1f).fillMaxWidth(), refresh)
-        else BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-            val count = minOf(3, state.items.size.coerceAtLeast(1))
-            val coverHeight = (maxHeight * .48f).coerceIn(56.dp, 146.dp)
-            LazyVerticalGrid(GridCells.Fixed(count), modifier = if (count == 1) Modifier.widthIn(max = 420.dp).fillMaxWidth() else Modifier.fillMaxWidth(),
+        else BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+            if (state.items.size == 1) {
+                val item = state.items.single()
+                TourHero(item, state, repository, pulse, Modifier.fillMaxSize(), cancel) { select(item) }
+            } else LazyVerticalGrid(GridCells.Fixed(minOf(3, state.items.size)), modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                items(state.items, key = { it.key }) { item ->
-                    val bitmap by produceState<android.graphics.Bitmap?>(null, item.cover?.hash, state.coverRevision) { value = repository?.cover(item) }
-                    val downloading = state.downloading == item.key
-                    val done = item.key in state.completed
-                    Card(onClick = { select(item) }, enabled = state.downloading == null, shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = if (done) Color(0xFFE6F6ED) else Color(0xFFEDF3FA))) {
-                        Box(Modifier.fillMaxWidth().height(coverHeight).background(Color(0xFF203E59)), contentAlignment = Alignment.Center) {
-                            bitmap?.let { Image(it.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
-                            Surface(color = Color(0xD9FFFFFF), shape = RoundedCornerShape(50), modifier = Modifier.size(40.dp)) { Box(contentAlignment = Alignment.Center) { Text("▶", color = Color(0xFF203E59)) } }
-                        }
-                        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(item.title, Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                                if (done) Text("✓", color = Color(0xFF148551), style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { contentDescription = "کامل تماشا شده" })
-                            }
-                            Text(persianDisplay("${item.durationMs / 60000}:${(item.durationMs / 1000 % 60).toString().padStart(2, '0')}"), style = MaterialTheme.typography.labelSmall, color = Color(0xFF657681))
-                            if (item.description.isNotBlank()) Text(item.description, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
-                            if (downloading) {
-                                LinearProgressIndicator(progress = { state.progress }, modifier = Modifier.fillMaxWidth())
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(persianDisplay("دریافت ${(state.progress * 100).toInt()}٪"), Modifier.weight(1f), style = MaterialTheme.typography.labelSmall)
-                                    TextButton(onClick = cancel) { Text("لغو") }
-                                }
-                            }
-                        }
-                    }
+                itemsIndexed(state.items, key = { _, item -> item.key }) { index, item ->
+                    TourGridCard(item, index + 1, state, repository, pulse, (maxHeight * .5f).coerceIn(56.dp, 150.dp), cancel) { select(item) }
                 }
             }
         }
@@ -194,8 +175,9 @@ private data class TourPlayback(val item: TourVideo, val file: File, val coverag
     val bob = remember { Animatable(0f) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(lifecycle) {
+        if (android.os.Build.VERSION.SDK_INT >= 26 && !android.animation.ValueAnimator.areAnimatorsEnabled()) return@LaunchedEffect
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            while (isActive) { bob.animateTo(-6f, tween(1100)); bob.animateTo(0f, tween(1100)) }
+            while (isActive) { bob.animateTo(-6f, tween(1100)); bob.animateTo(0f, tween(1100)); delay(100) }
         }
     }
     BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
@@ -229,6 +211,12 @@ private data class TourPlayback(val item: TourVideo, val file: File, val coverag
 @Preview(widthDp = 740, heightDp = 340, locale = "fa")
 @Composable private fun TourSingleVideoPreview() { TourPreview(1) }
 
+@Preview(widthDp = 740, heightDp = 340, locale = "fa")
+@Composable private fun TourSingleDownloadingPreview() { TourPreview(1, progress = .42f) }
+
+@Preview(widthDp = 880, heightDp = 390, locale = "fa")
+@Composable private fun TourSingleCompletedPreview() { TourPreview(1, done = true) }
+
 @Preview(widthDp = 880, heightDp = 390, locale = "fa")
 @Composable private fun TourSixVideosPreview() { TourPreview(6) }
 
@@ -237,8 +225,10 @@ private data class TourPlayback(val item: TourVideo, val file: File, val coverag
     LearnerDialogTheme { Surface { TourContent(TourState(initialized = true, catalogFailed = true), null, null, {}, {}) {} } }
 }
 
-@Composable private fun TourPreview(count: Int) {
+@Composable private fun TourPreview(count: Int, done: Boolean = false, progress: Float? = null) {
     val media = TourMedia("https://example.com/video", "a".repeat(64), 100)
-    val items = (1..count).map { TourVideo(it.toString(), listOf("اولین پروژهٔ من", "آشنایی با بلوک‌ها", "ذخیره و اجرای پروژه")[(it - 1) % 3], "", 90000, media, null, "") }
-    LearnerDialogTheme { Surface { TourContent(TourState(true, items, setOf(items.first().key)), null, null, {}, {}) {} } }
+    val items = (1..count).map { TourVideo(it.toString(), listOf("اولین پروژهٔ من", "آشنایی با بلوک‌ها", "ذخیره و اجرای پروژه")[(it - 1) % 3], "با محیط اسکرچ آشنا شو و اولین پروژه‌ات را بساز.", 90000, media, null, "") }
+    val state = TourState(true, items, if (done) setOf(items.first().key) else emptySet(),
+        downloading = items.first().key.takeIf { progress != null }, progress = progress ?: 0f)
+    LearnerDialogTheme { Surface { TourContent(state, null, null, {}, {}) {} } }
 }

@@ -183,7 +183,7 @@ import kotlinx.coroutines.launch
                                     AccountField(confirmation, { confirmation = it; error = null }, "تکرار رمز عبور", Modifier.weight(1f), !busy, !reveal, false, 64,
                                         confirmation.isNotEmpty() && password != confirmation, true)
                                 }
-                                Text("رمز حداقل ۱۵ کاراکتر باشد؛ می‌توانی یک عبارت بسازی. فعلاً بازیابی رمز نداریم؛ آن را نگه دار.", style = MaterialTheme.typography.bodySmall, color = Color(0xFF5D6C65))
+                                Text("رمز حداقل ۶ کاراکتر باشد؛ عدد یا حروف کافی است. فعلاً بازیابی رمز نداریم؛ آن را نگه دار.", style = MaterialTheme.typography.bodySmall, color = Color(0xFF5D6C65))
                                 Text("نام نمایشی محترمانه انتخاب کن؛ نام نامناسب محدود می‌شود.", style = MaterialTheme.typography.bodySmall, color = Color(0xFF5D6C65))
                             }
                         }

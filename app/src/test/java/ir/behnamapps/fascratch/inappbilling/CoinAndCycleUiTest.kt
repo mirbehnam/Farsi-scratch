@@ -19,7 +19,8 @@ class CoinAndCycleUiTest {
 
     @Test fun coinsUseCompactGroupedDigitsAndDoNotShowInvalidNumbers() {
         assertEquals("2,000", coinBalanceText(2000.0))
-        assertEquals("0.125", coinBalanceText(.125))
+        assertEquals("0", coinBalanceText(.125))
+        assertEquals("1,999", coinBalanceText(1999.999))
         assertEquals("0", coinBalanceText(-1.0))
         assertEquals("0", coinBalanceText(Double.NaN))
     }

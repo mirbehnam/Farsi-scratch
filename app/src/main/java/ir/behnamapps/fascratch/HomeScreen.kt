@@ -347,12 +347,15 @@ fun HomeScreen(
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
                         .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
-                        .absolutePadding(left = 76.dp)
+                        .absolutePadding(left = 136.dp)
                         .padding(bottom = verticalPadding)
                 )
                 ir.behnamapps.fascratch.inbox.HomeInboxButton(Modifier.align(androidx.compose.ui.AbsoluteAlignment.BottomLeft)
                     .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Left + WindowInsetsSides.Bottom))
                     .absolutePadding(left = horizontalPadding,bottom = verticalPadding))
+                ir.behnamapps.fascratch.tour.HomeTourButton(Modifier.align(androidx.compose.ui.AbsoluteAlignment.BottomLeft)
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Left + WindowInsetsSides.Bottom))
+                    .absolutePadding(left = horizontalPadding + 56.dp,bottom = verticalPadding))
             }
         }
     }

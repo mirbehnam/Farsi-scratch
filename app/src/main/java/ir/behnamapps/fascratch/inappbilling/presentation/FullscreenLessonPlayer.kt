@@ -42,7 +42,10 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
     nextLessonTitle: String? = null, onPlayNext: () -> Boolean = { false },
     hasSubtitles: Boolean = false, loadSubtitles: suspend () -> SubtitleTrack? = { null },
     initialPlayback: LessonPlaybackCheckpoint = LessonPlaybackCheckpoint(),
-    onPlaybackCheckpoint: (LessonPlaybackCheckpoint) -> Unit = {}) {
+    onPlaybackCheckpoint: (LessonPlaybackCheckpoint) -> Unit = {},
+    allowSpeedChange: Boolean = true,
+    onPlaybackSample: (positionMs: Int, durationMs: Int, playing: Boolean, finished: Boolean) -> Unit = { _, _, _, _ -> },
+    onPlaybackDiscontinuity: () -> Unit = {}) {
     var video by remember(file) { mutableStateOf<ZoomVideoView?>(null) }
     var prepared by remember(file) { mutableStateOf(false) }
     var error by remember(file) { mutableStateOf(false) }
@@ -53,7 +56,7 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
     var playing by remember(file) { mutableStateOf(false) }
     var seeking by remember { mutableStateOf<Float?>(null) }
     var interaction by remember { mutableIntStateOf(0) }
-    var speed by rememberSaveable(file.absolutePath) { mutableFloatStateOf(initialPlayback.speed.takeIf { it in LessonPlayerPolicy.speeds } ?: 1f) }
+    var speed by rememberSaveable(file.absolutePath, allowSpeedChange) { mutableFloatStateOf(if (allowSpeedChange) initialPlayback.speed.takeIf { it in LessonPlayerPolicy.speeds } ?: 1f else 1f) }
     var speedMenu by remember(file) { mutableStateOf(false) }
     var speedError by remember(file) { mutableStateOf(false) }
     var completed by remember(file) { mutableStateOf(false) }
@@ -67,6 +70,8 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
     var subtitleError by remember(file) { mutableStateOf(false) }
     val currentSubtitleLoader by rememberUpdatedState(loadSubtitles)
     val checkpointCallback by rememberUpdatedState(onPlaybackCheckpoint)
+    val sampleCallback by rememberUpdatedState(onPlaybackSample)
+    val discontinuityCallback by rememberUpdatedState(onPlaybackDiscontinuity)
     LaunchedEffect(file, subtitlesEnabled) {
         subtitleText = ""
         if (subtitlesEnabled) {
@@ -83,6 +88,7 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
     val currentPlayNext by rememberUpdatedState(onPlayNext)
     fun seekBy(delta: Int): Boolean {
         if (!prepared) return false
+        discontinuityCallback()
         watchTracker?.discontinuity()
         val currentDuration = video?.duration()?.takeIf { it > 0 } ?: duration
         val base = video?.seekPosition() ?: position
@@ -110,6 +116,7 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
         bars.hide(WindowInsetsCompat.Type.systemBars())
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         onDispose {
+            sampleCallback(video?.position() ?: position, video?.duration() ?: duration, false, false)
             val finalPosition = video?.seekPosition() ?: position
             checkpointCallback(QuickLessonPolicy.checkpoint(finalPosition, speed, !completed && (video?.isPlaying() == true || playing || (!prepared && initialPlayback.autoPlay))))
             watchTracker?.sample(video?.position() ?: position, video?.isPlaying() == true &&
@@ -124,7 +131,7 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
     }
     DisposableEffect(lifecycle) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_PAUSE) { watchTracker?.discontinuity(); video?.setForeground(false); playing = false; controls = true }
+            if (event == Lifecycle.Event.ON_PAUSE) { discontinuityCallback(); watchTracker?.discontinuity(); video?.setForeground(false); playing = false; controls = true }
             if (event == Lifecycle.Event.ON_RESUME) video?.setForeground(true)
         }
         lifecycle.addObserver(observer)
@@ -139,6 +146,7 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
             val actualPosition = video?.position() ?: 0
             position = video?.seekPosition() ?: actualPosition; duration = video?.duration() ?: 0; playing = video?.isPlaying() == true
             watchTracker?.sample(actualPosition, playing && video?.isSeeking() != true && seeking == null && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
+            sampleCallback(actualPosition, duration, playing && video?.isSeeking() != true && seeking == null && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED), false)
             if (previouslyPlaying && !playing) controls = true
             delay(300)
         }
@@ -154,7 +162,7 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
         Box(Modifier.fillMaxSize().background(Color.Black)) {
             AndroidView(modifier = Modifier.fillMaxSize(), factory = { context ->
                 ZoomVideoView(context, file, position,
-                    onReady = { prepared = true; video?.setSpeed(speed) }, onError = { error = true; controls = true },
+                    onReady = { prepared = true; video?.setSpeed(speed); sampleCallback(position, video?.duration() ?: duration, initialPlayback.autoPlay && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED), false) }, onError = { error = true; controls = true; discontinuityCallback() },
                     onTap = { controls = !controls; interaction++ }, onZoom = { zoom = it; controls = false; interaction++ },
                     onDoubleTapSeek = { delta ->
                         if (seekBy(delta)) {
@@ -166,6 +174,7 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
                     autoPlay = initialPlayback.autoPlay,
                     onCompleted = {
                         position = video?.duration() ?: duration
+                        sampleCallback(position, position, false, true)
                         playing = false; completed = true; controls = true
                         watchTracker?.finish()
                         nextPrompt = currentNextTitle != null
@@ -211,14 +220,14 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
                     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                         Slider(value = seeking ?: position.toFloat().coerceIn(0f, duration.coerceAtLeast(1).toFloat()),
                             onValueChange = { seeking = it; interaction++ }, onValueChangeFinished = {
-                                watchTracker?.discontinuity(); seeking?.let { video?.seek(it.toInt()); position = it.toInt() }; seeking = null; interaction++; completed = false; nextPrompt = false
+                                discontinuityCallback(); watchTracker?.discontinuity(); seeking?.let { video?.seek(it.toInt()); position = it.toInt() }; seeking = null; interaction++; completed = false; nextPrompt = false
                             }, valueRange = 0f..duration.coerceAtLeast(1).toFloat(), enabled = prepared && duration > 0,
                             modifier = Modifier.fillMaxWidth().height(32.dp))
                     }
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
                         TextButton(onClick = { seekBy(10_000) }, enabled = prepared) { Text("۱۰ ثانیه جلو") }
                         FilledTonalButton(onClick = {
-                            if (completed) { watchTracker?.discontinuity(); video?.seek(0); position = 0; completed = false }
+                            if (completed) { discontinuityCallback(); watchTracker?.discontinuity(); video?.seek(0); position = 0; completed = false }
                             video?.toggle(); playing = video?.isPlaying() == true; interaction++
                         }, enabled = prepared) { Text(if (playing) "توقف" else "پخش") }
                         TextButton(onClick = { seekBy(-10_000) }, enabled = prepared) { Text("۱۰ ثانیه عقب") }
@@ -231,7 +240,7 @@ internal fun FullscreenLessonPlayer(file: File, title: String, window: Window, o
                             if (subtitlesLoading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                             else SubtitleControlIcon(if (subtitlesEnabled) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = .65f))
                         }
-                        Box {
+                        if (allowSpeedChange) Box {
                             TextButton(onClick = { speedMenu = true; interaction++ }, enabled = prepared) {
                                 Text("سرعت ${persianDisplay(speed.toString()).replace('.', '٫')}×")
                             }

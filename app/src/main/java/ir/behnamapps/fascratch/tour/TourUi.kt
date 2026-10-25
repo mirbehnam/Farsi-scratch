@@ -12,15 +12,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.*
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -31,6 +28,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import ir.behnamapps.fascratch.inappbilling.learning.*
+import ir.behnamapps.fascratch.R
 import ir.behnamapps.fascratch.inappbilling.presentation.FullscreenLessonPlayer
 import ir.behnamapps.fascratch.inappbilling.presentation.persianDisplay
 import kotlinx.coroutines.*
@@ -66,12 +64,9 @@ import java.io.File
 }
 
 @Composable private fun TourButton(modifier: Modifier, done: Boolean, click: () -> Unit) {
-    Box(modifier.size(52.dp).semantics { contentDescription = "ویدیوهای راهنمای نرم‌افزار" }) {
-        Canvas(Modifier.fillMaxSize().clickable(role = Role.Button, onClick = click).padding(10.dp)) {
-            drawRoundRect(Color(0xFF88DAF7), Offset(0f, size.height * .13f), Size(size.width, size.height * .74f), CornerRadius(6.dp.toPx()))
-            val play = Path().apply { moveTo(size.width * .4f, size.height * .31f); lineTo(size.width * .4f, size.height * .69f); lineTo(size.width * .7f, size.height * .5f); close() }
-            drawPath(play, Color(0xFF164064))
-        }
+    Box(modifier.size(52.dp).semantics { contentDescription = "ویدیوهای راهنمای نرم‌افزار" }.clickable(role = Role.Button, onClick = click)) {
+        Image(painterResource(R.drawable.home_tour_video_icon), contentDescription = null,
+            modifier = Modifier.fillMaxSize().padding(3.dp), contentScale = ContentScale.Fit)
         if (done) Text("✓", Modifier.align(Alignment.TopEnd), color = Color(0xFF7CE2AB), fontWeight = FontWeight.Bold)
     }
 }

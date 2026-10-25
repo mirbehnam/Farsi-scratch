@@ -398,9 +398,32 @@ class LearningRepository private constructor(context: Context) {
                 result = api.missions("actions/project-saved", secret, JSONObject().put("has_project", true))
                 require(identity.secret() == secret && identity.profile()?.uuid == uuid)
             }
+            if (MissionBoard.parse(result).items.any { it.id == "tour_complete" && it.status == "active" }) {
+                try { result = reportTourProgress(secret) }
+                catch (e: CancellationException) { throw e }
+                catch (_: Exception) { /* Keep the fresh mission list; retry tour qualification next time. */ }
+                require(identity.secret() == secret && identity.profile()?.uuid == uuid)
+            }
             acceptMissions(result, uuid)
         }
     }
+    private suspend fun reportTourProgress(secret: String): JSONObject {
+        val evidence = ir.behnamapps.fascratch.tour.TourRepository.get(app).completionEvidence()
+        val videos = JSONArray(evidence.map { (id, hash) -> JSONObject().put("id", id).put("sha256", hash) })
+        return api.missions("actions/tour-progress", secret, JSONObject().put("videos", videos))
+    }
+    fun tourProgressChanged() { scope.launch {
+        mutex.withLock {
+            val uuid = identity.profile()?.uuid ?: return@withLock
+            val known = mutableMissions.value?.takeIf { it.uuid == uuid }?.items?.firstOrNull { it.id == "tour_complete" }
+            if (known?.status == "ready" || known?.status == "claimed") return@withLock
+            val secret = identity.secret()
+            try {
+                val result = reportTourProgress(secret)
+                if (identity.secret() == secret && identity.profile()?.uuid == uuid) acceptMissions(result, uuid)
+            } catch (e: CancellationException) { throw e } catch (_: Exception) { /* Retried when missions are opened online. */ }
+        }
+    } }
     fun savedProjectChanged() { scope.launch {
         mutex.withLock {
             val uuid = identity.profile()?.uuid ?: return@withLock

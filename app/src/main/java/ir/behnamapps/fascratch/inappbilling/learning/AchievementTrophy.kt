@@ -12,6 +12,7 @@ import androidx.compose.ui.res.painterResource
 import ir.behnamapps.fascratch.R
 
 private val bundledAchievementHashes = mapOf(
+    "tour_complete" to "851394ad7c5994bc7acaeba280c2b1435a12d5dcb5df28165343c267383fff32",
     "showcase_10" to "5eafe67ac2c9ae1802c233eb00438628460eb3f655a37e8b53c1be8e60967592",
     "first_code" to "7397b99a4a430192503c07fba38d676643f94a4829186718d7c33df1163db0e9",
     "coding_30" to "d113ef37542867d043a4623b9c7cc8aaefbbadef939229f1a468a91515494b7b",
@@ -33,6 +34,7 @@ private val bundledAchievementHashes = mapOf(
 /** Bundled WebP is immediate and offline; optional public updates reuse the bounded hash cache. */
 @Composable internal fun AchievementTrophy(trophy: ShowcaseTrophy, fallback: @Composable () -> Unit) {
     val local = when (trophy.id) {
+        "tour_complete" -> R.drawable.achievement_tour_complete
         "showcase_10" -> R.drawable.achievement_showcase_10
         "first_code" -> R.drawable.achievement_first_code
         "coding_30" -> R.drawable.achievement_coding_30

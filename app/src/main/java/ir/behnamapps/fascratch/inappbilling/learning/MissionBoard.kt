@@ -16,7 +16,7 @@ data class MissionBoard(val uuid: String, val available: Boolean, val items: Lis
     internal val gridEntries: List<MissionGridEntry> get() =
         listOfNotNull(rewardedAd?.let { MissionGridEntry.Ad(it) }) + ordered.map { MissionGridEntry.Task(it) }
     companion object {
-        internal val supportedMissionIds = setOf("first_code", "coding_30", "watch_10", "watch_60", "daily", "details", "coding_week", "coding_month", "store_review", "lessons_10", "lessons_17", "coding_5h", "saved_project", "coding_15h", "avatars_8", "showcase_10")
+        internal val supportedMissionIds = setOf("first_code", "coding_30", "watch_10", "watch_60", "daily", "details", "coding_week", "coding_month", "store_review", "lessons_10", "lessons_17", "coding_5h", "saved_project", "coding_15h", "avatars_8", "showcase_10", "tour_complete")
 
         fun parse(json: JSONObject): MissionBoard {
             val rows = json.optJSONArray("items")

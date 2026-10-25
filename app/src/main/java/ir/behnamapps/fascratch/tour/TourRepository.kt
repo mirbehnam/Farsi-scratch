@@ -19,8 +19,9 @@ import java.security.MessageDigest
 import javax.net.ssl.HttpsURLConnection
 import java.net.URL
 
-/** Public media only. Completion is installation-local and never enters learning/account APIs. */
+/** Public media; ticks stay local. Only completed video identities are sent for the one-time mission. */
 internal class TourRepository private constructor(context: Context) {
+    private val app = context.applicationContext
     private val root = File(context.cacheDir, "app-tour-${BuildConfig.FLAVOR}").apply { mkdirs() }
     private val local = File(context.noBackupFilesDir, "app-tour-${BuildConfig.FLAVOR}").apply { mkdirs() }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -87,6 +88,17 @@ internal class TourRepository private constructor(context: Context) {
 
     private fun completed(items: List<TourVideo>) = items.filter { progress.optJSONObject(it.key)?.optBoolean("complete") == true }.map { it.key }.toSet()
 
+    suspend fun completionEvidence(): List<Pair<String, String>> = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            if (!loaded) {
+                progress = runCatching { readJson(File(local, "progress.json")) }.getOrDefault(JSONObject())
+                val items = runCatching { TourModels.parse(readJson(File(local, "manifest.json"))) }.getOrDefault(emptyList())
+                mutable.value = TourState(true, items, completed(items)); loaded = true
+            }
+            mutable.value.completedVersions()
+        }
+    }
+
     suspend fun open(item: TourVideo): Pair<File, TourCoverage> = withContext(Dispatchers.IO) {
         mutable.update { it.copy(downloading = item.key, progress = 0f) }
         try {
@@ -117,9 +129,11 @@ internal class TourRepository private constructor(context: Context) {
             mutex.withLock {
                 try {
                     if (mutable.value.items.any { it.key == item.key }) {
+                        val newlyCompleted = complete && item.key !in mutable.value.completed
                         progress.put(item.key, JSONObject().put("ranges", JSONArray(ranges.map { listOf(it.first, it.second) })).put("ended", ended).put("complete", complete))
                         write(File(local, "progress.json"), progress)
                         mutable.update { it.copy(completed = completed(it.items)) }
+                        if (newlyCompleted) ir.behnamapps.fascratch.inappbilling.learning.LearningRepository.get(app).tourProgressChanged()
                     }
                 } catch (_: Exception) { /* Disk errors must not interrupt playback. */ }
                 finally { if (release && pin == item.key) pin = null }

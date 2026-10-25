@@ -2,10 +2,21 @@ package ir.behnamapps.fascratch.inappbilling
 
 import ir.behnamapps.fascratch.tour.TourCoverage
 import ir.behnamapps.fascratch.tour.TourModels
+import ir.behnamapps.fascratch.tour.TourVideo
+import ir.behnamapps.fascratch.tour.TourMedia
+import ir.behnamapps.fascratch.tour.TourState
 import org.junit.Assert.*
 import org.junit.Test
 
 class TourCoverageTest {
+    @Test fun missionEvidenceOnlyIncludesTicksForCurrentVideoVersions() {
+        val oldHash = "a".repeat(64); val currentHash = "b".repeat(64)
+        val first = TourVideo("first", "اول", "", 1000, TourMedia("https://example.com/a", oldHash, 100), null, "")
+        val second = TourVideo("second", "دوم", "", 1000, TourMedia("https://example.com/b", currentHash, 100), null, "")
+        val state = TourState(true, listOf(first, second), setOf(first.key, "second-$oldHash", "deleted-$oldHash"))
+        assertEquals(listOf("first" to oldHash), state.completedVersions())
+        assertTrue(TourState().completedVersions().isEmpty())
+    }
     @Test fun completePlaybackRequiresCoverageAndAnEndEvent() {
         val coverage = TourCoverage(10000)
         for (second in 0..10) coverage.sample(second * 1000, true, second * 1000L)

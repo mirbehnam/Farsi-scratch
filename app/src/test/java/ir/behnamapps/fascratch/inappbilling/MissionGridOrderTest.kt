@@ -28,4 +28,13 @@ class MissionGridOrderTest {
         assertEquals(30, entry.mission.reward)
         assertEquals(.4f, entry.mission.fraction)
     }
+
+    @Test fun tourMissionIsAcceptedAndShowsCoinAndXpRewardsSeparately() {
+        assertTrue("tour_complete" in MissionBoard.supportedMissionIds)
+        val tour = MissionItem("tour_complete", "راهنمای اسکرچ را کشف کن", "tour_videos", 3, 3, 20, "once", "ready", rewardCoins = 100)
+        val entry = MissionBoard("account", true, listOf(tour)).gridEntries.single() as MissionGridEntry.Task
+        assertEquals(100, entry.mission.rewardCoins)
+        assertEquals(20, entry.mission.reward)
+        assertTrue(entry.mission.ready)
+    }
 }

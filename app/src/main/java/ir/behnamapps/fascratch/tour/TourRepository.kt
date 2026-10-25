@@ -27,6 +27,7 @@ internal class TourRepository private constructor(context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutex = Mutex()
     private val refreshMutex = Mutex()
+    private var coverWarmJob: Job? = null
     private var loaded = false
     private var lastAttempt = 0L
     private var pin: String? = null
@@ -34,19 +35,23 @@ internal class TourRepository private constructor(context: Context) {
     private val mutable = MutableStateFlow(TourState())
     val state = mutable.asStateFlow()
 
-    suspend fun active() = withContext(Dispatchers.IO) {
+    private fun loadLocal() {
+        if (loaded) return
+        progress = runCatching { readJson(File(local, "progress.json")) }.getOrDefault(JSONObject())
+        val items = runCatching { TourModels.parse(readJson(File(local, "manifest.json"))) }.getOrNull()
+        mutable.update { it.copy(initialized = true, items = items.orEmpty(), completed = completed(items.orEmpty()), hasManifest = items != null) }
+        loaded = true
+    }
+
+    suspend fun active(force: Boolean = false) = withContext(Dispatchers.IO) {
         refreshMutex.withLock {
-            mutex.withLock {
-                if (!loaded) {
-                    progress = runCatching { readJson(File(local, "progress.json")) }.getOrDefault(JSONObject())
-                    val items = runCatching { TourModels.parse(readJson(File(local, "manifest.json"))) }.getOrDefault(emptyList())
-                    mutable.value = TourState(true, items, completed(items)); loaded = true
-                }
-            }
+            mutex.withLock { loadLocal() }
             val now = android.os.SystemClock.elapsedRealtime()
-            if (lastAttempt != 0L && now - lastAttempt < 300_000) return@withLock
-            lastAttempt = now
+            if (!force && lastAttempt != 0L && now - lastAttempt < 300_000) return@withLock
+            mutable.update { it.copy(refreshing = true) }
             try {
+                if (force && lastAttempt != 0L) delay((2000 - (now - lastAttempt)).coerceAtLeast(0))
+                lastAttempt = android.os.SystemClock.elapsedRealtime()
                 val connection = connection(BuildConfig.COURSE_API_BASE.trimEnd('/') + "/app-tour")
                 val json = try {
                     check(connection.responseCode == 200)
@@ -59,30 +64,37 @@ internal class TourRepository private constructor(context: Context) {
                     val keep = items.map { it.key }.toSet()
                     progress.keys().asSequence().toList().filter { it !in keep && it != pin }.forEach { progress.remove(it) }
                     write(File(local, "progress.json"), progress)
-                    mutable.update { it.copy(items = items, completed = completed(items)) }
+                    mutable.update { it.copy(items = items, completed = completed(items), hasManifest = true, catalogFailed = false) }
                     val hashes = items.flatMap { listOfNotNull(it.video.hash, it.cover?.hash) }.toSet()
                     root.listFiles()?.filter { it.name.substringBefore('.') !in hashes && !it.name.startsWith(pin?.substringAfterLast('-') ?: "!none") }?.forEach { it.delete() }
                 }
-                for (item in items) {
-                    currentCoroutineContext().ensureActive()
-                    // Release the media lock between covers so a selected video has priority
-                    // over the rest of the background cover queue.
-                    mutex.withLock {
-                        item.cover?.let { media ->
-                            if (!File(root, "${media.hash}.image").isFile) {
-                                trim(media.bytes, null)
-                                if (root.listFiles().orEmpty().sumOf { it.length() } + media.bytes <= TourModels.MAX_CACHE) {
-                                    try { fetch(media, File(root, "${media.hash}.image"), false) }
-                                    catch (e: CancellationException) { throw e } catch (_: Exception) { /* Retry cover on next refresh. */ }
-                                }
+                warmCovers(items)
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) { mutable.update { it.copy(catalogFailed = true) } }
+            finally { mutable.update { it.copy(refreshing = false) } }
+        }
+    }
+
+    private fun warmCovers(items: List<TourVideo>) {
+        coverWarmJob?.cancel()
+        coverWarmJob = scope.launch {
+            for (item in items) {
+                currentCoroutineContext().ensureActive()
+                mutex.withLock {
+                    if (mutable.value.items.none { it.key == item.key }) return@withLock
+                    item.cover?.let { media ->
+                        if (!File(root, "${media.hash}.image").isFile) {
+                            trim(media.bytes, null)
+                            if (root.listFiles().orEmpty().sumOf { it.length() } + media.bytes <= TourModels.MAX_CACHE) {
+                                try { fetch(media, File(root, "${media.hash}.image"), false) }
+                                catch (e: CancellationException) { throw e } catch (_: Exception) { /* Retry next refresh. */ }
                             }
                         }
                     }
                 }
-                mutex.withLock { trim(0, null) }
                 mutable.update { it.copy(coverRevision = it.coverRevision + 1) }
-            } catch (e: CancellationException) { throw e }
-            catch (_: Exception) { /* Retain the last valid manifest when offline or server unavailable. */ }
+            }
+            mutex.withLock { trim(0, null) }
         }
     }
 
@@ -90,11 +102,7 @@ internal class TourRepository private constructor(context: Context) {
 
     suspend fun completionEvidence(): List<Pair<String, String>> = withContext(Dispatchers.IO) {
         mutex.withLock {
-            if (!loaded) {
-                progress = runCatching { readJson(File(local, "progress.json")) }.getOrDefault(JSONObject())
-                val items = runCatching { TourModels.parse(readJson(File(local, "manifest.json"))) }.getOrDefault(emptyList())
-                mutable.value = TourState(true, items, completed(items)); loaded = true
-            }
+            loadLocal()
             mutable.value.completedVersions()
         }
     }
@@ -103,14 +111,14 @@ internal class TourRepository private constructor(context: Context) {
         mutable.update { it.copy(downloading = item.key, progress = 0f) }
         try {
             mutex.withLock {
-                require(mutable.value.items.any { it.key == item.key })
+                if (mutable.value.items.none { it.key == item.key }) throw TourDownloadException(TourFailure.UNAVAILABLE)
                 pin = item.key
                 val file = File(root, "${item.video.hash}.mp4")
                 try {
                     if (!file.isFile || file.length() != item.video.bytes || sha(file) != item.video.hash) {
                         file.delete(); trim(item.video.bytes, item.video.hash)
                         val part = File(root, "${item.video.hash}.part")
-                        if (root.usableSpace < (item.video.bytes - part.length()).coerceAtLeast(0) + 16 * 1024 * 1024) throw IOException("فضای کافی برای دریافت ویدیو وجود ندارد.")
+                        if (root.usableSpace < (item.video.bytes - part.length()).coerceAtLeast(0) + 16 * 1024 * 1024) throw TourDownloadException(TourFailure.SPACE)
                         fetch(item.video, file, true) { value -> mutable.update { it.copy(progress = value) } }
                     }
                     file.setLastModified(System.currentTimeMillis())
@@ -176,7 +184,8 @@ internal class TourRepository private constructor(context: Context) {
                 if (offset > 0) c.setRequestProperty("Range", "bytes=$offset-")
                 val status = c.responseCode
                 if (offset > 0 && status == 200) { part.delete(); offset = 0 }
-                if (status != 200 && status != 206) throw IOException("دریافت ویدیو کامل نشد؛ دوباره تلاش کن.")
+                if (status == 404 || status == 410) throw TourDownloadException(TourFailure.UNAVAILABLE)
+                if (status != 200 && status != 206) throw IOException()
                 if (status == 206) require(c.getHeaderField("Content-Range")?.startsWith("bytes $offset-") == true)
                 c.inputStream.use { input ->
                     java.io.FileOutputStream(part, offset > 0).use { out ->
@@ -194,7 +203,7 @@ internal class TourRepository private constructor(context: Context) {
                 }
             } finally { c.disconnect() }
         }
-        if (part.length() != media.bytes || sha(part) != media.hash) { part.delete(); throw IOException("فایل کامل دریافت نشد؛ دوباره تلاش کن.") }
+        if (part.length() != media.bytes || sha(part) != media.hash) { part.delete(); throw TourDownloadException(TourFailure.INCOMPLETE) }
         check(part.renameTo(final))
     }
 

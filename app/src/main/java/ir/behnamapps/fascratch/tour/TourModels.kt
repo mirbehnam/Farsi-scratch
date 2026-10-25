@@ -9,7 +9,9 @@ internal data class TourVideo(val id: String, val title: String, val description
     val key get() = "$id-${video.hash}"
 }
 internal data class TourState(val initialized: Boolean = false, val items: List<TourVideo> = emptyList(),
-    val completed: Set<String> = emptySet(), val downloading: String? = null, val progress: Float = 0f, val coverRevision: Int = 0) {
+    val completed: Set<String> = emptySet(), val downloading: String? = null, val progress: Float = 0f, val coverRevision: Int = 0,
+    val hasManifest: Boolean = false, val refreshing: Boolean = false, val catalogFailed: Boolean = false) {
+    val allWatched: Boolean get() = items.isNotEmpty() && items.all { it.key in completed }
     fun completedVersions(): List<Pair<String, String>> = items.filter { it.key in completed }.map { it.id to it.video.hash }
 }
 

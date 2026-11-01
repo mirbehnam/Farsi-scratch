@@ -9,6 +9,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -16,15 +17,22 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -33,6 +41,8 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -45,8 +55,19 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import ir.behnamapps.fascratch.inappbilling.presentation.persianDisplay
+import ir.behnamapps.fascratch.R
 import kotlinx.coroutines.launch
 import kotlin.random.Random
+
+private val RankingFont = FontFamily(Font(R.font.shabnam))
+
+private data class RankingMetal(val light: Color, val middle: Color, val dark: Color, val edge: Color)
+private fun rankingMetal(rank: Int) = when (rank) {
+    1 -> RankingMetal(Color(0xFFFDBB26), Color(0xFFAB5905), Color(0xFF713707), Color(0xFFFFDE75))
+    2 -> RankingMetal(Color(0xFF91B2CB), Color(0xFF425E78), Color(0xFF24394D), Color(0xFFC8E1F0))
+    3 -> RankingMetal(Color(0xFFE49B57), Color(0xFF9A4E27), Color(0xFF62321F), Color(0xFFFFC388))
+    else -> RankingMetal(Color(0xFF33495C), Color(0xFF243443), Color(0xFF182634), Color(0xFF62798E))
+}
 
 internal fun homeOnline(context: Context): Boolean = runCatching {
     val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -127,8 +148,22 @@ internal fun homeOnline(context: Context): Boolean = runCatching {
         }
     }
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-    Surface(modifier, shape = RoundedCornerShape(22.dp), color = Color(0xFF172C49), border = BorderStroke(1.dp, Color(0xFF72A6B8))) {
-        Column(Modifier.background(Brush.verticalGradient(listOf(Color(0xFF284663), Color(0xFF10203B))))
+    Surface(modifier, shape = RoundedCornerShape(23.dp), color = Color(0xFF352019),
+        border = BorderStroke(1.5.dp, Brush.verticalGradient(listOf(Color(0xFFFFD56A), Color(0xFFE58227), Color(0xFFFFC86A))))) {
+        Column(Modifier.background(Brush.verticalGradient(listOf(Color(0xFF783710), Color(0xFF40261D), Color(0xFF182633))))
+            .drawBehind {
+                // Vector corner ribbons keep the frame crisp at every screen size.
+                val topRibbon = Path().apply {
+                    moveTo(0f, 0f); lineTo(size.width * .24f, 0f)
+                    quadraticTo(size.width * .13f, size.height * .07f, 0f, size.height * .15f); close()
+                }
+                drawPath(topRibbon, Brush.linearGradient(listOf(Color(0xFFFFA11D), Color(0xFFC85108))))
+                val lowerRibbon = Path().apply {
+                    moveTo(size.width, size.height); lineTo(size.width * .72f, size.height)
+                    quadraticTo(size.width * .91f, size.height * .94f, size.width, size.height * .85f); close()
+                }
+                drawPath(lowerRibbon, Brush.linearGradient(listOf(Color(0xFFB44A0C), Color(0xFFFF9A1D))))
+            }
             .drawWithContent {
                 drawContent()
                 if (shine.value > -.25f && shine.value < 1.35f) {
@@ -143,10 +178,16 @@ internal fun homeOnline(context: Context): Boolean = runCatching {
                     drawLine(Color(0xFFFFD783).copy(alpha = .5f), point - Offset(radius, 0f), point + Offset(radius, 0f), 1.dp.toPx())
                     drawLine(Color(0xFFFFD783).copy(alpha = .5f), point - Offset(0f, radius), point + Offset(0f, radius), 1.dp.toPx())
                 }
-            }.padding(12.dp)) {
-            Text("برنامه‌نویس‌های برتر اسکرچ", Modifier.fillMaxWidth().padding(bottom = 8.dp), textAlign = TextAlign.Start,
-                color = Color.White, fontWeight = FontWeight.Black, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            }.padding(horizontal = 11.dp, vertical = 8.dp)) {
+            Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                RankingCrown(Modifier.size(27.dp, 25.dp))
+                Text("برنامه‌نویس‌های برتر اسکرچ", Modifier.weight(1f), textAlign = TextAlign.Start,
+                    color = Color(0xFFFFF7E8), fontFamily = RankingFont, fontWeight = FontWeight.Black, fontSize = 15.sp,
+                    style = LocalTextStyle.current.copy(shadow = Shadow(Color(0xFF35170B), Offset(0f, 2f), 4f)),
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(bottom = 2.dp)) {
                 items(rows, key = { it.uuid }) { row ->
                     HomeRankingRow(row, row.uuid == viewer, artRevision) { onPlayer(row.uuid) }
                 }
@@ -156,12 +197,16 @@ internal fun homeOnline(context: Context): Boolean = runCatching {
                     }
                 }
             }
-            if (!registered) Button(onClick = onRegister, modifier = Modifier.align(Alignment.Start).padding(top = 8.dp).heightIn(min = 44.dp),
-                shape = RoundedCornerShape(14.dp), border = BorderStroke(1.dp, Color(0xFFFFF0B1)),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD778), contentColor = Color(0xFF523413)),
-                elevation = ButtonDefaults.buttonElevation(defaultElevation = 3.dp, pressedElevation = 1.dp),
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
-                Text("چرا اسم من در لیست نیست؟ 😢", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            if (!registered) Box(Modifier.align(Alignment.Start).padding(top = 2.dp).heightIn(min = 44.dp)
+                .clickable(role = Role.Button, onClick = onRegister), contentAlignment = Alignment.Center) {
+                // Compact visible pill inside a comfortable touch target; explicit app font.
+                Surface(shape = RoundedCornerShape(50), color = Color.Transparent, shadowElevation = 3.dp,
+                    border = BorderStroke(1.dp, Color(0xFFFFBA63))) {
+                    Text("چرا اسم من در لیست نیست؟ 😢", Modifier.background(Brush.verticalGradient(
+                        listOf(Color(0xFFFF9E28), Color(0xFFEC710C), Color(0xFFC44A06))))
+                        .padding(horizontal = 10.dp, vertical = 3.dp), color = Color.White,
+                        fontFamily = RankingFont, fontSize = 12.sp, lineHeight = 18.sp, fontWeight = FontWeight.Bold)
+                }
             }
         }
     }
@@ -169,18 +214,86 @@ internal fun homeOnline(context: Context): Boolean = runCatching {
 }
 
 @Composable private fun HomeRankingRow(row: RankedLearner, highlighted: Boolean, artRevision: Int, onClick: () -> Unit) {
-    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
-        color = if (highlighted) Color(0xFF345C70) else Color.White.copy(alpha = .045f),
-        border = if (highlighted) BorderStroke(1.dp, Color(0xFFFFD783)) else null) {
-        Row(Modifier.clickable(role = Role.Button, onClick = onClick).padding(horizontal = 9.dp, vertical = 5.dp),
+    val metal = rankingMetal(row.rank)
+    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(13.dp), color = metal.dark,
+        border = BorderStroke(if (highlighted) 2.dp else 1.dp, if (highlighted) Color(0xFFFFF1B4) else metal.edge.copy(alpha = .8f))) {
+        Row(Modifier.background(Brush.verticalGradient(listOf(metal.light, metal.middle, metal.dark)))
+            .drawBehind {
+                val gloss = Path().apply {
+                    moveTo(0f, 0f); lineTo(size.width * .33f, 0f)
+                    lineTo(size.width * .16f, size.height * .52f); lineTo(0f, size.height * .9f); close()
+                }
+                drawPath(gloss, Brush.verticalGradient(listOf(Color.White.copy(alpha = .2f), Color.Transparent)))
+                drawLine(metal.edge.copy(alpha = .4f), Offset(14.dp.toPx(), 2.dp.toPx()), Offset(size.width - 14.dp.toPx(), 2.dp.toPx()), 1.dp.toPx())
+            }.clickable(role = Role.Button, onClick = onClick).padding(horizontal = 7.dp, vertical = 3.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(persianDisplay(row.rank.toString()), Modifier.widthIn(min = 25.dp, max = 58.dp),
-                color = if (row.rank <= 3 || highlighted) Color(0xFFFFD783) else Color(0xFFB5C9E8), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            RankingMedal(row.rank, metal)
             HomeRankingAvatar(row.avatarId, row.imageUrl, row.imageHash, artRevision)
             Text(row.name, Modifier.weight(1f), textAlign = TextAlign.Start, color = Color.White, maxLines = 1,
-                overflow = TextOverflow.Ellipsis, fontSize = 13.sp, fontWeight = if (highlighted) FontWeight.Bold else FontWeight.Normal)
-            Text("سطح ${persianDisplay(row.level.toString())}", color = Color(0xFF9BE1CB), fontSize = 10.sp)
+                overflow = TextOverflow.Ellipsis, fontFamily = RankingFont, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                style = LocalTextStyle.current.copy(shadow = Shadow(Color.Black.copy(alpha = .3f), Offset(0f, 1f), 2f)))
+            RankingLevel(row.level)
         }
+    }
+}
+
+@Composable private fun RankingLevel(level: Int) {
+    Row(Modifier.clip(RoundedCornerShape(50)).background(Color(0xFF101D2C).copy(alpha = .55f))
+        .padding(horizontal = 7.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("سطح ${persianDisplay(level.toString())}", color = Color(0xFFFFF4E7), fontFamily = RankingFont,
+            fontWeight = FontWeight.Bold, fontSize = 10.sp, maxLines = 1)
+        Canvas(Modifier.size(10.dp, 12.dp)) {
+            repeat(3) { index ->
+                val height = size.height * (.35f + index * .28f)
+                drawRoundRect(Color(0xFFDCEAF7), topLeft = Offset(index * size.width / 3f, size.height - height),
+                    size = Size(size.width * .22f, height), cornerRadius = androidx.compose.ui.geometry.CornerRadius(1.dp.toPx()))
+            }
+        }
+    }
+}
+
+@Composable private fun RankingMedal(rank: Int, metal: RankingMetal) {
+    val winner = rank in 1..3
+    Box(Modifier.size(46.dp, 42.dp), contentAlignment = Alignment.Center) {
+        if (winner) Canvas(Modifier.fillMaxSize()) {
+            val ribbon = Path().apply {
+                moveTo(size.width * .38f, size.height * .53f); lineTo(size.width * .26f, size.height)
+                lineTo(size.width * .43f, size.height * .89f); lineTo(size.width * .55f, size.height)
+                lineTo(size.width * .63f, size.height * .58f); close()
+            }
+            drawPath(ribbon, if (rank == 1) Color(0xFFD94027) else if (rank == 2) Color(0xFF3C8AC7) else Color(0xFFD96E28))
+            for (side in listOf(-1, 1)) repeat(5) { index ->
+                val point = Offset(size.width * .5f + side * size.width * (.38f - index * .015f), size.height * (.18f + index * .11f))
+                rotate(side * (28f + index * 12f), point) {
+                    drawOval(metal.edge.copy(alpha = .9f), topLeft = point - Offset(size.width * .035f, size.height * .055f),
+                        size = Size(size.width * .07f, size.height * .11f))
+                }
+            }
+        }
+        Box(Modifier.padding(bottom = if (winner) 5.dp else 0.dp).size(if (winner) 29.dp else 27.dp)
+            .clip(CircleShape).background(if (winner) Brush.linearGradient(listOf(metal.edge, metal.light, metal.middle))
+                else Brush.linearGradient(listOf(Color(0xFF2B4052), Color(0xFF1D2D3D))))
+            .then(Modifier.drawBehind { drawCircle(metal.edge.copy(alpha = if (winner) .95f else .45f), style = Stroke(1.dp.toPx())) }),
+            contentAlignment = Alignment.Center) {
+            Text(persianDisplay(rank.toString()), color = if (winner) metal.dark else Color(0xFFDAE5EF),
+                fontFamily = RankingFont, fontWeight = FontWeight.Black, fontSize = 15.sp)
+        }
+    }
+}
+
+@Composable private fun RankingCrown(modifier: Modifier) {
+    Canvas(modifier) {
+        val crown = Path().apply {
+            moveTo(size.width * .12f, size.height * .74f); lineTo(size.width * .04f, size.height * .23f)
+            lineTo(size.width * .3f, size.height * .43f); lineTo(size.width * .5f, size.height * .05f)
+            lineTo(size.width * .7f, size.height * .43f); lineTo(size.width * .96f, size.height * .23f)
+            lineTo(size.width * .88f, size.height * .74f); close()
+        }
+        drawPath(crown, Brush.verticalGradient(listOf(Color(0xFFFFEE9C), Color(0xFFFFBB23), Color(0xFFD46D08))))
+        drawPath(crown, Color(0xFFFFDE7A), style = Stroke(1.dp.toPx()))
+        drawLine(Color(0xFFFFCE52), Offset(size.width * .15f, size.height * .86f), Offset(size.width * .85f, size.height * .86f), 3.dp.toPx())
+        drawCircle(Color(0xFFEE6235), radius = 2.dp.toPx(), center = Offset(size.width * .5f, size.height * .53f))
     }
 }
 
@@ -192,10 +305,10 @@ internal fun homeOnline(context: Context): Boolean = runCatching {
             HomeRankingAvatar(profile.avatarId, profile.avatarImageUrl, profile.avatarImageHash, artRevision)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(profile.rank?.takeIf { it > 0 }?.let { "رتبهٔ شما: ${persianDisplay(it.toString())}" } ?: "رتبهٔ شما هنوز ثبت نشده",
-                    color = Color(0xFFFFDF94), fontWeight = FontWeight.Black, fontSize = 14.sp)
-                Text(profile.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    color = Color(0xFFFFDF94), fontFamily = RankingFont, fontWeight = FontWeight.Black, fontSize = 14.sp)
+                Text(profile.name, color = Color.White, fontFamily = RankingFont, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            Text("سطح ${persianDisplay(profile.level.toString())}", color = Color(0xFFC4F4DF), fontSize = 11.sp)
+            RankingLevel(profile.level)
         }
     }
 }
@@ -226,8 +339,11 @@ internal fun homeOnline(context: Context): Boolean = runCatching {
 }
 
 @Preview(name = "Home rankings / landscape", widthDp = 450, heightDp = 330, locale = "fa")
+@Preview(name = "Home rankings / compact", widthDp = 350, heightDp = 250, locale = "fa")
 @Composable private fun HomeRankingsPreview() {
-    HomeRankingsPanel((1..15).map { RankedLearner("preview-$it", if (it == 2) "برنامه‌نویس با نام نمایشی طولانی" else "برنامه‌نویس $it", it, 20-it, 0.0, "default", null, null) }, null, false, {}, {}, Modifier.fillMaxSize())
+    val names = listOf("علی‌اصغر", "Ghazal", "محمد", "AMIR")
+    HomeRankingsPanel((1..15).map { RankedLearner("preview-$it", names.getOrNull(it - 1) ?: "برنامه‌نویس $it",
+        it, (5-it).coerceAtLeast(2), 0.0, "default", null, null) }, null, false, {}, {}, Modifier.fillMaxSize())
 }
 
 @Preview(name = "Home rankings / own rank at end", widthDp = 450, heightDp = 330, locale = "fa")

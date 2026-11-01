@@ -3,8 +3,8 @@ package ir.behnamapps.fascratch.inappbilling.learning
 import android.content.Context
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -21,17 +21,23 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -93,7 +99,7 @@ internal fun homeOnline(context: Context): Boolean = runCatching {
         if (selected.isEmpty()) normal()
         else HomeRankingsPanel(selected, profile?.uuid, profile?.registered == true, {
             ready { target = it; scope.launch { ir.behnamapps.fascratch.inappbilling.data.ClientCommands.refresh(context) } }
-        }, { guide = true }, Modifier.fillMaxSize())
+        }, { guide = true }, Modifier.fillMaxSize(), viewerProfile = profile)
     }
     if (guide) HomeRankingNotice("جای تو اینجاست!", "برای اینکه نامت بتواند در رتبه‌بندی نمایش داده شود، اول ثبت‌نام کن و امتیاز جمع کن.", "ثبت‌نام", {
         ready { guide = false; account = true; scope.launch { ir.behnamapps.fascratch.inappbilling.data.ClientCommands.refresh(context) } }
@@ -110,36 +116,96 @@ internal fun homeOnline(context: Context): Boolean = runCatching {
 }
 
 @Composable internal fun HomeRankingsPanel(rows: List<RankedLearner>, viewer: String?, registered: Boolean,
-    onPlayer: (String) -> Unit, onRegister: () -> Unit, modifier: Modifier = Modifier) {
+    onPlayer: (String) -> Unit, onRegister: () -> Unit, modifier: Modifier = Modifier, viewerProfile: LearnerProfile? = null) {
     val artRevision by HomeRankingsCache.artworkRevision.collectAsState()
-    Surface(modifier, shape = RoundedCornerShape(22.dp), color = Color(0xFF172C49), border = BorderStroke(1.dp, Color(0xFF42718A))) {
-        Column(Modifier.background(Brush.verticalGradient(listOf(Color(0xFF223958), Color(0xFF10203B)))).padding(12.dp)) {
-            Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("برنامه‌نویس‌های برتر", Modifier.weight(1f), color = Color.White, fontWeight = FontWeight.Black, fontSize = 17.sp)
-                Text("✦ TOP ${rows.size}", color = Color(0xFFFFD783), fontSize = 11.sp)
-            }
+    val shine = remember { Animatable(-.3f) }
+    val preview = LocalInspectionMode.current
+    LaunchedEffect(Unit) {
+        // A single entrance glint; no permanent animation loop on the Home screen.
+        if (!preview && (android.os.Build.VERSION.SDK_INT < 26 || android.animation.ValueAnimator.areAnimatorsEnabled())) {
+            shine.animateTo(1.4f, tween(2200))
+        }
+    }
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+    Surface(modifier, shape = RoundedCornerShape(22.dp), color = Color(0xFF172C49), border = BorderStroke(1.dp, Color(0xFF72A6B8))) {
+        Column(Modifier.background(Brush.verticalGradient(listOf(Color(0xFF284663), Color(0xFF10203B))))
+            .drawWithContent {
+                drawContent()
+                if (shine.value > -.25f && shine.value < 1.35f) {
+                    val x = size.width * shine.value
+                    drawRect(Brush.linearGradient(listOf(Color.Transparent, Color.White.copy(alpha = .08f), Color.Transparent),
+                        start = Offset(x - size.width * .22f, 0f), end = Offset(x + size.width * .22f, size.height)))
+                }
+                // Small static sparkles stay at the frame edges, away from names and controls.
+                listOf(Offset(size.width * .025f, size.height * .12f), Offset(size.width * .975f, size.height * .06f),
+                    Offset(size.width * .975f, size.height * .88f)).forEach { point ->
+                    val radius = 3.dp.toPx()
+                    drawLine(Color(0xFFFFD783).copy(alpha = .5f), point - Offset(radius, 0f), point + Offset(radius, 0f), 1.dp.toPx())
+                    drawLine(Color(0xFFFFD783).copy(alpha = .5f), point - Offset(0f, radius), point + Offset(0f, radius), 1.dp.toPx())
+                }
+            }.padding(12.dp)) {
+            Text("برنامه‌نویس‌های برتر اسکرچ", Modifier.fillMaxWidth().padding(bottom = 8.dp), textAlign = TextAlign.Start,
+                color = Color.White, fontWeight = FontWeight.Black, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 items(rows, key = { it.uuid }) { row ->
-                    val context = LocalContext.current
-                    var image by remember(row.imageHash) { mutableStateOf(AvatarImages.peek(row.imageHash)?.asImageBitmap()) }
-                    LaunchedEffect(row.imageHash, artRevision) { image = AvatarImages.load(context, row.imageUrl, row.imageHash, allowNetwork = false)?.asImageBitmap() }
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                        .background(if (row.uuid == viewer) Color(0xFF315563) else Color.White.copy(alpha = .045f))
-                        .clickable(role = Role.Button) { onPlayer(row.uuid) }.padding(horizontal = 9.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(persianDisplay(row.rank.toString()), Modifier.width(25.dp), color = if (row.rank <= 3) Color(0xFFFFD783) else Color(0xFFB5C9E8), fontWeight = FontWeight.Bold)
-                        if (image != null) Image(image!!, null, Modifier.size(36.dp), contentScale = ContentScale.Fit)
-                        else Image(painterResource(AvatarArtwork.resource(row.avatarId)), null, Modifier.size(36.dp), contentScale = ContentScale.Fit)
-                        Text(row.name, Modifier.weight(1f), color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp)
-                        Text("سطح ${persianDisplay(row.level.toString())}", color = Color(0xFF9BE1CB), fontSize = 10.sp)
+                    HomeRankingRow(row, row.uuid == viewer, artRevision) { onPlayer(row.uuid) }
+                }
+                if (HomeRankingPolicy.showViewer(registered, viewer, rows.map { it.uuid }) && viewerProfile != null) {
+                    item(key = "home-viewer-summary") {
+                        HomeViewerRank(viewerProfile, artRevision) { onPlayer(viewerProfile.uuid) }
                     }
                 }
             }
-            if (!registered) TextButton(onClick = onRegister, modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp)) {
-                Text("چرا اسم من در لیست نیست؟", color = Color(0xFFFFD783), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            if (!registered) Button(onClick = onRegister, modifier = Modifier.align(Alignment.Start).padding(top = 8.dp).heightIn(min = 44.dp),
+                shape = RoundedCornerShape(14.dp), border = BorderStroke(1.dp, Color(0xFFFFF0B1)),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD778), contentColor = Color(0xFF523413)),
+                elevation = ButtonDefaults.buttonElevation(defaultElevation = 3.dp, pressedElevation = 1.dp),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
+                Text("چرا اسم من در لیست نیست؟ 😢", fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
+    }
+}
+
+@Composable private fun HomeRankingRow(row: RankedLearner, highlighted: Boolean, artRevision: Int, onClick: () -> Unit) {
+    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
+        color = if (highlighted) Color(0xFF345C70) else Color.White.copy(alpha = .045f),
+        border = if (highlighted) BorderStroke(1.dp, Color(0xFFFFD783)) else null) {
+        Row(Modifier.clickable(role = Role.Button, onClick = onClick).padding(horizontal = 9.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(persianDisplay(row.rank.toString()), Modifier.widthIn(min = 25.dp, max = 58.dp),
+                color = if (row.rank <= 3 || highlighted) Color(0xFFFFD783) else Color(0xFFB5C9E8), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            HomeRankingAvatar(row.avatarId, row.imageUrl, row.imageHash, artRevision)
+            Text(row.name, Modifier.weight(1f), textAlign = TextAlign.Start, color = Color.White, maxLines = 1,
+                overflow = TextOverflow.Ellipsis, fontSize = 13.sp, fontWeight = if (highlighted) FontWeight.Bold else FontWeight.Normal)
+            Text("سطح ${persianDisplay(row.level.toString())}", color = Color(0xFF9BE1CB), fontSize = 10.sp)
+        }
+    }
+}
+
+@Composable private fun HomeViewerRank(profile: LearnerProfile, artRevision: Int, onClick: () -> Unit) {
+    Surface(Modifier.fillMaxWidth().padding(top = 5.dp), shape = RoundedCornerShape(14.dp),
+        color = Color(0xFF396578), border = BorderStroke(1.5.dp, Color(0xFFFFD783))) {
+        Row(Modifier.clickable(role = Role.Button, onClick = onClick).padding(10.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            HomeRankingAvatar(profile.avatarId, profile.avatarImageUrl, profile.avatarImageHash, artRevision)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(profile.rank?.takeIf { it > 0 }?.let { "رتبهٔ شما: ${persianDisplay(it.toString())}" } ?: "رتبهٔ شما هنوز ثبت نشده",
+                    color = Color(0xFFFFDF94), fontWeight = FontWeight.Black, fontSize = 14.sp)
+                Text(profile.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Text("سطح ${persianDisplay(profile.level.toString())}", color = Color(0xFFC4F4DF), fontSize = 11.sp)
+        }
+    }
+}
+
+@Composable private fun HomeRankingAvatar(id: String, url: String?, hash: String?, artRevision: Int) {
+    val context = LocalContext.current
+    var bitmap by remember(hash) { mutableStateOf(AvatarImages.peek(hash)?.asImageBitmap()) }
+    LaunchedEffect(hash, url, artRevision) { bitmap = AvatarImages.load(context, url, hash, allowNetwork = false)?.asImageBitmap() }
+    if (bitmap != null) Image(bitmap!!, null, Modifier.size(36.dp), contentScale = ContentScale.Fit)
+    else Image(painterResource(AvatarArtwork.resource(id)), null, Modifier.size(36.dp), contentScale = ContentScale.Fit)
 }
 
 @Composable private fun HomeRankingNotice(title: String, text: String, action: String, onAction: () -> Unit, close: () -> Unit) {
@@ -162,4 +228,11 @@ internal fun homeOnline(context: Context): Boolean = runCatching {
 @Preview(name = "Home rankings / landscape", widthDp = 450, heightDp = 330, locale = "fa")
 @Composable private fun HomeRankingsPreview() {
     HomeRankingsPanel((1..15).map { RankedLearner("preview-$it", if (it == 2) "برنامه‌نویس با نام نمایشی طولانی" else "برنامه‌نویس $it", it, 20-it, 0.0, "default", null, null) }, null, false, {}, {}, Modifier.fillMaxSize())
+}
+
+@Preview(name = "Home rankings / own rank at end", widthDp = 450, heightDp = 330, locale = "fa")
+@Composable private fun HomeViewerRankPreview() {
+    val profile = LearnerProfile("viewer", "برنامه‌نویس خلاق", 8, 0, 0.0, 100.0, 842, true, registered = true)
+    HomeRankingsPanel(listOf(RankedLearner("other", "قهرمان اسکرچ", 1, 25, 0.0, "default", null, null)),
+        profile.uuid, true, {}, {}, Modifier.fillMaxSize(), profile)
 }

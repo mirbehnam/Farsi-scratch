@@ -4,6 +4,12 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class HomeRankingPolicyTest {
+    @Test fun ownRankIsAppendedOnlyForRegisteredPlayersOutsideDisplayedLeaders() {
+        assertTrue(HomeRankingPolicy.showViewer(true, "viewer", listOf("first", "second")))
+        assertFalse(HomeRankingPolicy.showViewer(true, "viewer", listOf("first", "viewer")))
+        assertFalse(HomeRankingPolicy.showViewer(false, "viewer", listOf("first")))
+        assertFalse(HomeRankingPolicy.showViewer(true, null, listOf("first")))
+    }
     @Test fun defaultChanceSelectsOneThirdOfUniformDraws() {
         assertEquals(1000, (0 until 3000).count { HomeRankingPolicy.show(true, true, 100.0 / 3.0, (it + .5) / 3000.0) })
     }

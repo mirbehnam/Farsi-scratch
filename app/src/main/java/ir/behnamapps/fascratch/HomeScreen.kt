@@ -269,26 +269,30 @@ fun HomeScreen(
                             val imageWidth = minOf(maxWidth, imageHeightLimit * ratio)
                             val imageHeight = imageWidth / ratio
 
-                            Column(
-                                modifier = Modifier.fillMaxSize(),
-                                verticalArrangement = Arrangement.spacedBy(groupGap, Alignment.CenterVertically),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                HomeHeroBanner(
-                                    painter = headerPainter,
-                                    onOpenCourses = onTraining,
-                                    breath = heroBreath,
-                                    glowAlpha = glowAlpha,
-                                    modifier = Modifier
-                                        .width(imageWidth)
-                                        .height(imageHeight)
-                                )
-                                OtherAppsSection(
-                                    modifier = Modifier.width(imageWidth),
-                                    compact = compactHeight,
-                                    onLunaPlayer = onLunaPlayer,
-                                    onMafiaApp = onMafiaApp
-                                )
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                ir.behnamapps.fascratch.inappbilling.learning.HomeRankingsSlot(
+                                    modifier = Modifier.width(imageWidth).height(imageHeight + groupGap + appsBlockHeight)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.fillMaxSize(),
+                                        verticalArrangement = Arrangement.spacedBy(groupGap, Alignment.CenterVertically),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        HomeHeroBanner(
+                                            painter = headerPainter,
+                                            onOpenCourses = onTraining,
+                                            breath = heroBreath,
+                                            glowAlpha = glowAlpha,
+                                            modifier = Modifier.width(imageWidth).height(imageHeight)
+                                        )
+                                        OtherAppsSection(
+                                            modifier = Modifier.width(imageWidth),
+                                            compact = compactHeight,
+                                            onLunaPlayer = onLunaPlayer,
+                                            onMafiaApp = onMafiaApp
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

@@ -130,7 +130,7 @@ import kotlinx.coroutines.launch
     }
 }
 
-@Composable private fun LearnerShowcasePage(viewer: String, target: String, repository: LearningRepository, onClose: () -> Unit) {
+@Composable internal fun LearnerShowcasePage(viewer: String, target: String, repository: LearningRepository, onClose: () -> Unit) {
     var data by remember(target) { mutableStateOf<LearnerShowcase?>(null) }
     var loading by remember(target) { mutableStateOf(true) }
     var error by remember(target) { mutableStateOf<String?>(null) }

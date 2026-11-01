@@ -27,7 +27,7 @@ internal object AvatarImages {
     fun validHash(value: String?) = value != null && value.matches(Regex("[a-f0-9]{64}"))
     fun peek(hash: String?): Bitmap? = hash?.let(memory::get)
 
-    suspend fun load(context: Context, url: String?, hash: String?): Bitmap? = withContext(Dispatchers.IO) {
+    suspend fun load(context: Context, url: String?, hash: String?, allowNetwork: Boolean = true): Bitmap? = withContext(Dispatchers.IO) {
         if (!validHash(hash) || url == null) return@withContext null
         val key = hash!!
         locks.getOrPut(key) { Mutex() }.withLock {
@@ -40,6 +40,7 @@ internal object AvatarImages {
                 }
                 // Replace corrupt/truncated cache entries rather than repeatedly redownloading them.
                 if (target.exists()) target.delete()
+                if (!allowNetwork) return@withLock null
                 val address = URL(url)
                 require(address.protocol == "https" && address.host.isNotBlank() && address.userInfo == null && address.port in listOf(-1, 443))
                 val connection = (address.openConnection() as HttpsURLConnection).apply {

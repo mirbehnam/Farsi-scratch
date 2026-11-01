@@ -112,6 +112,7 @@ class LearningRepository private constructor(context: Context) {
             else "ثبت پیشرفت انجام نشد؛ اتصال را بررسی کنید. اطلاعات ذخیره‌شده برای ارسال مجدد حفظ می‌شود."
     }
     init {
+        HomeRankingsCache.warm(app)
         // One local timer per nearest gift expiry, not a network poll or a per-second loop.
         scope.launch {
             mutable.collectLatest { snapshot ->
@@ -305,6 +306,14 @@ class LearningRepository private constructor(context: Context) {
         val json = api.leaderboard("", secret)
         require(identity.secret() == secret && identity.profile()?.uuid == expectedUuid && json.optString("viewer_uuid") == expectedUuid)
         LeaderboardBoard.parse(json)
+    }
+
+    internal suspend fun homeLeaderboard(expectedUuid: String): JSONObject = withContext(Dispatchers.IO) {
+        require(identity.profile()?.uuid == expectedUuid)
+        val secret = identity.secret()
+        val json = api.leaderboard("home", secret)
+        require(identity.secret() == secret && identity.profile()?.uuid == expectedUuid)
+        json
     }
     internal suspend fun showcase(expectedUuid: String, targetUuid: String): LearnerShowcase = withContext(Dispatchers.IO) {
         require(identity.profile()?.uuid == expectedUuid && targetUuid.matches(Regex("[a-fA-F0-9-]{36}")))

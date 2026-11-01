@@ -178,12 +178,12 @@ internal fun homeOnline(context: Context): Boolean = runCatching {
                     drawLine(Color(0xFFFFD783).copy(alpha = .5f), point - Offset(radius, 0f), point + Offset(radius, 0f), 1.dp.toPx())
                     drawLine(Color(0xFFFFD783).copy(alpha = .5f), point - Offset(0f, radius), point + Offset(0f, radius), 1.dp.toPx())
                 }
-            }.padding(horizontal = 11.dp, vertical = 8.dp)) {
-            Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                RankingCrown(Modifier.size(27.dp, 25.dp))
-                Text("برنامه‌نویس‌های برتر اسکرچ", Modifier.weight(1f), textAlign = TextAlign.Start,
-                    color = Color(0xFFFFF7E8), fontFamily = RankingFont, fontWeight = FontWeight.Black, fontSize = 15.sp,
+            }.padding(start = 11.dp, end = 11.dp, top = 8.dp, bottom = 4.dp)) {
+            BoxWithConstraints(Modifier.fillMaxWidth().padding(bottom = 7.dp).height(56.dp), contentAlignment = Alignment.Center) {
+                Image(painterResource(R.drawable.home_rank_header_v1), null, Modifier.matchParentSize(), contentScale = ContentScale.FillBounds)
+                Text("برنامه‌نویس‌های برتر اسکرچ", Modifier.fillMaxWidth().padding(start = 34.dp, end = 34.dp, top = 16.dp), textAlign = TextAlign.Center,
+                    color = Color(0xFFFFF7E8), fontFamily = RankingFont, fontWeight = FontWeight.Black, fontSize = if (maxWidth < 360.dp) 14.sp else 16.sp,
+                    lineHeight = 20.sp,
                     style = LocalTextStyle.current.copy(shadow = Shadow(Color(0xFF35170B), Offset(0f, 2f), 4f)),
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
@@ -197,15 +197,15 @@ internal fun homeOnline(context: Context): Boolean = runCatching {
                     }
                 }
             }
-            if (!registered) Box(Modifier.align(Alignment.Start).padding(top = 2.dp).heightIn(min = 44.dp)
-                .clickable(role = Role.Button, onClick = onRegister), contentAlignment = Alignment.Center) {
+            if (!registered) Box(Modifier.align(Alignment.CenterHorizontally).heightIn(min = 44.dp)
+                .clickable(role = Role.Button, onClick = onRegister), contentAlignment = Alignment.BottomCenter) {
                 // Compact visible pill inside a comfortable touch target; explicit app font.
                 Surface(shape = RoundedCornerShape(50), color = Color.Transparent, shadowElevation = 3.dp,
-                    border = BorderStroke(1.dp, Color(0xFFFFBA63))) {
+                    border = BorderStroke(1.dp, Color(0xFFFFA14C))) {
                     Text("چرا اسم من در لیست نیست؟ 😢", Modifier.background(Brush.verticalGradient(
-                        listOf(Color(0xFFFF9E28), Color(0xFFEC710C), Color(0xFFC44A06))))
+                        listOf(Color(0xFFFF861C), Color(0xFFF4670B), Color(0xFFCC4005))))
                         .padding(horizontal = 10.dp, vertical = 3.dp), color = Color.White,
-                        fontFamily = RankingFont, fontSize = 12.sp, lineHeight = 18.sp, fontWeight = FontWeight.Bold)
+                        fontFamily = RankingFont, fontSize = 13.sp, lineHeight = 19.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -215,17 +215,17 @@ internal fun homeOnline(context: Context): Boolean = runCatching {
 
 @Composable private fun HomeRankingRow(row: RankedLearner, highlighted: Boolean, artRevision: Int, onClick: () -> Unit) {
     val metal = rankingMetal(row.rank)
-    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(13.dp), color = metal.dark,
-        border = BorderStroke(if (highlighted) 2.dp else 1.dp, if (highlighted) Color(0xFFFFF1B4) else metal.edge.copy(alpha = .8f))) {
-        Row(Modifier.background(Brush.verticalGradient(listOf(metal.light, metal.middle, metal.dark)))
-            .drawBehind {
-                val gloss = Path().apply {
-                    moveTo(0f, 0f); lineTo(size.width * .33f, 0f)
-                    lineTo(size.width * .16f, size.height * .52f); lineTo(0f, size.height * .9f); close()
-                }
-                drawPath(gloss, Brush.verticalGradient(listOf(Color.White.copy(alpha = .2f), Color.Transparent)))
-                drawLine(metal.edge.copy(alpha = .4f), Offset(14.dp.toPx(), 2.dp.toPx()), Offset(size.width - 14.dp.toPx(), 2.dp.toPx()), 1.dp.toPx())
-            }.clickable(role = Role.Button, onClick = onClick).padding(horizontal = 7.dp, vertical = 3.dp),
+    val frame = when (row.rank) {
+        1 -> R.drawable.home_rank_gold_v1
+        2 -> R.drawable.home_rank_silver_v1
+        3 -> R.drawable.home_rank_bronze_v1
+        else -> R.drawable.home_rank_regular_v1
+    }
+    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(13.dp), color = Color.Transparent,
+        border = if (highlighted) BorderStroke(2.dp, Color(0xFFFFF1B4)) else null) {
+        Box {
+        Image(painterResource(frame), null, Modifier.matchParentSize(), contentScale = ContentScale.FillBounds)
+        Row(Modifier.clickable(role = Role.Button, onClick = onClick).padding(horizontal = 7.dp, vertical = 3.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             RankingMedal(row.rank, metal)
             HomeRankingAvatar(row.avatarId, row.imageUrl, row.imageHash, artRevision)
@@ -233,6 +233,7 @@ internal fun homeOnline(context: Context): Boolean = runCatching {
                 overflow = TextOverflow.Ellipsis, fontFamily = RankingFont, fontSize = 14.sp, fontWeight = FontWeight.Bold,
                 style = LocalTextStyle.current.copy(shadow = Shadow(Color.Black.copy(alpha = .3f), Offset(0f, 1f), 2f)))
             RankingLevel(row.level)
+        }
         }
     }
 }
@@ -282,24 +283,11 @@ internal fun homeOnline(context: Context): Boolean = runCatching {
     }
 }
 
-@Composable private fun RankingCrown(modifier: Modifier) {
-    Canvas(modifier) {
-        val crown = Path().apply {
-            moveTo(size.width * .12f, size.height * .74f); lineTo(size.width * .04f, size.height * .23f)
-            lineTo(size.width * .3f, size.height * .43f); lineTo(size.width * .5f, size.height * .05f)
-            lineTo(size.width * .7f, size.height * .43f); lineTo(size.width * .96f, size.height * .23f)
-            lineTo(size.width * .88f, size.height * .74f); close()
-        }
-        drawPath(crown, Brush.verticalGradient(listOf(Color(0xFFFFEE9C), Color(0xFFFFBB23), Color(0xFFD46D08))))
-        drawPath(crown, Color(0xFFFFDE7A), style = Stroke(1.dp.toPx()))
-        drawLine(Color(0xFFFFCE52), Offset(size.width * .15f, size.height * .86f), Offset(size.width * .85f, size.height * .86f), 3.dp.toPx())
-        drawCircle(Color(0xFFEE6235), radius = 2.dp.toPx(), center = Offset(size.width * .5f, size.height * .53f))
-    }
-}
-
 @Composable private fun HomeViewerRank(profile: LearnerProfile, artRevision: Int, onClick: () -> Unit) {
     Surface(Modifier.fillMaxWidth().padding(top = 5.dp), shape = RoundedCornerShape(14.dp),
-        color = Color(0xFF396578), border = BorderStroke(1.5.dp, Color(0xFFFFD783))) {
+        color = Color.Transparent, border = BorderStroke(1.5.dp, Color(0xFFFFD783))) {
+        Box {
+        Image(painterResource(R.drawable.home_rank_regular_v1), null, Modifier.matchParentSize(), contentScale = ContentScale.FillBounds)
         Row(Modifier.clickable(role = Role.Button, onClick = onClick).padding(10.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             HomeRankingAvatar(profile.avatarId, profile.avatarImageUrl, profile.avatarImageHash, artRevision)
@@ -309,6 +297,7 @@ internal fun homeOnline(context: Context): Boolean = runCatching {
                 Text(profile.name, color = Color.White, fontFamily = RankingFont, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             RankingLevel(profile.level)
+        }
         }
     }
 }

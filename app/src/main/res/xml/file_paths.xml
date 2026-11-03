@@ -2,4 +2,5 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <files-path name="scratch_projects" path="scratch_projects/" />
     <cache-path name="shared_sprites" path="shared_sprites/" />
+    <cache-path name="packaged_html" path="packaged_html/" />
 </paths>

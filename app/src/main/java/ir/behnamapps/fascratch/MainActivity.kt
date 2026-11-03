@@ -133,6 +133,7 @@ import ir.behnamapps.fascratch.editor.EditorAssetsConfig
 import ir.behnamapps.fascratch.editor.EditorEngine
 import ir.behnamapps.fascratch.editor.EditorEngineDialog
 import ir.behnamapps.fascratch.editor.EditorAssetsPathHandler
+import ir.behnamapps.fascratch.editor.PackagedExportBridge
 import com.google.firebase.analytics.FirebaseAnalytics
 import kotlin.math.roundToInt
 import java.io.File
@@ -180,6 +181,7 @@ class MainActivity : ComponentActivity() {
     lateinit var projectRepository: ProjectRepository
         private set
     private lateinit var projectSaveBridge: ScratchProjectSaveBridge
+    private lateinit var packagedExportBridge: PackagedExportBridge
     var showProjectLibrary by mutableStateOf(false)
         private set
     var projectLibraryVersion by mutableIntStateOf(0)
@@ -229,6 +231,7 @@ class MainActivity : ComponentActivity() {
             .setUserProperty("distribution", BuildConfig.FLAVOR)
         projectRepository = ProjectRepository(this)
         projectSaveBridge = ScratchProjectSaveBridge(this)
+        packagedExportBridge = PackagedExportBridge(this)
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         makeFullScreen()
         ir.behnamapps.fascratch.home.HomeBannerCache.warm(applicationContext)
@@ -437,12 +440,14 @@ class MainActivity : ComponentActivity() {
     }
 
     fun attachScratchWebView(webView: WebView) {
+        packagedExportBridge.attach(webView)
         activeScratchWebView = webView
         webView.addJavascriptInterface(projectSaveBridge, "AndroidProjectSaver")
         webView.addJavascriptInterface(scratchTextInputBridge, "AndroidScratchTextInput")
     }
 
     fun detachScratchWebView(webView: WebView) {
+        packagedExportBridge.detach(webView)
         webView.removeJavascriptInterface("AndroidProjectSaver")
         webView.removeJavascriptInterface("AndroidScratchTextInput")
         if (activeScratchWebView === webView) {
@@ -674,6 +679,7 @@ class MainActivity : ComponentActivity() {
         fileChooserCallback?.onReceiveValue(null)
         pendingWebPermissionRequest?.deny()
         projectSaveBridge.dispose()
+        packagedExportBridge.dispose()
         super.onDestroy()
     }
 }
@@ -688,6 +694,7 @@ private fun FarsiScratchApp(activity: MainActivity) {
     var showEnginePicker by rememberSaveable { mutableStateOf(false) }
     var showSocials by rememberSaveable { mutableStateOf(false) }
     var showMyProjects by rememberSaveable { mutableStateOf(false) }
+    var projectAwaitingEngine by rememberSaveable { mutableStateOf<String?>(null) }
     var showExit by rememberSaveable { mutableStateOf(false) }
     var showNotificationPermission by rememberSaveable { mutableStateOf(false) }
     var permissionRequestInProgress by remember { mutableStateOf(false) }
@@ -804,16 +811,14 @@ private fun FarsiScratchApp(activity: MainActivity) {
                 showManagementActions = false
             )
         }
-        if (!isExpired && showMyProjects && screen == AppScreen.Home) {
+        if (!isExpired && showMyProjects && projectAwaitingEngine == null && screen == AppScreen.Home) {
             val projects = remember(activity.projectLibraryVersion) {
                 activity.projectRepository.listProjects()
             }
             ProjectLibraryDialog(
                 projects = projects,
                 onLoad = { project ->
-                    activity.queueProjectFromHome(project)
-                    showMyProjects = false
-                    screen = AppScreen.Scratch
+                    projectAwaitingEngine = project.projectFile.name
                 },
                 onLoadFromPhone = {
                     activity.queuePhonePickerFromHome()
@@ -824,6 +829,23 @@ private fun FarsiScratchApp(activity: MainActivity) {
                 showManagementActions = true,
                 onShare = activity::shareProject,
                 onDelete = activity::deleteProject
+            )
+        }
+        if (!isExpired && showMyProjects && projectAwaitingEngine != null && screen == AppScreen.Home) {
+            EditorEngineDialog(
+                availableEngines = editorConfig.availableEngines,
+                onDismiss = { projectAwaitingEngine = null },
+                onSelect = { engine ->
+                    val project = activity.projectRepository.listProjects()
+                        .firstOrNull { it.projectFile.name == projectAwaitingEngine }
+                    projectAwaitingEngine = null
+                    if (project != null) {
+                        selectedEngine = engine
+                        activity.queueProjectFromHome(project)
+                        showMyProjects = false
+                        screen = AppScreen.Scratch
+                    }
+                }
             )
         }
     }

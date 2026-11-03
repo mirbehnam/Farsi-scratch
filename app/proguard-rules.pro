@@ -25,3 +25,9 @@
     @android.webkit.JavascriptInterface <methods>;
 }
 -keepattributes RuntimeVisibleAnnotations,RuntimeInvisibleAnnotations
+
+# Adivery's bundled MBridge SDK references these absent optional classes.
+# Match only the two entries reported by R8; keep all other missing-class checks.
+# Official sample: https://github.com/adivery/adivery-android-sample/blob/master/app/proguard-rules.pro
+-dontwarn com.mbridge.msdk.nativex.view.MBMediaView
+-dontwarn com.mbridge.msdk.video.bt.module.orglistener.g

@@ -21,3 +21,8 @@ local.properties
 
 # Ignore Scratch build assets
 app/src/main/assets/build/
+app/src/main/assets/turbobuild/
+
+# Local Gradle build logic outputs
+/buildSrc/build/
+/buildSrc/.gradle/

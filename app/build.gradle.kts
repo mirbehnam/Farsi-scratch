@@ -1,3 +1,5 @@
+import com.android.build.api.artifact.SingleArtifact
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -70,6 +72,26 @@ android {
         aidl = true
         compose = true
         buildConfig = true
+    }
+}
+
+val editorSelection = providers.gradleProperty("scratchEngines").orElse("both")
+
+androidComponents {
+    onVariants { variant ->
+        val capitalized = variant.name.replaceFirstChar { it.uppercaseChar() }
+        val prepare = tasks.register<PrepareEditorAssetsTask>("prepare${capitalized}EditorAssets") {
+            selection.set(editorSelection)
+            outputDirectory.set(layout.buildDirectory.dir("generated/editorAssets/${variant.name}/assets"))
+            reportFile.set(layout.buildDirectory.file("reports/editorAssets/${variant.name}.json"))
+        }
+        variant.artifacts.use(prepare)
+            .wiredWithDirectories(PrepareEditorAssetsTask::inputDirectory, PrepareEditorAssetsTask::outputDirectory)
+            .toTransform(SingleArtifact.ASSETS)
+        // A mode switch must rebuild the archive, not retain holes from removed ZIP entries.
+        tasks.matching { it.name == "package$capitalized" || it.name == "package${capitalized}Bundle" }.configureEach {
+            inputs.property("editorAssetsSelection", editorSelection)
+        }
     }
 }
 

@@ -129,6 +129,10 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.webkit.WebViewAssetLoader
+import ir.behnamapps.fascratch.editor.EditorAssetsConfig
+import ir.behnamapps.fascratch.editor.EditorEngine
+import ir.behnamapps.fascratch.editor.EditorEngineDialog
+import ir.behnamapps.fascratch.editor.EditorAssetsPathHandler
 import com.google.firebase.analytics.FirebaseAnalytics
 import kotlin.math.roundToInt
 import java.io.File
@@ -505,12 +509,12 @@ class MainActivity : ComponentActivity() {
         activeScratchWebView?.evaluateJavascript(script, null)
     }
 
-    fun finishScratchTextInput(submit: Boolean = false) {
+    fun finishScratchTextInput() {
         val session = scratchTextInputSession ?: return
         scratchTextInputSession = null
         val script = """
             window.__farsiScratchNativeInput &&
-                window.__farsiScratchNativeInput.finish(${JSONObject.quote(session.id)}, $submit);
+                window.__farsiScratchNativeInput.finish(${JSONObject.quote(session.id)});
         """.trimIndent()
         activeScratchWebView?.evaluateJavascript(script, null)
     }
@@ -679,6 +683,9 @@ private enum class AppScreen { Home, Scratch }
 @Composable
 private fun FarsiScratchApp(activity: MainActivity) {
     var screen by rememberSaveable { mutableStateOf(AppScreen.Home) }
+    val editorConfig = remember(activity) { EditorAssetsConfig.load(activity.assets) }
+    var selectedEngine by rememberSaveable { mutableStateOf(editorConfig.defaultEngine) }
+    var showEnginePicker by rememberSaveable { mutableStateOf(false) }
     var showSocials by rememberSaveable { mutableStateOf(false) }
     var showMyProjects by rememberSaveable { mutableStateOf(false) }
     var showExit by rememberSaveable { mutableStateOf(false) }
@@ -736,11 +743,7 @@ private fun FarsiScratchApp(activity: MainActivity) {
                 } else when (screen) {
                     AppScreen.Home -> HomeScreen(
                         onEnter = {
-                            if (activity.shouldShowNotificationPermissionIntro()) {
-                                showNotificationPermission = true
-                            } else {
-                                screen = AppScreen.Scratch
-                            }
+                            showEnginePicker = true
                         },
                         onFollow = { showSocials = true },
                         onMyProjects = { showMyProjects = true },
@@ -750,6 +753,7 @@ private fun FarsiScratchApp(activity: MainActivity) {
                     )
                     AppScreen.Scratch -> ScratchScreen(
                         activity = activity,
+                        engine = selectedEngine,
                         onQuickLessonsVisibility = { quickLessonsVisible = it },
                         onHome = { showExit = true }
                     )
@@ -757,6 +761,21 @@ private fun FarsiScratchApp(activity: MainActivity) {
             }
         }
 
+        if (!isExpired && showEnginePicker && screen == AppScreen.Home) {
+            EditorEngineDialog(
+                availableEngines = editorConfig.availableEngines,
+                onDismiss = { showEnginePicker = false },
+                onSelect = { engine ->
+                    selectedEngine = engine
+                    showEnginePicker = false
+                    if (activity.shouldShowNotificationPermissionIntro()) {
+                        showNotificationPermission = true
+                    } else {
+                        screen = AppScreen.Scratch
+                    }
+                }
+            )
+        }
         if (!isExpired && showSocials) {
             SocialDialog(
                 onDismiss = { showSocials = false },
@@ -1153,7 +1172,7 @@ private fun ExitDialog(onDismiss: () -> Unit, onExit: () -> Unit) {
 }
 
 @Composable
-private fun ScratchScreen(activity: MainActivity, onQuickLessonsVisibility: (Boolean) -> Unit, onHome: () -> Unit) {
+private fun ScratchScreen(activity: MainActivity, engine: EditorEngine, onQuickLessonsVisibility: (Boolean) -> Unit, onHome: () -> Unit) {
     var isLoading by remember { mutableStateOf(true) }
     var progress by remember { mutableIntStateOf(0) }
     var webView by remember { mutableStateOf<WebView?>(null) }
@@ -1247,6 +1266,7 @@ private fun ScratchScreen(activity: MainActivity, onQuickLessonsVisibility: (Boo
             Box(Modifier.weight(.90f).fillMaxHeight()) {
                 ScratchWebView(
                     activity = activity,
+                    engine = engine,
                     onProgress = { progress = it },
                     onLoadingChanged = { isLoading = it },
                     onWebViewReady = { webView = it },
@@ -1289,8 +1309,7 @@ private fun ScratchScreen(activity: MainActivity, onQuickLessonsVisibility: (Boo
                 ScratchTextInputBar(
                     session = session,
                     onValueChange = { activity.updateScratchTextInput(session.id, it) },
-                    onDone = { activity.finishScratchTextInput(submit = true) },
-                    onDismiss = { activity.finishScratchTextInput() }
+                    onDone = activity::finishScratchTextInput
                 )
             }
         }
@@ -1446,8 +1465,7 @@ private fun ScratchKeyButton(
 private fun ScratchTextInputBar(
     session: ScratchTextInputSession,
     onValueChange: (TextFieldValue) -> Unit,
-    onDone: () -> Unit,
-    onDismiss: () -> Unit
+    onDone: () -> Unit
 ) {
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -1475,7 +1493,7 @@ private fun ScratchTextInputBar(
     }
     BackHandler {
         keyboardController?.hide()
-        onDismiss()
+        onDone()
     }
 
     Surface(
@@ -1617,15 +1635,17 @@ private fun LoadingVisibility(isLoading: Boolean, progress: Int) {
 @Composable
 private fun ScratchWebView(
     activity: MainActivity,
+    engine: EditorEngine,
     onProgress: (Int) -> Unit,
     onLoadingChanged: (Boolean) -> Unit,
     onWebViewReady: (WebView?) -> Unit,
     onScrollFractionChanged: (Float) -> Unit
 ) {
     val context = LocalContext.current
-    val webView = remember {
+    val webView = remember(engine) {
+        val editorAssets = EditorAssetsConfig.load(context.assets)
         val assetLoader = WebViewAssetLoader.Builder()
-            .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(context))
+            .addPathHandler("/assets/", EditorAssetsPathHandler(context, editorAssets))
             .addPathHandler("/projects/") { path ->
                 activity.projectRepository.openProjectForWeb(path)
             }
@@ -1687,7 +1707,7 @@ private fun ScratchWebView(
                 val maxScroll = (web.contentHeight * web.scale - web.height).coerceAtLeast(0f)
                 onScrollFractionChanged(if (maxScroll == 0f) 0f else (scrollY / maxScroll).coerceIn(0f, 1f))
             }
-            loadUrl("https://appassets.androidplatform.net/assets/build/index.html")
+            loadUrl(editorAssets.entryUrl(engine))
         }
     }
 

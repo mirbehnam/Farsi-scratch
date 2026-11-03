@@ -137,7 +137,7 @@ internal const val SCRATCH_TEXT_INPUT_SCRIPT = """
                     syncingFromAndroid = false;
                 }
             },
-            finish: function (id, submit) {
+            finish: function (id) {
                 if (!active || active.id !== id || !active.element) return;
                 var element = active.element;
                 active = null;
@@ -145,17 +145,9 @@ internal const val SCRATCH_TEXT_INPUT_SCRIPT = """
                     bubbles: true,
                     composed: true
                 }));
-                if (submit && element.getAttribute('data-native-input-submit') === 'enter') {
-                    element.dispatchEvent(new KeyboardEvent('keypress', {
-                        key: 'Enter',
-                        code: 'Enter',
-                        charCode: 13,
-                        keyCode: 13,
-                        bubbles: true,
-                        cancelable: true
-                    }));
-                }
                 if (element.blur) element.blur();
+                var dialog = element.closest('[role="dialog"]');
+                if (dialog && dialog.isConnected) dialog.focus({preventScroll: true});
             }
         };
     })();

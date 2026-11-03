@@ -24,6 +24,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalInspectionMode
@@ -35,7 +36,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -49,20 +52,25 @@ private val HomeFontFamily = FontFamily(Font(R.font.shabnam))
 /** نسبت تصویر کاور اصلی: ۱۰۰۰ × ۴۶۰ (عرض ÷ ارتفاع) */
 private const val CoverAspectRatio = 1000f / 460f
 
-/* ---------------- پالت: شبِ آرام + کهربایی گرم + فیروزه‌ای (بدون بنفش) ---------------- */
-private val NightTop = Color(0xFF13293D)
-private val NightMid = Color(0xFF0A1621)
-private val NightBottom = Color(0xFF060E15)
+/* ---------------- پالت اسکرچ تیره: زمینهٔ شبانهٔ آبی + نارنجیِ لوگو + رنگ دسته‌بندی بلاک‌ها ---------------- */
+private val NightTop = Color(0xFF0E1A33)
+private val NightMid = Color(0xFF14233F)
+private val NightBottom = Color(0xFF1A2C50)
 
-private val Amber = Color(0xFFFFC145)
-private val AmberDeep = Color(0xFFFF9F1C)
-private val Teal = Color(0xFF2EC4B6)
-private val Sky = Color(0xFF5AB9EA)
-private val Coral = Color(0xFFFF7A6B)
+private val PanelDark = Color(0xFF1F2F52)      // سطح کارت‌ها
+private val PanelBorder = Color(0xFF3B4D78)    // لبهٔ کارت‌ها
+
+private val Amber = Color(0xFFFFAB19)
+private val AmberDeep = Color(0xFFFF8C1A)
+private val Teal = Color(0xFF9966FF)
+private val Sky = Color(0xFF4C97FF)
+private val ScratchText = Color(0xFFE8EDFF)    // متن روشن روی زمینهٔ تیره
+private val Coral = Color(0xFFFF6680)
+private val ScratchGreen = Color(0xFF59C059)
 private val DeepInk = Color(0xFF3A2400)
 
 /* ============================================================
- *  سبک شیشه‌ای ملایم
+ *  سبک پنل تیره
  * ============================================================ */
 
 private fun Modifier.glass(
@@ -71,21 +79,55 @@ private fun Modifier.glass(
     strength: Float = 1f
 ): Modifier = this
     .clip(shape)
-    .background(
-        Brush.verticalGradient(
-            listOf(
-                tint.copy(alpha = (.16f * strength).coerceAtMost(1f)),
-                tint.copy(alpha = (.05f * strength).coerceAtMost(1f))
-            )
-        )
-    )
+    .background(PanelDark)
     .border(
-        width = 1.dp,
-        brush = Brush.verticalGradient(
-            listOf(Color.White.copy(alpha = .38f), tint.copy(alpha = .10f))
-        ),
+        width = 2.dp,
+        color = if (tint == Color.White) PanelBorder else tint.copy(alpha = .75f),
         shape = shape
     )
+
+/** شکل بلاک اسکرچ: بریدگی بالا، برآمدگی پایین و (برای دکمهٔ شروع) کلاهک گرد مثل بلاک «وقتی پرچم سبز زده شد» */
+private class BlockShape(private val hat: Boolean = false, private val radius: Dp = 10.dp) : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
+        val r = with(density) { radius.toPx() }
+        val d = with(density) { 4.dp.toPx() }
+        val nx = with(density) { 18.dp.toPx() }
+        val nw = with(density) { 24.dp.toPx() }
+        val top = if (hat) with(density) { 24.dp.toPx() } else 0f
+        val w = size.width
+        val h = size.height
+        val bottom = h - d
+        val p = Path().apply {
+            if (hat) {
+                moveTo(0f, top)
+                cubicTo(w * .08f, 0f, w * .40f, -top * .1f, w * .60f, top)
+                lineTo(w - r, top)
+            } else {
+                moveTo(0f, r)
+                quadraticBezierTo(0f, 0f, r, 0f)
+                lineTo(nx, 0f); lineTo(nx + d, d); lineTo(nx + nw - d, d); lineTo(nx + nw, 0f)
+                lineTo(w - r, 0f)
+            }
+            quadraticBezierTo(w, top, w, top + r)
+            lineTo(w, bottom - r)
+            quadraticBezierTo(w, bottom, w - r, bottom)
+            lineTo(nx + nw, bottom); lineTo(nx + nw - d, h); lineTo(nx + d, h); lineTo(nx, bottom)
+            lineTo(r, bottom)
+            quadraticBezierTo(0f, bottom, 0f, bottom - r)
+            close()
+        }
+        return Outline.Generic(p)
+    }
+}
+
+/** کاشی به‌سبک بلاک اسکرچ: رنگ دسته‌بندی، درخشش ملایم بالا و لبهٔ تیره‌تر از همان رنگ */
+private fun Modifier.scratchBlock(shape: Shape, color: Color): Modifier {
+    val dark = Color(color.red * .76f, color.green * .76f, color.blue * .76f)
+    return this
+        .clip(shape)
+        .background(Brush.verticalGradient(listOf(Color.White.copy(alpha = .20f).compositeOver(color), color)))
+        .border(2.dp, dark, shape)
+}
 
 @Composable
 private fun pressScale(interaction: MutableInteractionSource, target: Float = .95f): Float {
@@ -135,7 +177,7 @@ private fun HomeHeaderPreview() = HomePreviewSurface {
     )
 }
 
-@Preview(name = "Brand + actions", group = "Home / Sections", widthDp = 420, heightDp = 300, locale = "fa")
+@Preview(name = "Brand + actions", group = "Home / Sections", widthDp = 420, heightDp = 340, locale = "fa")
 @Composable
 private fun HomeControlsPreview() = HomePreviewSurface {
     Column(Modifier.fillMaxWidth()) {
@@ -380,18 +422,14 @@ private fun HomeBrandHeader(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Image(
-                painter = painterResource(R.drawable.fascratch),
-                contentDescription = "نشان اسکرچ فارسی",
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.size(
-                    when {
-                        veryCompact -> 32.dp
-                        compact -> 38.dp
-                        else -> 48.dp
-                    }
+            if (LocalInspectionMode.current) {
+                ir.behnamapps.fascratch.inappbilling.learning.LearnerLevelBadge(
+                    12,
+                    Modifier.size(if (compact) 60.dp else 70.dp)
                 )
-            )
+            } else {
+                ir.behnamapps.fascratch.inappbilling.learning.HomeLearnerBadge()
+            }
             Spacer(Modifier.width(10.dp))
             Text(
                 text = "اسکرچ فارسی",
@@ -400,7 +438,7 @@ private fun HomeBrandHeader(
                 overflow = TextOverflow.Ellipsis,
                 style = TextStyle(
                     brush = Brush.linearGradient(
-                        listOf(Color(0xFFFFF3CF), Amber, AmberDeep)
+                        listOf(Amber, AmberDeep)
                     ),
                     fontFamily = HomeFontFamily,
                     fontWeight = FontWeight.Black,
@@ -411,28 +449,32 @@ private fun HomeBrandHeader(
                     },
                     textAlign = TextAlign.Right,
                     shadow = Shadow(
-                        color = Color.Black.copy(alpha = .35f),
+                        color = Color(0xFF000000).copy(alpha = .45f),
                         offset = Offset(0f, 3f),
-                        blurRadius = 10f
+                        blurRadius = 6f
                     )
                 )
             )
             Spacer(Modifier.width(10.dp))
-            if (LocalInspectionMode.current) {
-                ir.behnamapps.fascratch.inappbilling.learning.LearnerLevelBadge(
-                    12,
-                    Modifier.size(if (compact) 60.dp else 70.dp)
+            Image(
+                painter = painterResource(R.drawable.fascratch),
+                contentDescription = "نشان اسکرچ فارسی",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.size(
+                    when {
+                        veryCompact -> 58.dp
+                        compact -> 58.dp
+                        else -> 58.dp
+                    }
                 )
-            } else {
-                ir.behnamapps.fascratch.inappbilling.learning.HomeLearnerBadge()
-            }
+            )
         }
 
         Spacer(Modifier.height(if (compact) 3.dp else 6.dp))
 
         Text(
             text = "خلاقیت، داستان‌سازی و برنامه‌نویسی به زبان فارسی",
-            color = Color.White.copy(alpha = .70f),
+            color = ScratchText.copy(alpha = .9f),
             fontSize = if (compact) 11.sp else 13.sp,
             fontWeight = FontWeight.Medium,
             maxLines = 1,
@@ -453,7 +495,7 @@ private fun HomeBrandHeader(
 }
 
 /* ============================================================
- *  دکمه‌ها: «شروع» بزرگ + دو کاشی شیشه‌ای (پروژه‌ها / آموزش)
+ *  دکمه‌ها: «شروع» بزرگ (بلاک پرچم سبز) + دو کاشی بلاکی (پروژه‌ها / آموزش)
  * ============================================================ */
 
 @Composable
@@ -469,18 +511,18 @@ private fun HomeActions(
         KidActionButton(
             text = "شروع اسکرچ",
             onClick = onEnter,
-            colors = listOf(Color(0xFFFFD36B), AmberDeep),
-            borderColor = Color(0xFFFFE6A8),
-            textColor = DeepInk,
-            glowColor = AmberDeep,
+            colors = listOf(Color(0xFFFFC61A), Color(0xFFFFAB19)),
+            borderColor = Color(0xFFCF8B17),
+            textColor = Color.White,
+            glowColor = Color(0xFFFFBF00),
             glowStrength = glowAlpha,
             shimmer = true,
             compact = compact,
             modifier = Modifier.fillMaxWidth(),
-            icon = { c -> HomeAddIcon(c, DeepInk) }
+            icon = { c -> HomeFlagIcon(c) }
         )
 
-        Spacer(Modifier.height(if (compact) 8.dp else 12.dp))
+        Spacer(Modifier.height(if (compact) 12.dp else 16.dp))
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -492,7 +534,7 @@ private fun HomeActions(
                 tint = Sky,
                 compact = compact,
                 modifier = Modifier.weight(1f),
-                icon = { c -> HomeProjectsIcon(c, Sky) }
+                icon = { c -> HomeProjectsIcon(c, Color.White) }
             )
             GlassTile(
                 text = "آموزش گام‌به‌گام",
@@ -500,7 +542,7 @@ private fun HomeActions(
                 tint = Teal,
                 compact = compact,
                 modifier = Modifier.weight(1f),
-                icon = { c -> HomeLearnIcon(c, Teal) }
+                icon = { c -> HomeLearnIcon(c, Color.White) }
             )
         }
     }
@@ -540,8 +582,8 @@ private fun KidActionButton(
         ).value
     } else -1f
 
-    val shape = RoundedCornerShape(if (compact) 20.dp else 24.dp)
-    val height = if (compact) 62.dp else 76.dp
+    val shape = BlockShape(hat = true, radius = 14.dp)
+    val height = if (compact) 80.dp else 100.dp
 
     Box(
         modifier = modifier
@@ -550,22 +592,36 @@ private fun KidActionButton(
                 scaleX = scale
                 scaleY = scale
             }
+            // سایهٔ ضخیم زیر بلاک برای حس سه‌بعدی (مثل بلاک‌های اسکرچ/لگو)
+            .drawBehind {
+                val outline = shape.createOutline(size, layoutDirection, this)
+                if (outline is Outline.Generic) {
+                    translate(top = 5.dp.toPx()) {
+                        drawPath(outline.path, borderColor)
+                    }
+                }
+            }
+            // هالهٔ نرم که دقیقاً شکل بلاک را دنبال می‌کند (نه مستطیل)
             .drawBehind {
                 if (glowStrength > 0f) {
-                    repeat(3) { i ->
-                        val grow = (i + 1) * 5f
-                        drawRoundRect(
-                            color = glowColor.copy(alpha = glowStrength * (0.15f - i * 0.04f)),
-                            topLeft = Offset(-grow, -grow * .6f),
-                            size = Size(size.width + grow * 2, size.height + grow * 1.2f),
-                            cornerRadius = CornerRadius(34f + grow, 34f + grow)
-                        )
+                    val outline = shape.createOutline(size, layoutDirection, this)
+                    if (outline is Outline.Generic) {
+                        repeat(3) { i ->
+                            drawPath(
+                                path = outline.path,
+                                color = glowColor.copy(alpha = glowStrength * (0.16f - i * 0.045f)),
+                                style = Stroke(
+                                    width = (i + 1) * 7.dp.toPx(),
+                                    join = StrokeJoin.Round
+                                )
+                            )
+                        }
                     }
                 }
             }
             .clip(shape)
             .background(Brush.verticalGradient(colors))
-            .border(1.5.dp, borderColor, shape)
+            .border(2.5.dp, borderColor, shape)
             .clickable(
                 interactionSource = interaction,
                 indication = null,
@@ -604,9 +660,10 @@ private fun KidActionButton(
                     }
             )
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(modifier = Modifier.padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = text,
+                style = LocalTextStyle.current.copy(shadow = Shadow(Color(0xFF8A6A00).copy(alpha = .45f), Offset(0f, 3f), 4f)),
                 color = textColor,
                 fontWeight = FontWeight.Black,
                 fontFamily = HomeFontFamily,
@@ -619,7 +676,7 @@ private fun KidActionButton(
     }
 }
 
-/** کاشی شیشه‌ای: آیکون در بالا، متن زیر آن */
+/** کاشی بلاکی: آیکون در بالا، متن زیر آن */
 @Composable
 private fun GlassTile(
     text: String,
@@ -631,13 +688,13 @@ private fun GlassTile(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val scale = pressScale(interaction, .95f)
-    val shape = RoundedCornerShape(if (compact) 18.dp else 22.dp)
+    val shape = BlockShape(radius = 12.dp)
 
     Column(
         modifier = modifier
-            .height(if (compact) 64.dp else 82.dp)
+            .height(if (compact) 70.dp else 90.dp)
             .graphicsLayer { scaleX = scale; scaleY = scale }
-            .glass(shape, tint = tint, strength = 1.2f)
+            .scratchBlock(shape, tint)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(horizontal = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -708,9 +765,9 @@ private fun HomeHeroBanner(
                 Modifier
                     .matchParentSize()
                     .border(
-                        1.5.dp,
+                        2.5.dp,
                         Brush.verticalGradient(
-                            listOf(Color.White.copy(alpha = .50f), Color.White.copy(alpha = .08f))
+                            listOf(Sky.copy(alpha = .95f), Sky.copy(alpha = .35f))
                         ),
                         shape
                     )
@@ -755,7 +812,7 @@ private fun HomeFollowFooter(
                 .height(1.dp)
                 .background(
                     Brush.horizontalGradient(
-                        listOf(Color.Transparent, Color.White.copy(alpha = .22f), Color.Transparent)
+                        listOf(Color.Transparent, Amber.copy(alpha = .35f), Color.Transparent)
                     )
                 )
         )
@@ -769,7 +826,7 @@ private fun HomeFollowFooter(
             Text(
                 text = "ساخته‌شده توسط بهنام تاج‌الدینی",
                 modifier = Modifier.weight(1f),
-                color = Color.White.copy(alpha = .78f),
+                color = ScratchText,
                 fontFamily = HomeFontFamily,
                 fontWeight = FontWeight.Bold,
                 fontSize = if (compact) 12.sp else 14.sp,
@@ -794,7 +851,7 @@ private fun HomeFollowFooter(
             ) {
                 Text(
                     text = "دنبال‌کردن سازنده",
-                    color = Color.White,
+                    color = ScratchText,
                     fontFamily = HomeFontFamily,
                     fontWeight = FontWeight.Bold,
                     fontSize = if (compact) 12.sp else 13.5.sp
@@ -841,7 +898,7 @@ private fun OtherAppsSection(
                 subtitle = "پخش موسیقی با نمایش متن",
                 badge = "ویژه",
                 iconRes = R.drawable.lunamain,
-                accent = Teal,
+                accent = ScratchGreen,
                 onClick = onLunaPlayer
             ),
             OtherAppItem(
@@ -899,7 +956,7 @@ private fun OtherAppsSection(
                         .height(6.dp)
                         .width(dotWidth)
                         .clip(CircleShape)
-                        .background(if (selected) Amber else Color.White.copy(alpha = .25f))
+                        .background(if (selected) Amber else ScratchText.copy(alpha = .22f))
                 )
             }
         }
@@ -927,8 +984,8 @@ private fun OtherAppCard(app: OtherAppItem, compact: Boolean) {
             modifier = Modifier
                 .size(iconBoxSize)
                 .clip(RoundedCornerShape(16.dp))
-                .background(Color.White.copy(alpha = .12f))
-                .border(1.dp, Color.White.copy(alpha = .28f), RoundedCornerShape(16.dp)),
+                .background(app.accent.copy(alpha = .18f))
+                .border(1.5.dp, app.accent.copy(alpha = .6f), RoundedCornerShape(16.dp)),
             contentAlignment = Alignment.Center
         ) {
             Image(
@@ -948,7 +1005,7 @@ private fun OtherAppCard(app: OtherAppItem, compact: Boolean) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = app.title,
-                    color = Color.White,
+                    color = ScratchText,
                     fontWeight = FontWeight.Black,
                     fontFamily = HomeFontFamily,
                     fontSize = if (compact) 13.sp else 15.sp,
@@ -963,14 +1020,14 @@ private fun OtherAppCard(app: OtherAppItem, compact: Boolean) {
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier
                         .clip(RoundedCornerShape(50))
-                        .background(app.accent.copy(alpha = .70f))
+                        .background(app.accent.copy(alpha = .85f))
                         .padding(horizontal = 7.dp, vertical = 2.dp)
                 )
             }
             Spacer(Modifier.height(2.dp))
             Text(
                 text = app.subtitle,
-                color = Color.White.copy(alpha = .68f),
+                color = ScratchText.copy(alpha = .75f),
                 fontFamily = HomeFontFamily,
                 fontSize = if (compact) 10.sp else 11.5.sp,
                 maxLines = 1,
@@ -980,7 +1037,7 @@ private fun OtherAppCard(app: OtherAppItem, compact: Boolean) {
 
         Text(
             text = "‹",
-            color = Color.White.copy(alpha = .45f),
+            color = ScratchText.copy(alpha = .5f),
             fontSize = 22.sp
         )
     }
@@ -990,25 +1047,37 @@ private fun OtherAppCard(app: OtherAppItem, compact: Boolean) {
  *  آیکون‌ها
  * ============================================================ */
 
+/** پرچم سبز اسکرچ: میلهٔ تیره + پرچم موجدار سبز با لبهٔ سبز تیره */
 @Composable
-private fun HomeAddIcon(compact: Boolean, tint: Color) {
+private fun HomeFlagIcon(compact: Boolean) {
     Canvas(Modifier.size(if (compact) 34.dp else 42.dp)) {
-        val stroke = Stroke(width = size.minDimension * .075f)
-        drawCircle(tint, radius = size.minDimension * .42f, style = stroke)
-        val plusStroke = size.minDimension * .08f
+        val s = size.minDimension
+        val flagGreen = Color(0xFF4CBF56)
+        val flagDark = Color(0xFF2E8B3A)
+        val strokeW = s * .07f
+
+        // میله
         drawLine(
-            tint,
-            Offset(size.width * .32f, size.height * .5f),
-            Offset(size.width * .68f, size.height * .5f),
-            plusStroke,
+            flagDark,
+            Offset(s * .24f, s * .10f),
+            Offset(s * .24f, s * .92f),
+            s * .10f,
             StrokeCap.Round
         )
-        drawLine(
-            tint,
-            Offset(size.width * .5f, size.height * .32f),
-            Offset(size.width * .5f, size.height * .68f),
-            plusStroke,
-            StrokeCap.Round
+
+        // پرچم موجدار
+        val flag = Path().apply {
+            moveTo(s * .24f, s * .14f)
+            cubicTo(s * .42f, s * .04f, s * .60f, s * .26f, s * .88f, s * .14f)
+            lineTo(s * .80f, s * .58f)
+            cubicTo(s * .56f, s * .70f, s * .40f, s * .46f, s * .24f, s * .58f)
+            close()
+        }
+        drawPath(flag, flagGreen)
+        drawPath(
+            flag,
+            flagDark,
+            style = Stroke(width = strokeW, cap = StrokeCap.Round, join = StrokeJoin.Round)
         )
     }
 }
@@ -1088,10 +1157,10 @@ private fun HomeAnimatedBackground() {
             )
         }
 
-        // نورهای بسیار ملایم
-        orb(Teal, Offset(w * .16f + cos(time) * w * .04f, h * .30f + sin(time) * h * .06f), w * .36f, .13f)
-        orb(Sky, Offset(w * .86f + sin(time) * w * .05f, h * .72f + cos(time) * h * .05f), w * .42f, .11f)
-        orb(Amber, Offset(w * .55f + cos(time) * w * .06f, h * .05f), w * .26f, .08f)
+        // نورهای ملایم روی زمینهٔ تیره
+        orb(Teal, Offset(w * .16f + cos(time) * w * .04f, h * .30f + sin(time) * h * .06f), w * .36f, .20f)
+        orb(Sky, Offset(w * .86f + sin(time) * w * .05f, h * .72f + cos(time) * h * .05f), w * .42f, .18f)
+        orb(Amber, Offset(w * .55f + cos(time) * w * .06f, h * .05f), w * .26f, .14f)
 
         // ستاره‌های کم‌نور
         repeat(34) { index ->
@@ -1099,7 +1168,7 @@ private fun HomeAnimatedBackground() {
             val y = (index * 91.3f + phase * h) % h
             val twinkle = (sin(time * 2f + index) + 1f) / 2f
             drawCircle(
-                color = Color.White.copy(alpha = .06f + twinkle * .22f),
+                color = Color.White.copy(alpha = .10f + twinkle * .30f),
                 radius = if (index % 5 == 0) 2.2f else 1.1f,
                 center = Offset(x, y)
             )
@@ -1119,9 +1188,9 @@ fun SocialDialog(onDismiss: () -> Unit, onOpen: (String) -> Unit) {
     ) {
         Surface(
             modifier = Modifier.fillMaxWidth(.6f),
-            color = Color(0xFF102235),
+            color = PanelDark,
             shape = RoundedCornerShape(28.dp),
-            border = BorderStroke(1.dp, Color.White.copy(0.16f))
+            border = BorderStroke(2.dp, Sky.copy(alpha = .7f))
         ) {
             Column(
                 modifier = Modifier.padding(24.dp),
@@ -1129,7 +1198,7 @@ fun SocialDialog(onDismiss: () -> Unit, onOpen: (String) -> Unit) {
             ) {
                 Text(
                     "سازنده را دنبال کن",
-                    color = Color.White,
+                    color = ScratchText,
                     fontWeight = FontWeight.Black,
                     fontFamily = HomeFontFamily,
                     fontSize = 22.sp
@@ -1150,7 +1219,7 @@ fun SocialDialog(onDismiss: () -> Unit, onOpen: (String) -> Unit) {
                 TextButton(onClick = onDismiss) {
                     Text(
                         "بستن",
-                        color = Amber,
+                        color = Sky,
                         fontWeight = FontWeight.Bold,
                         fontFamily = HomeFontFamily
                     )
@@ -1167,8 +1236,8 @@ private fun SocialItem(name: String, id: String, color: Color, icon: String, onC
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White.copy(.06f)),
-        border = BorderStroke(1.dp, Color.White.copy(0.09f))
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF2A3B63)),
+        border = BorderStroke(1.dp, Sky.copy(alpha = .35f))
     ) {
         Row(
             modifier = Modifier
@@ -1177,18 +1246,18 @@ private fun SocialItem(name: String, id: String, color: Color, icon: String, onC
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text("‹", color = Color.White.copy(.35f), fontSize = 24.sp)
+            Text("‹", color = ScratchText.copy(.5f), fontSize = 24.sp)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
                         name,
-                        color = Color.White,
+                        color = ScratchText,
                         fontWeight = FontWeight.Bold,
                         fontFamily = HomeFontFamily
                     )
                     Text(
                         id,
-                        color = Color.White.copy(.55f),
+                        color = ScratchText.copy(.7f),
                         fontSize = 12.sp,
                         fontFamily = HomeFontFamily
                     )

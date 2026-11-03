@@ -79,8 +79,10 @@ class PackagedExportDeviceTest {
             await("Boolean(document.querySelector('iframe') && $frame && Array.from($frame.querySelectorAll('button')).some(e=>e.textContent.trim()==='Package'))")
             assertEquals("true", evaluate("!$frame.body.innerText.includes('Select Project') && !$frame.body.innerText.includes('TurboWarp Packager')"))
             assertEquals("true", evaluate("document.querySelector('iframe').getBoundingClientRect().height>innerHeight*0.7"))
-            evaluate("Array.from($frame.querySelectorAll('button')).find(e=>e.textContent.trim()==='Package').click();true")
+            assertEquals("false", evaluate("$frame.querySelector('details').open"))
+            evaluate("window.__packagingStarted=performance.now();Array.from($frame.querySelectorAll('button')).find(e=>e.textContent.trim()==='Package').click();true")
             await("Array.from(document.querySelectorAll('[role=dialog] button')).some(e=>e.textContent.trim()==='Save')")
+            assertEquals("true", evaluate("performance.now()-window.__packagingStarted>=4950"))
             evaluate("Array.from(document.querySelectorAll('[role=dialog] button')).find(e=>e.textContent.trim()==='Save').click();true")
             await("Array.from(document.querySelectorAll('[role=status]')).some(e=>e.textContent.includes('Saved to Downloads'))")
             val resolver = context.contentResolver
@@ -95,6 +97,37 @@ class PackagedExportDeviceTest {
                 assertTrue(html.length > 1000000)
                 assertTrue(html.contains("new Scaffolding.Scaffolding()"))
             } finally { resolver.delete(uri, null, null) }
+            val editor = web
+            val playerMonitor = instrumentation.addMonitor(PackagedPlayerActivity::class.java.name, null, false)
+            var playback: Activity? = null
+            try {
+                evaluate("Array.from(document.querySelectorAll('[role=dialog] button')).find(e=>e.textContent.trim()==='Run directly').click();true")
+                playback = requireNotNull(playerMonitor.waitForActivityWithTimeout(15000)) { "Direct player did not open" }
+                fun descendants(view: android.view.View): List<android.view.View> = listOf(view) +
+                    if (view is android.view.ViewGroup) (0 until view.childCount).flatMap { descendants(view.getChildAt(it)) }
+                    else emptyList()
+                lateinit var refresh: android.widget.Button
+                lateinit var close: android.widget.Button
+                instrumentation.runOnMainSync {
+                    val views = descendants(playback!!.window.decorView)
+                    web = views.filterIsInstance<WebView>().single()
+                    refresh = views.filterIsInstance<android.widget.Button>().single { it.text == "Refresh" }
+                    close = views.filterIsInstance<android.widget.Button>().single { it.text == "Close" }
+                }
+                await("Boolean(window.vm && vm.runtime.targets.length>1)")
+                assertEquals("true", evaluate("location.origin==='https://player.farsiscratch.invalid'"))
+                assertEquals("true", evaluate("typeof AndroidProjectSaver==='undefined' && typeof AndroidScratchTextInput==='undefined' && typeof AndroidPackagedExport==='undefined'"))
+                evaluate("window.__directPlayerTest=1;true")
+                instrumentation.runOnMainSync { refresh.performClick() }
+                await("Boolean(window.vm && vm.runtime.targets.length>1 && window.__directPlayerTest===undefined)")
+                instrumentation.runOnMainSync { close.performClick() }
+                web = editor
+                await("Array.from(document.querySelectorAll('[role=dialog] button')).some(e=>e.textContent.trim()==='Run directly'&&!e.disabled)")
+            } finally {
+                web = editor
+                instrumentation.runOnMainSync { playback?.finish() }
+                instrumentation.removeMonitor(playerMonitor)
+            }
             // Intercept the chooser so no file is sent to a real sharing destination.
             val chooser = instrumentation.addMonitor(IntentFilter(Intent.ACTION_CHOOSER),
                 Instrumentation.ActivityResult(Activity.RESULT_CANCELED, null), true)

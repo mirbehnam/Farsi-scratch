@@ -122,10 +122,27 @@ class PackagedExportBridge(private val activity: MainActivity) {
             transfer.received += bytes.size
             return JSONObject()
         }
-        require(operation == "save" || operation == "share") { "Unknown export operation" }
+        require(operation == "save" || operation == "share" || operation == "preview") { "Unknown export operation" }
         require(transfer.received == transfer.expected) { "Incomplete export transfer" }
         transfer.output?.close()
         transfer.output = null
+        if (operation == "preview") {
+            require(transfer.mime == "text/html") { "Only HTML can be played" }
+            val launched = CompletableFuture<Unit>()
+            activity.runOnUiThread {
+                try {
+                    activity.startActivity(Intent(activity, PackagedPlayerActivity::class.java).apply {
+                        putExtra("file", transfer.file.absolutePath)
+                        putExtra("locale", message.optString("locale"))
+                        putExtra("dark", message.optBoolean("dark"))
+                    })
+                    launched.complete(Unit)
+                } catch (error: Exception) { launched.completeExceptionally(error) }
+            }
+            launched.get()
+            transfers.remove(key)
+            return JSONObject().put("name", transfer.file.name)
+        }
         if (operation == "save") {
             val savedName = saveToDownloads(transfer)
             deleteOwned(transfer.file.parentFile!!)

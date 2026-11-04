@@ -51,20 +51,15 @@ class PackagedExportBridge(private val activity: MainActivity) {
                 return@addWebMessageListener
             }
             val id = json.optString("id")
-            if (!isMainFrame || !view.url.orEmpty().startsWith("https://appassets.androidplatform.net/assets/turbobuild/")) {
+            val editorUrl = view.url.orEmpty()
+            val trustedEditor = listOf("build", "turbobuild").any {
+                editorUrl.startsWith("https://appassets.androidplatform.net/assets/$it/")
+            }
+            if (!isMainFrame || !trustedEditor) {
                 respond(reply, id, error = "Untrusted export sender")
                 return@addWebMessageListener
             }
-            if (json.optString("op") == "save" && Build.VERSION.SDK_INT < 29 &&
-                ContextCompat.checkSelfPermission(activity, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-                if (permissionJob != null) {
-                    respond(reply, id, error = "Permission request already open")
-                } else {
-                    permissionJob = { submit(view, json, reply) }
-                    permissionDenied = { respond(reply, id, error = "Storage permission denied") }
-                    permission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                }
-            } else submit(view, json, reply)
+            submit(view, json, reply)
         }
         worker.execute {
             directory.listFiles().orEmpty().filter { it.isDirectory && UUID_PATTERN.matches(it.name) &&
@@ -76,6 +71,19 @@ class PackagedExportBridge(private val activity: MainActivity) {
         worker.execute {
             val id = message.optString("id")
             try {
+                if (message.optString("op") == "save" &&
+                    transfers[message.optString("transfer")]?.mime == "application/json" && Build.VERSION.SDK_INT < 29 &&
+                    ContextCompat.checkSelfPermission(activity, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                    activity.runOnUiThread {
+                        if (permissionJob != null) respond(reply, id, error = "Permission request already open")
+                        else {
+                            permissionJob = { submit(view, message, reply) }
+                            permissionDenied = { respond(reply, id, error = "Storage permission denied") }
+                            permission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                        }
+                    }
+                    return@execute
+                }
                 val result = process(view, message)
                 respond(reply, id, result)
             } catch (error: Exception) {
@@ -131,11 +139,7 @@ class PackagedExportBridge(private val activity: MainActivity) {
             val launched = CompletableFuture<Unit>()
             activity.runOnUiThread {
                 try {
-                    activity.startActivity(Intent(activity, PackagedPlayerActivity::class.java).apply {
-                        putExtra("file", transfer.file.absolutePath)
-                        putExtra("locale", message.optString("locale"))
-                        putExtra("dark", message.optBoolean("dark"))
-                    })
+                    activity.openPackagedPlayback(transfer.file, message.optString("locale"), qualityMission = true)
                     launched.complete(Unit)
                 } catch (error: Exception) { launched.completeExceptionally(error) }
             }
@@ -144,10 +148,12 @@ class PackagedExportBridge(private val activity: MainActivity) {
             return JSONObject().put("name", transfer.file.name)
         }
         if (operation == "save") {
-            val savedName = saveToDownloads(transfer)
+            val inLibrary = transfer.mime == "text/html"
+            val savedName = if (inLibrary) activity.htmlProjectRepository.save(transfer.file).file.name else saveToDownloads(transfer)
+            if (inLibrary) activity.runOnUiThread { activity.onHtmlProjectSaved() }
             deleteOwned(transfer.file.parentFile!!)
             transfers.remove(key)
-            return JSONObject().put("name", savedName)
+            return JSONObject().put("name", savedName).put("location", if (inLibrary) "library" else "downloads")
         }
         val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.fileprovider", transfer.file)
         val title = when (message.optString("locale")) { "fa" -> "اشتراک‌گذاری خروجی"; "ar" -> "مشاركة الملف"; else -> "Share export" }

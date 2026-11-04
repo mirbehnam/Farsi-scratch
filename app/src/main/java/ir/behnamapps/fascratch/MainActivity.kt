@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.graphics.BitmapFactory
+import android.view.View
 import android.view.KeyEvent
 import android.view.ViewConfiguration
 import android.widget.Toast
@@ -38,6 +39,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -118,6 +122,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
@@ -133,6 +139,11 @@ import ir.behnamapps.fascratch.editor.EditorAssetsConfig
 import ir.behnamapps.fascratch.editor.EditorEngine
 import ir.behnamapps.fascratch.editor.EditorEngineDialog
 import ir.behnamapps.fascratch.editor.EditorAssetsPathHandler
+import ir.behnamapps.fascratch.editor.PackagedHtmlPlayer
+import ir.behnamapps.fascratch.editor.PackagedPlayback
+import ir.behnamapps.fascratch.editor.PackagedHtmlRepository
+import ir.behnamapps.fascratch.editor.SavedHtmlProject
+import ir.behnamapps.fascratch.editor.ProjectLibraryDialog
 import ir.behnamapps.fascratch.editor.PackagedExportBridge
 import com.google.firebase.analytics.FirebaseAnalytics
 import kotlin.math.roundToInt
@@ -171,16 +182,26 @@ class MainActivity : ComponentActivity() {
     private var fileChooserParams: WebChromeClient.FileChooserParams? = null
     private var pendingWebPermissionRequest: PermissionRequest? = null
     private var activeScratchWebView: WebView? = null
+    private var activePackagedPlayer: PackagedHtmlPlayer? = null
+    internal var packagedPlayback by mutableStateOf<PackagedPlayback?>(null)
+        private set
     private val scratchKeyDownTimes = mutableMapOf<Int, Long>()
     private val scratchKeyRepeatCounts = mutableMapOf<Int, Int>()
     private val scratchTextInputBridge = ScratchTextInputBridge(this)
     private var pendingProjectForScratch: SavedScratchProject? = null
-    private var openPhonePickerForScratch = false
+    private var homePhonePickerCallback: ((SavedScratchProject?) -> Unit)? = null
+    private var phoneImport: File? = null
     private var projectLoadCommandSent = false
     private var notificationPermissionResult: ((Boolean) -> Unit)? = null
     lateinit var projectRepository: ProjectRepository
         private set
     private lateinit var projectSaveBridge: ScratchProjectSaveBridge
+    lateinit var htmlProjectRepository: PackagedHtmlRepository
+        private set
+    var htmlLibraryVersion by mutableIntStateOf(0)
+        private set
+    var preparingSavedHtml by mutableStateOf(false)
+        private set
     private lateinit var packagedExportBridge: PackagedExportBridge
     var showProjectLibrary by mutableStateOf(false)
         private set
@@ -202,6 +223,41 @@ class MainActivity : ComponentActivity() {
                 else -> null
             }
         } else null
+        val homeCallback = homePhonePickerCallback
+        if (homeCallback != null) {
+            homePhonePickerCallback = null
+            val uri = uris?.firstOrNull()
+            if (uri == null) homeCallback(null) else lifecycleScope.launch {
+                val project = try {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        val folder = File(cacheDir, "phone_imports/${java.util.UUID.randomUUID()}").apply { mkdirs() }
+                        try {
+                            val displayName = contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+                                ?.use { if (it.moveToFirst()) it.getString(0) else null } ?: "Project.sb3"
+                            val filename = displayName.map { if (it == '/' || it == '\\' || it.isISOControl()) '_' else it }.joinToString("").take(180)
+                                .takeUnless { it.isBlank() || it == "." || it == ".." } ?: "Project.sb3"
+                            val file = File(folder, filename)
+                            requireNotNull(contentResolver.openInputStream(uri)) { "Cannot read selected project" }.use { input ->
+                                file.outputStream().use { input.copyTo(it) }
+                            }
+                            phoneImport?.parentFile?.deleteRecursively()
+                            phoneImport = file
+                            SavedScratchProject(file.nameWithoutExtension, file, null, file.lastModified())
+                        } catch (error: Exception) {
+                            folder.deleteRecursively()
+                            throw error
+                        }
+                    }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                catch (error: Exception) {
+                    android.util.Log.e("PhoneProject", "Cannot import selected phone project", error)
+                    Toast.makeText(this@MainActivity, "بازکردن فایل پروژه انجام نشد", Toast.LENGTH_SHORT).show()
+                    null
+                }
+                homeCallback(project)
+            }
+            return@registerForActivityResult
+        }
         fileChooserCallback?.onReceiveValue(uris)
         fileChooserCallback = null
         fileChooserParams = null
@@ -230,6 +286,7 @@ class MainActivity : ComponentActivity() {
         FirebaseAnalytics.getInstance(this)
             .setUserProperty("distribution", BuildConfig.FLAVOR)
         projectRepository = ProjectRepository(this)
+        htmlProjectRepository = PackagedHtmlRepository(File(filesDir, "packaged_projects"))
         projectSaveBridge = ScratchProjectSaveBridge(this)
         packagedExportBridge = PackagedExportBridge(this)
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
@@ -305,10 +362,6 @@ class MainActivity : ComponentActivity() {
                 pendingProjectForScratch = null
                 return true
             }
-            if (openPhonePickerForScratch) {
-                openPhonePickerForScratch = false
-                return launchPhoneFileChooser()
-            }
             showProjectLibrary = true
             return true
         }
@@ -338,35 +391,37 @@ class MainActivity : ComponentActivity() {
 
     fun queueProjectFromHome(project: SavedScratchProject) {
         pendingProjectForScratch = project
-        openPhonePickerForScratch = false
         projectLoadCommandSent = false
     }
 
-    fun queuePhonePickerFromHome() {
-        pendingProjectForScratch = null
-        openPhonePickerForScratch = true
-        projectLoadCommandSent = false
+    fun pickProjectFromPhone(onPicked: (SavedScratchProject?) -> Unit) {
+        homePhonePickerCallback = onPicked
+        try {
+            fileChooserLauncher.launch(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "*/*"
+            })
+        } catch (error: Exception) {
+            homePhonePickerCallback = null
+            android.util.Log.e("PhoneProject", "Cannot open system project picker", error)
+            Toast.makeText(this, "بازکردن حافظهٔ گوشی انجام نشد", Toast.LENGTH_SHORT).show()
+            onPicked(null)
+        }
     }
 
     fun triggerQueuedProjectLoad(webView: WebView) {
         if (projectLoadCommandSent) return
         val project = pendingProjectForScratch
         val script = if (project != null) {
-            val url = "https://appassets.androidplatform.net/projects/${Uri.encode(project.projectFile.name)}"
+            val importRoot = File(cacheDir, "phone_imports").canonicalFile
+            val imported = project.projectFile.canonicalFile.startsWith(importRoot)
+            val path = if (imported) "imports/${project.projectFile.relativeTo(importRoot).invariantSeparatorsPath}"
+                else "projects/${project.projectFile.name}"
+            val url = "https://appassets.androidplatform.net/${Uri.encode(path, "/")}"
             """
                 (function waitForAndroidProjectLoader(attempt) {
                     if (window.AndroidScratchLoadProjectUrl) {
                         window.AndroidScratchLoadProjectUrl(${JSONObject.quote(url)}, ${JSONObject.quote(project.projectFile.name)});
-                    } else if (attempt < 50) {
-                        setTimeout(function () { waitForAndroidProjectLoader(attempt + 1); }, 200);
-                    }
-                })(0);
-            """.trimIndent()
-        } else if (openPhonePickerForScratch) {
-            """
-                (function waitForAndroidProjectLoader(attempt) {
-                    if (window.AndroidScratchLoadProject) {
-                        window.AndroidScratchLoadProject();
                     } else if (attempt < 50) {
                         setTimeout(function () { waitForAndroidProjectLoader(attempt + 1); }, 200);
                     }
@@ -524,8 +579,79 @@ class MainActivity : ComponentActivity() {
         activeScratchWebView?.evaluateJavascript(script, null)
     }
 
+    fun onHtmlProjectSaved() {
+        htmlLibraryVersion++
+        ir.behnamapps.fascratch.inappbilling.learning.LearningRepository.get(this).recordEditorMission("html_export")
+    }
+
+    fun playSavedHtml(project: SavedHtmlProject, onOpened: () -> Unit) {
+        if (preparingSavedHtml) return
+        preparingSavedHtml = true
+        lifecycleScope.launch {
+            try {
+                val file = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    htmlProjectRepository.preparePlayback(project, File(cacheDir, "packaged_html"))
+                }
+                openPackagedPlayback(file, "fa")
+                onOpened()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (error: Exception) {
+                android.util.Log.e("HtmlLibrary", "Cannot play saved HTML: ${project.file.name}", error)
+                Toast.makeText(this@MainActivity, "اجرای فایل انجام نشد", Toast.LENGTH_SHORT).show()
+            } finally { preparingSavedHtml = false }
+        }
+    }
+
+    fun shareSavedHtml(project: SavedHtmlProject) {
+        try {
+            htmlProjectRepository.requireOwned(project)
+            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", project.file)
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/html"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                clipData = ClipData.newRawUri(project.file.name, uri)
+            }
+            startActivity(Intent.createChooser(intent, "اشتراک‌گذاری فایل HTML"))
+        } catch (error: Exception) {
+            android.util.Log.e("HtmlLibrary", "Cannot share saved HTML: ${project.file.name}", error)
+            Toast.makeText(this, "اشتراک‌گذاری فایل انجام نشد", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun openPackagedPlayback(file: File, locale: String, qualityMission: Boolean = false) {
+        releaseScratchKeys()
+        packagedPlayback = PackagedPlayback(file, locale, qualityMission)
+    }
+
+    fun attachPackagedPlayer(player: PackagedHtmlPlayer) {
+        activePackagedPlayer = player
+    }
+
+    fun detachPackagedPlayer(player: PackagedHtmlPlayer) {
+        if (activePackagedPlayer === player) {
+            releaseScratchKeys()
+            activePackagedPlayer = null
+        }
+        player.dispose()
+    }
+
+    fun refreshPackagedPlayback() {
+        releaseScratchKeys()
+        activePackagedPlayer?.refresh()
+    }
+
+    fun closePackagedPlayback() {
+        releaseScratchKeys()
+        packagedPlayback = null
+    }
+
+    private fun releaseScratchKeys() {
+        scratchKeyDownTimes.keys.toList().forEach { dispatchScratchKey(it, false) }
+    }
+
     fun dispatchScratchKey(keyCode: Int, pressed: Boolean) {
-        val webView = activeScratchWebView ?: return
+        val webView = activePackagedPlayer?.inputView ?: activeScratchWebView ?: return
         val eventTime = SystemClock.uptimeMillis()
         if (pressed) {
             val wasAlreadyPressed = scratchKeyDownTimes.containsKey(keyCode)
@@ -676,19 +802,23 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         notificationPermissionResult = null
+        homePhonePickerCallback = null
+        phoneImport?.parentFile?.deleteRecursively()
         fileChooserCallback?.onReceiveValue(null)
         pendingWebPermissionRequest?.deny()
         projectSaveBridge.dispose()
         packagedExportBridge.dispose()
+        activePackagedPlayer?.let(::detachPackagedPlayer)
         super.onDestroy()
     }
 }
 
-private enum class AppScreen { Home, Scratch }
+private enum class AppScreen { Home, Scratch, HtmlPlayback }
 
 @Composable
 private fun FarsiScratchApp(activity: MainActivity) {
     var screen by rememberSaveable { mutableStateOf(AppScreen.Home) }
+    var htmlTabRequested by remember { mutableStateOf(false) }
     val editorConfig = remember(activity) { EditorAssetsConfig.load(activity.assets) }
     var selectedEngine by rememberSaveable { mutableStateOf(editorConfig.defaultEngine) }
     var showEnginePicker by rememberSaveable { mutableStateOf(false) }
@@ -719,6 +849,13 @@ private fun FarsiScratchApp(activity: MainActivity) {
             } else {
                 delay(minOf(remaining, 5_000L))
             }
+        }
+    }
+
+    LaunchedEffect(screen, activity.packagedPlayback) {
+        if (screen == AppScreen.HtmlPlayback && activity.packagedPlayback == null) {
+            screen = AppScreen.Home
+            showMyProjects = true
         }
     }
 
@@ -753,10 +890,14 @@ private fun FarsiScratchApp(activity: MainActivity) {
                             showEnginePicker = true
                         },
                         onFollow = { showSocials = true },
-                        onMyProjects = { showMyProjects = true },
+                        onMyProjects = { htmlTabRequested = false; showMyProjects = true },
                         onTraining = { activity.startActivity(Intent(activity, ir.behnamapps.fascratch.inappbilling.presentation.TrainingActivity::class.java)) },
                         onLunaPlayer = { activity.openOtherApp("ir.behnamapps.lunamusic") },
                         onMafiaApp = { activity.openOtherApp("ir.behnamapp.mafia") }
+                    )
+                    AppScreen.HtmlPlayback -> ScratchScreen(
+                        activity = activity, engine = selectedEngine,
+                        onQuickLessonsVisibility = { quickLessonsVisible = it }, onHome = {}, playbackOnly = true
                     )
                     AppScreen.Scratch -> ScratchScreen(
                         activity = activity,
@@ -821,12 +962,27 @@ private fun FarsiScratchApp(activity: MainActivity) {
                     projectAwaitingEngine = project.projectFile.name
                 },
                 onLoadFromPhone = {
-                    activity.queuePhonePickerFromHome()
-                    showMyProjects = false
-                    screen = AppScreen.Scratch
+                    activity.pickProjectFromPhone { project ->
+                        if (project != null) {
+                            activity.queueProjectFromHome(project)
+                            showMyProjects = false
+                            screen = AppScreen.Scratch
+                        }
+                    }
                 },
                 onDismiss = { showMyProjects = false },
                 showManagementActions = true,
+                htmlProjects = remember(activity.htmlLibraryVersion) { activity.htmlProjectRepository.listProjects() },
+                initialHtmlTab = htmlTabRequested,
+                preparingHtml = activity.preparingSavedHtml,
+                onPlayHtml = { project ->
+                    activity.playSavedHtml(project) {
+                        htmlTabRequested = true
+                        showMyProjects = false
+                        screen = AppScreen.HtmlPlayback
+                    }
+                },
+                onShareHtml = activity::shareSavedHtml,
                 onShare = activity::shareProject,
                 onDelete = activity::deleteProject
             )
@@ -852,6 +1008,8 @@ private fun FarsiScratchApp(activity: MainActivity) {
 
     BackHandler {
         if (isExpired) activity.finish()
+        else if (activity.preparingSavedHtml) Unit
+        else if (activity.packagedPlayback != null) activity.closePackagedPlayback()
         else if (showExit) showExit = false
         else if (showMyProjects) showMyProjects = false
         else if (activity.showProjectLibrary) activity.dismissProjectLibrary()
@@ -1011,130 +1169,26 @@ private fun ExpiredScreen(updateSource: String) {
 }
 
 @Composable
-private fun ProjectLibraryDialog(
-    projects: List<SavedScratchProject>,
-    onLoad: (SavedScratchProject) -> Unit,
-    onLoadFromPhone: () -> Unit,
-    onDismiss: () -> Unit,
-    showManagementActions: Boolean,
-    onShare: (SavedScratchProject) -> Unit = {},
-    onDelete: (SavedScratchProject) -> Unit = {}
-) {
-    var projectPendingDelete by remember { mutableStateOf<SavedScratchProject?>(null) }
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth(.92f)
-                .fillMaxHeight(.86f)
-                .border(1.dp, Color.White.copy(.14f), RoundedCornerShape(28.dp)),
-            color = Color.Transparent,
-            shape = RoundedCornerShape(28.dp)
-        ) {
-            Column(
-                Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.linearGradient(
-                            listOf(Color(0xFF2C1E50), Color(0xFF171A38)),
-                            start = Offset.Zero,
-                            end = Offset(1200f, 600f)
-                        )
-                    )
-                    .padding(horizontal = 22.dp, vertical = 16.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Button(
-                        onClick = onLoadFromPhone,
-                        colors = ButtonDefaults.buttonColors(containerColor = ScratchBlue),
-                        shape = RoundedCornerShape(15.dp),
-                        modifier = Modifier.height(44.dp)
-                    ) {
-                        Text("بارگذاری از حافظه گوشی", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    }
-                    Text("پروژه‌های ذخیره‌شده", color = Color.White, fontWeight = FontWeight.Black, fontSize = 23.sp)
-                }
-                Spacer(Modifier.height(12.dp))
-                if (projects.isEmpty()) {
-                    Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        Text("هنوز پروژه‌ای ذخیره نشده است", color = Color.White.copy(.62f), fontSize = 15.sp)
-                    }
-                } else {
-                    LazyRow(
-                        modifier = Modifier.weight(1f).fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        items(projects, key = { it.projectFile.absolutePath }) { project ->
-                            SavedProjectCard(
-                                project = project,
-                                showManagementActions = showManagementActions,
-                                onClick = { onLoad(project) },
-                                onShare = { onShare(project) },
-                                onDelete = { projectPendingDelete = project }
-                            )
-                        }
-                    }
-                }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = onDismiss, modifier = Modifier.height(36.dp)) {
-                        Text("بستن", color = Color(0xFFFFD36A))
-                    }
-                }
-            }
-        }
-    }
-
-    projectPendingDelete?.let { project ->
-        AlertDialog(
-            onDismissRequest = { projectPendingDelete = null },
-            containerColor = Color(0xFF241A42),
-            shape = RoundedCornerShape(22.dp),
-            title = { Text("حذف پروژه؟", color = Color.White, fontWeight = FontWeight.Bold) },
-            text = { Text("پروژه «${project.name}» حذف شود؟", color = Color.White.copy(.72f)) },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        onDelete(project)
-                        projectPendingDelete = null
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5C5C))
-                ) { Text("حذف") }
-            },
-            dismissButton = {
-                TextButton(onClick = { projectPendingDelete = null }) {
-                    Text("انصراف", color = Color.White)
-                }
-            }
-        )
-    }
-}
-
-@Composable
-private fun SavedProjectCard(
+internal fun SavedProjectCard(
     project: SavedScratchProject,
     showManagementActions: Boolean,
     onClick: () -> Unit,
     onShare: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    previewHeight: androidx.compose.ui.unit.Dp = 96.dp,
+    cardHeight: androidx.compose.ui.unit.Dp = androidx.compose.ui.unit.Dp.Infinity
 ) {
     val preview: android.graphics.Bitmap? = remember(project.previewFile?.absolutePath, project.modifiedAt) {
         project.previewFile?.absolutePath?.let { path -> BitmapFactory.decodeFile(path) }
     }
     Card(
-        modifier = Modifier.width(210.dp).clickable(onClick = onClick),
+        modifier = Modifier.width(210.dp).heightIn(max = cardHeight).clickable(onClick = onClick),
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White.copy(.09f))
     ) {
-        Column(Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
             Box(
-                modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+                modifier = Modifier.fillMaxWidth().height(previewHeight)
                     .clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
                     .background(Color(0xFF17142A)),
                 contentAlignment = Alignment.Center
@@ -1194,10 +1248,11 @@ private fun ExitDialog(onDismiss: () -> Unit, onExit: () -> Unit) {
 }
 
 @Composable
-private fun ScratchScreen(activity: MainActivity, engine: EditorEngine, onQuickLessonsVisibility: (Boolean) -> Unit, onHome: () -> Unit) {
+internal fun ScratchScreen(activity: MainActivity, engine: EditorEngine, onQuickLessonsVisibility: (Boolean) -> Unit, onHome: () -> Unit, playbackOnly: Boolean = false) {
     var isLoading by remember { mutableStateOf(true) }
     var progress by remember { mutableIntStateOf(0) }
     var webView by remember { mutableStateOf<WebView?>(null) }
+    val playback = activity.packagedPlayback
     var scrollFraction by remember { mutableFloatStateOf(0f) }
     var showFloatingKeyboard by rememberSaveable { mutableStateOf(false) }
     var keyboardX by remember { mutableFloatStateOf(0f) }
@@ -1240,32 +1295,18 @@ private fun ScratchScreen(activity: MainActivity, engine: EditorEngine, onQuickL
             modifier = Modifier.weight(.05f).fillMaxHeight().background(Color(0xFF1D1930)).padding(vertical = 10.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(.72f)
-                    .height(36.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Color.White.copy(.10f))
-                    .clickable(onClick = onHome),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("⌂", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
+            if (playback == null) {
+                ScratchRailButton("⌂", "خانه", onClick = onHome)
+            } else {
+                val closeLabel = when (playback.locale) { "ar" -> "إغلاق"; "en" -> "Close"; else -> "بستن" }
+                val refreshLabel = when (playback.locale) { "ar" -> "تحديث"; "en" -> "Refresh"; else -> "رفرش" }
+                ScratchRailButton("×", closeLabel, onClick = activity::closePackagedPlayback)
+                Spacer(Modifier.height(7.dp))
+                ScratchRailButton("↻", refreshLabel, onClick = activity::refreshPackagedPlayback)
             }
             Spacer(Modifier.height(7.dp))
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(.72f)
-                    .height(36.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(
-                        if (showFloatingKeyboard) ScratchPurple.copy(.72f)
-                        else Color.White.copy(.10f)
-                    )
-                    .clickable { showFloatingKeyboard = !showFloatingKeyboard },
-                contentAlignment = Alignment.Center
-            ) {
-                Text("⌨", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            }
+            ScratchRailButton("⌨", "صفحه‌کلید", active = showFloatingKeyboard,
+                onClick = { showFloatingKeyboard = !showFloatingKeyboard })
             ir.behnamapps.fascratch.inappbilling.presentation.ScratchQuickLessonsShortcut(activity, onQuickLessonsVisibility)
             Spacer(Modifier.weight(1f))
             Box(Modifier.size(8.dp).clip(CircleShape).background(ScratchOrange))
@@ -1273,28 +1314,33 @@ private fun ScratchScreen(activity: MainActivity, engine: EditorEngine, onQuickL
             Text("FA", color = Color.White.copy(.48f), fontWeight = FontWeight.Bold, fontSize = 10.sp)
         }
 
-            WindowsScrollBar(
-            modifier = Modifier.weight(.05f).fillMaxHeight(),
-            scrollFraction = scrollFraction,
-            onScroll = { fraction ->
-                scrollFraction = fraction
-                webView?.let { view ->
-                    val maxScroll = (view.contentHeight * view.scale - view.height).toInt().coerceAtLeast(0)
-                    view.scrollTo(0, (maxScroll * fraction).roundToInt())
-                }
+            if (playback == null) {
+                WindowsScrollBar(
+                    modifier = Modifier.weight(.05f).fillMaxHeight()
+                        .semantics { contentDescription = "پیمایش ویرایشگر" },
+                    scrollFraction = scrollFraction,
+                    onScroll = { fraction ->
+                        scrollFraction = fraction
+                        webView?.let { view ->
+                            val maxScroll = (view.contentHeight * view.scale - view.height).toInt().coerceAtLeast(0)
+                            view.scrollTo(0, (maxScroll * fraction).roundToInt())
+                        }
+                    }
+                )
             }
-        )
 
-            Box(Modifier.weight(.90f).fillMaxHeight()) {
-                ScratchWebView(
+            Box(Modifier.weight(if (playback == null) .90f else .95f).fillMaxHeight()) {
+                if (!playbackOnly) ScratchWebView(
                     activity = activity,
                     engine = engine,
+                    visible = playback == null,
                     onProgress = { progress = it },
                     onLoadingChanged = { isLoading = it },
                     onWebViewReady = { webView = it },
                     onScrollFractionChanged = { scrollFraction = it }
                 )
-                LoadingVisibility(isLoading = isLoading, progress = progress)
+                if (!playbackOnly && playback == null) LoadingVisibility(isLoading = isLoading, progress = progress)
+                if (playback != null) PackagedPlaybackView(activity, playback)
             }
         }
 
@@ -1336,6 +1382,28 @@ private fun ScratchScreen(activity: MainActivity, engine: EditorEngine, onQuickL
             }
         }
     }
+}
+
+@Composable
+private fun ScratchRailButton(icon: String, label: String, active: Boolean = false, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier.fillMaxWidth(.72f).height(36.dp).clip(RoundedCornerShape(12.dp))
+            .background(if (active) ScratchPurple.copy(.72f) else Color.White.copy(.10f))
+            .semantics { contentDescription = label }.clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) { Text(icon, color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold) }
+}
+
+@Composable
+private fun PackagedPlaybackView(activity: MainActivity, playback: PackagedPlayback) {
+    val player = remember(playback.file, playback.qualityMission) { PackagedHtmlPlayer(activity, playback.file) {
+        if (playback.qualityMission) ir.behnamapps.fascratch.inappbilling.learning.LearningRepository.get(activity).recordEditorMission("quality_run")
+    } }
+    DisposableEffect(player) {
+        activity.attachPackagedPlayer(player)
+        onDispose { activity.detachPackagedPlayer(player) }
+    }
+    AndroidView(factory = { player.frame }, modifier = Modifier.fillMaxSize())
 }
 
 @Composable
@@ -1658,6 +1726,7 @@ private fun LoadingVisibility(isLoading: Boolean, progress: Int) {
 private fun ScratchWebView(
     activity: MainActivity,
     engine: EditorEngine,
+    visible: Boolean = true,
     onProgress: (Int) -> Unit,
     onLoadingChanged: (Boolean) -> Unit,
     onWebViewReady: (WebView?) -> Unit,
@@ -1668,6 +1737,8 @@ private fun ScratchWebView(
         val editorAssets = EditorAssetsConfig.load(context.assets)
         val assetLoader = WebViewAssetLoader.Builder()
             .addPathHandler("/assets/", EditorAssetsPathHandler(context, editorAssets))
+            .addPathHandler("/imports/", WebViewAssetLoader.InternalStoragePathHandler(context,
+                File(context.cacheDir, "phone_imports").apply { mkdirs() }))
             .addPathHandler("/projects/") { path ->
                 activity.projectRepository.openProjectForWeb(path)
             }
@@ -1743,7 +1814,8 @@ private fun ScratchWebView(
             webView.destroy()
         }
     }
-    AndroidView(factory = { webView }, modifier = Modifier.fillMaxSize())
+    AndroidView(factory = { webView }, modifier = Modifier.fillMaxSize(),
+        update = { it.visibility = if (visible) View.VISIBLE else View.INVISIBLE })
 }
 
 @Composable

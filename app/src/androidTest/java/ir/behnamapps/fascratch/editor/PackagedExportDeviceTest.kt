@@ -6,21 +6,20 @@ import android.app.Instrumentation
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.SystemClock
-import android.provider.MediaStore
 import android.view.WindowManager
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
 import android.webkit.WebView
-import android.webkit.WebViewClient
+import androidx.activity.compose.setContent
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
+import ir.behnamapps.fascratch.ScratchScreen
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import androidx.webkit.WebViewAssetLoader
 import ir.behnamapps.fascratch.MainActivity
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.io.ByteArrayInputStream
 import java.util.concurrent.atomic.AtomicReference
 
 @RunWith(AndroidJUnit4::class)
@@ -33,26 +32,48 @@ class PackagedExportDeviceTest {
         val filename = "PackagerDeviceTest-${System.currentTimeMillis()}"
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             lateinit var web: WebView
+            lateinit var owner: MainActivity
+            fun descendants(view: android.view.View): List<android.view.View> = listOf(view) +
+                if (view is android.view.ViewGroup) (0 until view.childCount).flatMap { descendants(view.getChildAt(it)) }
+                else emptyList()
             scenario.onActivity { activity ->
+                owner = activity
                 activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                val loader = WebViewAssetLoader.Builder()
-                    .addPathHandler("/assets/", EditorAssetsPathHandler(activity, config)).build()
-                web = WebView(activity).apply {
-                    settings.javaScriptEnabled = true
-                    settings.domStorageEnabled = true
-                    settings.useWideViewPort = true
-                    settings.loadWithOverviewMode = true
-                    activity.attachScratchWebView(this)
-                    webViewClient = object : WebViewClient() {
-                        override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
-                            if (request.url.host == "appassets.androidplatform.net") return loader.shouldInterceptRequest(request.url)
-                            return WebResourceResponse("text/plain", "UTF-8", 404, "Offline test", emptyMap(),
-                                ByteArrayInputStream(ByteArray(0)))
-                        }
+                activity.setContent {
+                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                        ScratchScreen(activity, EditorEngine.TURBO, {}, {})
                     }
-                    activity.setContentView(this)
-                    loadUrl(config.entryUrl(EditorEngine.TURBO))
                 }
+            }
+            val viewDeadline = SystemClock.elapsedRealtime() + 15000
+            var editorView: WebView? = null
+            while (editorView == null && SystemClock.elapsedRealtime() < viewDeadline) {
+                instrumentation.runOnMainSync {
+                    editorView = descendants(owner.window.decorView).filterIsInstance<WebView>()
+                        .firstOrNull { it.url.orEmpty().contains("/assets/turbobuild/") }
+                }
+                if (editorView == null) Thread.sleep(80)
+            }
+            web = requireNotNull(editorView) { "Editor WebView did not mount" }
+            instrumentation.uiAutomation.serviceInfo = instrumentation.uiAutomation.serviceInfo.apply {
+                flags = flags or android.accessibilityservice.AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
+                    android.accessibilityservice.AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS
+            }
+            var railDescriptions = ""
+            fun rail(label: String): android.view.accessibility.AccessibilityNodeInfo? {
+                val queue = java.util.ArrayDeque<android.view.accessibility.AccessibilityNodeInfo>()
+                instrumentation.uiAutomation.windows.mapNotNull { it.root }.forEach(queue::add)
+                val descriptions = mutableListOf<String>()
+                while (!queue.isEmpty()) {
+                    val node = queue.removeFirst()
+                    val description = node.contentDescription?.toString()
+                    if (description != null) descriptions.add(description)
+                    if (description?.contains(label) == true) return node
+                    if (node.className?.toString() == "android.webkit.WebView") continue
+                    for (index in 0 until node.childCount) node.getChild(index)?.let(queue::add)
+                }
+                railDescriptions = descriptions.joinToString(" | ")
+                return null
             }
             fun evaluate(script: String): String {
                 val result = AtomicReference<String?>()
@@ -84,49 +105,80 @@ class PackagedExportDeviceTest {
             await("Array.from(document.querySelectorAll('[role=dialog] button')).some(e=>e.textContent.trim()==='Save')")
             assertEquals("true", evaluate("performance.now()-window.__packagingStarted>=4950"))
             evaluate("Array.from(document.querySelectorAll('[role=dialog] button')).find(e=>e.textContent.trim()==='Save').click();true")
-            await("Array.from(document.querySelectorAll('[role=status]')).some(e=>e.textContent.includes('Saved to Downloads'))")
-            val resolver = context.contentResolver
-            val uri = resolver.query(MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-                arrayOf(MediaStore.Downloads._ID), "${MediaStore.Downloads.DISPLAY_NAME} = ?",
-                arrayOf("$filename.html"), null)!!.use { cursor ->
-                assertTrue("Export not present in Downloads", cursor.moveToFirst())
-                android.content.ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cursor.getLong(0))
-            }
+            await("Array.from(document.querySelectorAll('[role=status]')).some(e=>e.textContent.includes('Saved in My Projects'))")
+            val saved = owner.htmlProjectRepository.listProjects().single { it.file.name == "$filename.html" }
             try {
-                val html = resolver.openInputStream(uri)!!.use { it.readBytes().toString(Charsets.UTF_8) }
+                val html = saved.file.readText()
                 assertTrue(html.length > 1000000)
                 assertTrue(html.contains("new Scaffolding.Scaffolding()"))
-            } finally { resolver.delete(uri, null, null) }
+                assertTrue(saved.file.canonicalPath.startsWith(java.io.File(context.filesDir, "packaged_projects").canonicalPath))
+            } finally { saved.file.delete() }
             val editor = web
-            val playerMonitor = instrumentation.addMonitor(PackagedPlayerActivity::class.java.name, null, false)
-            var playback: Activity? = null
+            instrumentation.uiAutomation.takeScreenshot()?.let { bitmap ->
+                java.io.File(context.cacheDir, "sidebar-before-player-test.png").outputStream().use {
+                    bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+                }
+                bitmap.recycle()
+            }
+            assertNotNull("Home rail not found: $railDescriptions", rail("خانه"))
+            assertNotNull(rail("پیمایش ویرایشگر"))
+            evaluate("window.__editorSpaceEvents=0;addEventListener('keydown',e=>{if(e.keyCode===32)window.__editorSpaceEvents++});true")
             try {
                 evaluate("Array.from(document.querySelectorAll('[role=dialog] button')).find(e=>e.textContent.trim()==='Run directly').click();true")
-                playback = requireNotNull(playerMonitor.waitForActivityWithTimeout(15000)) { "Direct player did not open" }
-                fun descendants(view: android.view.View): List<android.view.View> = listOf(view) +
-                    if (view is android.view.ViewGroup) (0 until view.childCount).flatMap { descendants(view.getChildAt(it)) }
-                    else emptyList()
-                lateinit var refresh: android.widget.Button
-                lateinit var close: android.widget.Button
-                instrumentation.runOnMainSync {
-                    val views = descendants(playback!!.window.decorView)
-                    web = views.filterIsInstance<WebView>().single()
-                    refresh = views.filterIsInstance<android.widget.Button>().single { it.text == "Refresh" }
-                    close = views.filterIsInstance<android.widget.Button>().single { it.text == "Close" }
+                val deadline = SystemClock.elapsedRealtime() + 15000
+                var playerView: WebView? = null
+                while (playerView == null && SystemClock.elapsedRealtime() < deadline) {
+                    instrumentation.runOnMainSync {
+                        playerView = descendants(owner.window.decorView).filterIsInstance<WebView>()
+                            .firstOrNull { it.url.orEmpty().startsWith("https://player.farsiscratch.invalid/") }
+                    }
+                    if (playerView == null) Thread.sleep(80)
                 }
+                web = requireNotNull(playerView) { "Inline HTML player did not mount" }
                 await("Boolean(window.vm && vm.runtime.targets.length>1)")
                 assertEquals("true", evaluate("location.origin==='https://player.farsiscratch.invalid'"))
                 assertEquals("true", evaluate("typeof AndroidProjectSaver==='undefined' && typeof AndroidScratchTextInput==='undefined' && typeof AndroidPackagedExport==='undefined'"))
-                evaluate("window.__directPlayerTest=1;true")
-                instrumentation.runOnMainSync { refresh.performClick() }
+                assertNull(rail("خانه"))
+                assertNull(rail("پیمایش ویرایشگر"))
+                assertNotNull(rail("Close"))
+                assertNotNull(rail("Refresh"))
+                assertNotNull(rail("صفحه‌کلید"))
+                evaluate("window.__playerSpaceEvents=0;addEventListener('keydown',e=>{if(e.keyCode===32)window.__playerSpaceEvents++});window.__directPlayerTest=1;true")
+                instrumentation.runOnMainSync {
+                    owner.dispatchScratchKey(android.view.KeyEvent.KEYCODE_SPACE, true)
+                    owner.dispatchScratchKey(android.view.KeyEvent.KEYCODE_SPACE, false)
+                }
+                await("window.__playerSpaceEvents===1")
+                web = editor
+                assertEquals("0", evaluate("window.__editorSpaceEvents"))
+                web = playerView!!
+                instrumentation.runOnMainSync {
+                    web.webChromeClient!!.onShowCustomView(android.widget.FrameLayout(owner), object : android.webkit.WebChromeClient.CustomViewCallback {
+                        override fun onCustomViewHidden() {}
+                    })
+                }
+                assertNotNull(rail("Close"))
+                assertNotNull(rail("Refresh"))
+                assertNull(rail("پیمایش ویرایشگر"))
+                instrumentation.runOnMainSync { owner.refreshPackagedPlayback() }
                 await("Boolean(window.vm && vm.runtime.targets.length>1 && window.__directPlayerTest===undefined)")
-                instrumentation.runOnMainSync { close.performClick() }
+                instrumentation.uiAutomation.takeScreenshot()?.let { bitmap ->
+                    java.io.File(context.cacheDir, "sidebar-player-test.png").outputStream().use {
+                        bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+                    }
+                    bitmap.recycle()
+                }
+                instrumentation.runOnMainSync { owner.closePackagedPlayback() }
                 web = editor
                 await("Array.from(document.querySelectorAll('[role=dialog] button')).some(e=>e.textContent.trim()==='Run directly'&&!e.disabled)")
+                instrumentation.waitForIdleSync()
+                assertNotNull("Home rail not found: $railDescriptions", rail("خانه"))
+                assertNotNull(rail("پیمایش ویرایشگر"))
+                assertNull(rail("Close"))
+                assertNull(rail("Refresh"))
             } finally {
                 web = editor
-                instrumentation.runOnMainSync { playback?.finish() }
-                instrumentation.removeMonitor(playerMonitor)
+                instrumentation.runOnMainSync { owner.closePackagedPlayback() }
             }
             // Intercept the chooser so no file is sent to a real sharing destination.
             val chooser = instrumentation.addMonitor(IntentFilter(Intent.ACTION_CHOOSER),

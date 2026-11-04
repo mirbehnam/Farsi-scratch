@@ -147,8 +147,8 @@ private fun pressScale(interaction: MutableInteractionSource, target: Float = .9
  *  پیش‌نمایش‌ها
  * ============================================================ */
 
-@Preview(name = "Home • landscape", group = "Home / Full screen", widthDp = 960, heightDp = 480, locale = "fa")
-@Preview(name = "Home • compact landscape", group = "Home / Full screen", widthDp = 740, heightDp = 320, locale = "fa")
+@Preview(name = "Home • landscape", group = "Home / Full screen", widthDp = 960, heightDp = 480)
+@Preview(name = "Home • compact landscape", group = "Home / Full screen", widthDp = 740, heightDp = 320)
 @Composable
 private fun HomeScreenPreview() {
     MaterialTheme {
@@ -165,7 +165,7 @@ private fun HomePreviewSurface(content: @Composable () -> Unit) {
     }
 }
 
-@Preview(name = "Hero cover • 1000x460", group = "Home / Sections", widthDp = 560, heightDp = 280, locale = "fa")
+@Preview(name = "Hero cover • 1000x460", group = "Home / Sections", widthDp = 560, heightDp = 280)
 @Composable
 private fun HomeHeaderPreview() = HomePreviewSurface {
     HomeHeroBanner(
@@ -177,7 +177,7 @@ private fun HomeHeaderPreview() = HomePreviewSurface {
     )
 }
 
-@Preview(name = "Brand + actions", group = "Home / Sections", widthDp = 420, heightDp = 340, locale = "fa")
+@Preview(name = "Brand + actions", group = "Home / Sections", widthDp = 420, heightDp = 340)
 @Composable
 private fun HomeControlsPreview() = HomePreviewSurface {
     Column(Modifier.fillMaxWidth()) {
@@ -190,7 +190,7 @@ private fun HomeControlsPreview() = HomePreviewSurface {
     }
 }
 
-@Preview(name = "Other apps", group = "Home / Sections", widthDp = 460, heightDp = 140, locale = "fa")
+@Preview(name = "Other apps", group = "Home / Sections", widthDp = 460, heightDp = 140)
 @Composable
 private fun HomeOtherAppsPreview() = HomePreviewSurface {
     OtherAppsSection(compact = false, onLunaPlayer = {}, onMafiaApp = {})
@@ -431,42 +431,10 @@ private fun HomeBrandHeader(
                 ir.behnamapps.fascratch.inappbilling.learning.HomeLearnerBadge()
             }
             Spacer(Modifier.width(10.dp))
-            Text(
-                text = "اسکرچ فارسی",
-                modifier = Modifier.weight(1f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = TextStyle(
-                    brush = Brush.linearGradient(
-                        listOf(Amber, AmberDeep)
-                    ),
-                    fontFamily = HomeFontFamily,
-                    fontWeight = FontWeight.Black,
-                    fontSize = when {
-                        veryCompact -> 24.sp
-                        compact -> 28.sp
-                        else -> 36.sp
-                    },
-                    textAlign = TextAlign.Right,
-                    shadow = Shadow(
-                        color = Color(0xFF000000).copy(alpha = .45f),
-                        offset = Offset(0f, 3f),
-                        blurRadius = 6f
-                    )
-                )
-            )
-            Spacer(Modifier.width(10.dp))
-            Image(
-                painter = painterResource(R.drawable.fascratch),
-                contentDescription = "نشان اسکرچ فارسی",
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.size(
-                    when {
-                        veryCompact -> 58.dp
-                        compact -> 58.dp
-                        else -> 58.dp
-                    }
-                )
+            ir.behnamapps.fascratch.home.HomeLogoImage(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(if (compact) 70.dp else 85.dp)
             )
         }
 
@@ -474,22 +442,25 @@ private fun HomeBrandHeader(
 
         Text(
             text = "خلاقیت، داستان‌سازی و برنامه‌نویسی به زبان فارسی",
+            modifier = Modifier.fillMaxWidth(),
             color = ScratchText.copy(alpha = .9f),
             fontSize = if (compact) 11.sp else 13.sp,
             fontWeight = FontWeight.Medium,
+            textAlign = TextAlign.Right,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
 
         Spacer(Modifier.height(if (compact) 6.dp else 10.dp))
 
-        // خط تزئینی ظریف
+        // خط تزئینی ظریف با جهت معکوس
         Box(
             Modifier
+                .align(Alignment.End)
                 .fillMaxWidth(.5f)
                 .height(2.dp)
                 .clip(CircleShape)
-                .background(Brush.horizontalGradient(listOf(Amber.copy(alpha = .8f), Color.Transparent)))
+                .background(Brush.horizontalGradient(listOf(Color.Transparent, Amber.copy(alpha = .8f))))
         )
     }
 }

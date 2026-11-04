@@ -26,3 +26,7 @@ app/src/main/assets/turbobuild/
 # Local Gradle build logic outputs
 /buildSrc/build/
 /buildSrc/.gradle/
+
+# Local Auto Builder staging and restorable assets backups
+/app/src/main/.autobuilder-stage-*
+/app/src/main/.autobuilder-backups/

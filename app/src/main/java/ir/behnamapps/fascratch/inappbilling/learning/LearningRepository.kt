@@ -413,6 +413,7 @@ class LearningRepository private constructor(context: Context) {
                 catch (_: Exception) { /* Keep the fresh mission list; retry tour qualification next time. */ }
                 require(identity.secret() == secret && identity.profile()?.uuid == uuid)
             }
+            result = flushEditorMissions(uuid, secret, result)
             acceptMissions(result, uuid)
         }
     }
@@ -433,6 +434,38 @@ class LearningRepository private constructor(context: Context) {
             } catch (e: CancellationException) { throw e } catch (_: Exception) { /* Retried when missions are opened online. */ }
         }
     } }
+    private suspend fun flushEditorMissions(uuid: String, secret: String, initial: JSONObject): JSONObject {
+        var result = initial
+        val pending = store.grant("@editor-missions-$uuid") ?: return result
+        for ((id, action) in listOf("html_export" to "html-export-saved", "quality_run" to "quality-run")) {
+            if (pending.optBoolean(id) && MissionBoard.parse(result).items.any { it.id == id && it.status == "active" }) {
+                try {
+                    val next = api.missions("actions/$action", secret, JSONObject().put("completed", true))
+                    require(identity.secret() == secret && identity.profile()?.uuid == uuid)
+                    result = next
+                } catch (e: CancellationException) { throw e } catch (_: Exception) { }
+            }
+        }
+        return result
+    }
+    fun recordEditorMission(id: String) {
+        require(id in setOf("html_export", "quality_run"))
+        val owner = identity.profile()?.uuid ?: return
+        scope.launch {
+            mutex.withLock {
+                if (identity.profile()?.uuid != owner) return@withLock
+                val pending = store.grant("@editor-missions-$owner") ?: JSONObject()
+                pending.put(id, true); store.saveGrant("@editor-missions-$owner", pending)
+                val known = mutableMissions.value?.takeIf { it.uuid == owner }
+                if (known != null) try {
+                    val secret = identity.secret()
+                    val current = api.missions("", secret)
+                    val next = flushEditorMissions(owner, secret, current)
+                    if (identity.profile()?.uuid == owner && identity.secret() == secret) acceptMissions(next, owner)
+                } catch (e: CancellationException) { throw e } catch (_: Exception) { }
+            }
+        }
+    }
     fun savedProjectChanged() { scope.launch {
         mutex.withLock {
             val uuid = identity.profile()?.uuid ?: return@withLock

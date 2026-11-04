@@ -12,11 +12,11 @@ data class MissionItem(val id: String, val title: String, val metric: String, va
 }
 
 data class MissionBoard(val uuid: String, val available: Boolean, val items: List<MissionItem>, val rewardedAd: RewardedAdOffer? = null) {
-    val ordered: List<MissionItem> get() = items.sortedBy { when (it.status) { "ready" -> 0; "active" -> 1; else -> 2 } }
+    val ordered: List<MissionItem> get() { val last = listOf("html_export", "quality_run", "ads_15", "ads_30"); return items.sortedWith(compareBy<MissionItem> { if (it.id in last) 1 else 0 }.thenBy { if (it.id in last) last.indexOf(it.id) else when (it.status) { "ready" -> 0; "active" -> 1; else -> 2 } }) }
     internal val gridEntries: List<MissionGridEntry> get() =
         listOfNotNull(rewardedAd?.let { MissionGridEntry.Ad(it) }) + ordered.map { MissionGridEntry.Task(it) }
     companion object {
-        internal val supportedMissionIds = setOf("first_code", "coding_30", "watch_10", "watch_60", "daily", "details", "coding_week", "coding_month", "store_review", "lessons_10", "lessons_17", "coding_5h", "saved_project", "coding_15h", "avatars_8", "showcase_10", "tour_complete", "future_investor")
+        internal val supportedMissionIds = setOf("first_code", "coding_30", "watch_10", "watch_60", "daily", "details", "coding_week", "coding_month", "store_review", "lessons_10", "lessons_17", "coding_5h", "saved_project", "coding_15h", "avatars_8", "showcase_10", "tour_complete", "future_investor", "html_export", "quality_run", "ads_15", "ads_30")
 
         fun parse(json: JSONObject): MissionBoard {
             val rows = json.optJSONArray("items")

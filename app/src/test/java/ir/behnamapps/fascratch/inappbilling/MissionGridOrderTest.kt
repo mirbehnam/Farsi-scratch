@@ -5,6 +5,12 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class MissionGridOrderTest {
+    @Test fun fourNewMissionsStayLastEvenWhenReadyAndArriveShuffled() {
+        val ids = listOf("html_export", "quality_run", "ads_15", "ads_30")
+        val newItems = ids.reversed().map { MissionItem(it, it, it, 1, 1, 15, "once", "ready") }
+        val old = MissionItem("coding_30", "برنامه‌نویسی", "coding_ms", 30, 0, 50, "once", "active")
+        assertEquals(listOf("coding_30") + ids, MissionBoard("account", true, newItems + old).ordered.map { it.id })
+    }
     private val task = MissionItem("daily", "روزانه", "visit", 1, 1, 10, "today", "ready")
     private val offer = RewardedAdOffer("app", "placement", 10, 10, 2, 2, 120, null, 0)
 

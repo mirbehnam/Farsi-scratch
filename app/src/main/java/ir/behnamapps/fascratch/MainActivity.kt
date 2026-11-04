@@ -1255,6 +1255,7 @@ internal fun ScratchScreen(activity: MainActivity, engine: EditorEngine, onQuick
     val playback = activity.packagedPlayback
     var scrollFraction by remember { mutableFloatStateOf(0f) }
     var showFloatingKeyboard by rememberSaveable { mutableStateOf(false) }
+    var showGamepad by rememberSaveable { mutableStateOf(false) }
     var keyboardX by remember { mutableFloatStateOf(0f) }
     var keyboardY by remember { mutableFloatStateOf(0f) }
     var rootWidth by remember { mutableIntStateOf(0) }
@@ -1306,7 +1307,10 @@ internal fun ScratchScreen(activity: MainActivity, engine: EditorEngine, onQuick
             }
             Spacer(Modifier.height(7.dp))
             ScratchRailButton("⌨", "صفحه‌کلید", active = showFloatingKeyboard,
-                onClick = { showFloatingKeyboard = !showFloatingKeyboard })
+                onClick = { showGamepad = false; showFloatingKeyboard = !showFloatingKeyboard })
+            Spacer(Modifier.height(7.dp))
+            ScratchRailButton("🎮", "گیم‌پد", active = showGamepad,
+                onClick = { showFloatingKeyboard = false; showGamepad = !showGamepad })
             ir.behnamapps.fascratch.inappbilling.presentation.ScratchQuickLessonsShortcut(activity, onQuickLessonsVisibility)
             Spacer(Modifier.weight(1f))
             Box(Modifier.size(8.dp).clip(CircleShape).background(ScratchOrange))
@@ -1344,8 +1348,20 @@ internal fun ScratchScreen(activity: MainActivity, engine: EditorEngine, onQuick
             }
         }
 
-        if (showFloatingKeyboard) {
-            FloatingScratchKeyboard(
+        if (showFloatingKeyboard || showGamepad) {
+            val panelModifier = Modifier
+                .offset { IntOffset(keyboardX.roundToInt(), keyboardY.roundToInt()) }
+                .onSizeChanged { keyboardWidth = it.width; keyboardHeight = it.height }
+            val dragPanel: (Float, Float) -> Unit = { deltaX, deltaY ->
+                val maxX = (rootWidth - keyboardWidth - keyboardMarginPx).coerceAtLeast(keyboardMarginPx)
+                val maxY = (rootHeight - keyboardHeight - keyboardMarginPx).coerceAtLeast(keyboardMarginPx)
+                keyboardX = (keyboardX + deltaX).coerceIn(keyboardMarginPx, maxX)
+                keyboardY = (keyboardY + deltaY).coerceIn(keyboardMarginPx, maxY)
+            }
+            if (showGamepad) FloatingScratchGamepad(
+                modifier = panelModifier, onDrag = dragPanel,
+                onClose = { showGamepad = false }, onKeyChange = activity::dispatchScratchKey
+            ) else FloatingScratchKeyboard(
                 modifier = Modifier
                     .offset { IntOffset(keyboardX.roundToInt(), keyboardY.roundToInt()) }
                     .onSizeChanged {
@@ -1490,7 +1506,7 @@ private fun FloatingScratchKeyboard(
 }
 
 @Composable
-private fun ScratchKeyButton(
+internal fun ScratchKeyButton(
     label: String,
     keyCode: Int,
     onKeyChange: (Int, Boolean) -> Unit,

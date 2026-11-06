@@ -26,14 +26,14 @@ internal data class ContentPackage(val uuid: String, val title: String, val desc
             return ContentPackage(j.getString("uuid"), j.getString("title").take(120), j.optString("description").take(5000), j.getString("access_mode"),
                 j.optInt("price_coins"), j.optBoolean("owned"), j.optInt("purchase_price").takeIf { !j.isNull("purchase_price") }, j.optString("purchased_at").takeUnless { it.isBlank() || it == "null" },
                 j.optString("cover_url").takeUnless { it.isBlank() || it == "null" }, (0 until types.length()).map { types.getString(it) }.toSet(), j.optLong("bytes"), j.optLong("downloads"),
-                (0 until files.length().coerceAtMost(100)).map { val f = files.getJSONObject(it); ContentPart(f.getString("uuid"), f.getString("kind"), contentDisplayName(f.optJSONObject("names"), f.getString("name")), f.optString("preview_url")) })
+                (0 until files.length().coerceAtMost(100)).map { val f = files.getJSONObject(it); ContentPart(f.getString("uuid"), f.getString("kind"), contentDisplayName(f.optJSONObject("names"), f.getString("name")), f.optString("preview_url"), f.optString("thumbnail_url").takeUnless { it.isBlank() || it == "null" }) })
         }
     }
 }
 internal fun contentDisplayName(names: JSONObject?, filename: String, language: String = java.util.Locale.getDefault().language): String =
     names?.optString(language)?.takeIf { it.isNotBlank() && it != "null" } ?: names?.optString("en")?.takeIf { it.isNotBlank() && it != "null" } ?: filename.substringBeforeLast('.', filename)
 
-internal data class ContentPart(val uuid: String, val kind: String, val name: String, val preview: String)
+internal data class ContentPart(val uuid: String, val kind: String, val name: String, val preview: String, val thumbnail: String? = null)
 internal data class StorePicture(val bitmap: Bitmap? = null, val gif: ByteArray? = null)
 internal data class ContentTransfer(val status: String, val downloaded: Long = 0, val total: Long = 0, val message: String? = null)
 internal data class ContentCatalog(val items: List<ContentPackage>, val more: Boolean, val page: Int, val count: Int = 0, val spent: Long = 0)

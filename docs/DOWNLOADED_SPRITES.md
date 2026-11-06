@@ -94,3 +94,6 @@ Store covers now retain GIF bytes and use native animated image decoding (ImageD
 On phone 2412DPC0AG (AMLZSW75XOHQRSFU), ContentStorePresentationDeviceTest verified actual changing frames in the native view, stop on hidden/release, and fa/en/ar/filename fallback. Those two tests plus the three package installer tests passed. Current Website Debug and instrumentation APKs were built and installed with existing data preserved.
 
 Ownership returned by refreshed server pages replaces the corresponding cached flags, including administrator revocation. Revocation blocks future server redownload access; it does not delete already installed files from the device. An administrator's revocation preserves historical coin spending and permits a fresh paid purchase.
+### 300px artwork update
+
+Store manifests may include an optional thumbnail_url per file. Native package details show this image when available and retain the previous kind icon when the server omits it. Backdrop artwork is generated as a compact 300x300 WebP; sound artwork is a music icon, separate from the audio preview URL. GIF compression, when explicitly approved by the administrator, now produces a 300x300 frame while preserving the image aspect ratio and animation. Original media and existing package archives remain unchanged.

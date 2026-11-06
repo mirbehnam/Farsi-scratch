@@ -162,7 +162,7 @@ import java.io.File
                                 detail.files.forEach { part ->
                                     Surface(shape = RoundedCornerShape(14.dp), color = Color.White, modifier = Modifier.fillMaxWidth()) {
                                         Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                            Text(kindIcon(part.kind), Modifier.padding(8.dp), fontSize = 22.sp)
+                                            if (part.thumbnail != null) PackagePicture(repo, part.thumbnail, Modifier.size(54.dp).padding(4.dp)) else Text(kindIcon(part.kind), Modifier.padding(8.dp), fontSize = 22.sp)
                                             Column(Modifier.weight(1f)) { Text(part.name, fontWeight = FontWeight.Bold, fontSize = 13.sp); Text(kindLabel(part.kind), fontSize = 11.sp) }
                                             TextButton(onClick = { preview = part }) { Text(if (part.kind == "sounds") "پیش‌شنوایی" else "پیش‌نمایش") }
                                         }

@@ -150,7 +150,7 @@ private fun sizeText(bytes: Long) = "%.1f MB".format(java.util.Locale.US, bytes 
                     check(c.responseCode == 200) { "پیش‌نمایش فعلاً در دسترس نیست." }
                     val bytes = c.inputStream.use { it.readBytesBounded(16 * 1048576) }; val mime = c.contentType.orEmpty().substringBefore(';')
                     if (part.kind == "sounds") { val file = File(context.cacheDir, "store-preview-${part.uuid}.mp3"); file.writeBytes(bytes); sound = file }
-                    else { require(mime in setOf("image/png", "image/jpeg", "image/svg+xml", "image/webp")); image = "data:$mime;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP) }
+                    else { require(mime in setOf("image/png", "image/jpeg", "image/svg+xml", "image/webp", "image/gif")); image = "data:$mime;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP) }
                 } finally { api.finishConnection(c) }
             }
         } catch (e: CancellationException) { throw e } catch (_: Exception) { error = "پیش‌نمایش آماده نشد؛ اینترنت را بررسی کن یا کمی بعد دوباره تلاش کن." }

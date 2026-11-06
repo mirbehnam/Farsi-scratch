@@ -1,5 +1,6 @@
 package ir.behnamapps.fascratch.inappbilling.learning
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -108,6 +109,8 @@ private data class HallParticle(val x: Float, val y: Float, val radius: Float, v
 }
 
 @Composable internal fun ShowcaseHallContent(data: LearnerShowcase, modifier: Modifier = Modifier) {
+    var selectedTrophy by remember { mutableStateOf<ShowcaseTrophy?>(null) }
+    selectedTrophy?.let { trophy -> TrophyDetailsDialog(trophy) { selectedTrophy = null } }
     var showStorePurchases by remember { mutableStateOf(false) }
     val storeContext = androidx.compose.ui.platform.LocalContext.current
     if (showStorePurchases) ContentStoreDialog(onClose = { showStorePurchases = false }, purchasesInitially = true)
@@ -120,7 +123,7 @@ private data class HallParticle(val x: Float, val y: Float, val radius: Float, v
                 if (LearningIdentity.get(storeContext).profile()?.uuid == data.learner.uuid) {
                     OutlinedButton(onClick = { showStorePurchases = true }, modifier = Modifier.fillMaxWidth()) { Text("خریدهای من", color = HallGold) }
                 }
-                HallStat("◆", "مجموعه ثروت", coinBalanceText(data.stats?.spentCoins ?: 0.0) + " سکه", Modifier.fillMaxWidth())
+                HallStat("◆", "مجموعه سکه‌ها", coinBalanceText(data.stats?.totalCoins ?: data.stats?.spentCoins ?: 0.0) + " سکه", Modifier.fillMaxWidth())
                 val stats = listOf(
                     Triple("🎬", "تماشای آموزش", data.stats?.let { showcaseTime(it.watchMs) } ?: "—"),
                     Triple("🧩", "برنامه‌نویسی", data.stats?.let { showcaseTime(it.codingMs) } ?: "—"),
@@ -146,7 +149,9 @@ private data class HallParticle(val x: Float, val y: Float, val radius: Float, v
                 item(span = { GridItemSpan(maxLineSpan) }) { HallSection("گنجینهٔ دستاوردها", data.trophies.size) }
                 if (data.trophies.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { HallEmpty("جای اولین جام اینجا محفوظ است 🏆") }
                 items(data.trophies, key = { "hall-trophy-${it.id}" }) { trophy ->
-                    HallExhibit(trophy.title, false, trophy = true) { AchievementTrophy(trophy) { TrophyArtifact(trophy.id) } }
+                    Box(Modifier.clickable(onClickLabel = "توضیحات ${trophy.title}") { selectedTrophy = trophy }) {
+                        HallExhibit(trophy.title, false, trophy = true) { AchievementTrophy(trophy) { TrophyArtifact(trophy.id) } }
+                    }
                 }
             }
         }
@@ -247,5 +252,25 @@ private data class HallParticle(val x: Float, val y: Float, val radius: Float, v
                 listOf(ShowcaseTrophy("first_code", "اولین قدم برنامه‌نویسی"), ShowcaseTrophy("coding_week", "یک هفته برنامه‌نویسی"), ShowcaseTrophy("coding_month", "یک ماه برنامه‌نویسی")),
                 ShowcaseStats(14_400_000, 54_000_000, 10)), Modifier.padding(12.dp))
         }
+    }
+}
+
+/** One accessible, scrollable detail surface for every earned medal, including cached/legacy data. */
+@Composable internal fun TrophyDetailsDialog(trophy: ShowcaseTrophy, onClose: () -> Unit) {
+    LearnerDialogTheme {
+        AlertDialog(
+            onDismissRequest = onClose,
+            shape = RoundedCornerShape(24.dp),
+            containerColor = Color(0xFF211C33),
+            titleContentColor = HallGold,
+            textContentColor = HallInk,
+            icon = { Box(Modifier.size(88.dp)) { AchievementTrophy(trophy) { TrophyArtifact(trophy.id) } } },
+            title = { Text(trophy.title, Modifier.fillMaxWidth(), textAlign = TextAlign.Center, fontWeight = FontWeight.Bold) },
+            text = { Column(Modifier.heightIn(max = 180.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("✦ دستاورد کسب‌شده", color = HallGold, style = MaterialTheme.typography.labelLarge)
+                Text(trophy.description.ifBlank { "این مدال با تکمیل مأموریت «${trophy.title}» به دست آمده است." }, style = MaterialTheme.typography.bodyMedium)
+            } },
+            confirmButton = { TextButton(onClick = onClose) { Text("چه عالی!", color = HallGold) } }
+        )
     }
 }

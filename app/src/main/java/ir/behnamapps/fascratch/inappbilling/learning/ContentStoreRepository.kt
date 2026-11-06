@@ -26,11 +26,15 @@ internal data class ContentPackage(val uuid: String, val title: String, val desc
             return ContentPackage(j.getString("uuid"), j.getString("title").take(120), j.optString("description").take(5000), j.getString("access_mode"),
                 j.optInt("price_coins"), j.optBoolean("owned"), j.optInt("purchase_price").takeIf { !j.isNull("purchase_price") }, j.optString("purchased_at").takeUnless { it.isBlank() || it == "null" },
                 j.optString("cover_url").takeUnless { it.isBlank() || it == "null" }, (0 until types.length()).map { types.getString(it) }.toSet(), j.optLong("bytes"), j.optLong("downloads"),
-                (0 until files.length().coerceAtMost(100)).map { val f = files.getJSONObject(it); ContentPart(f.getString("uuid"), f.getString("kind"), f.optJSONObject("names")?.optString("fa")?.takeIf { it.isNotBlank() } ?: f.optJSONObject("names")?.optString("en")?.takeIf { it.isNotBlank() } ?: f.getString("name"), f.optString("preview_url")) })
+                (0 until files.length().coerceAtMost(100)).map { val f = files.getJSONObject(it); ContentPart(f.getString("uuid"), f.getString("kind"), contentDisplayName(f.optJSONObject("names"), f.getString("name")), f.optString("preview_url")) })
         }
     }
 }
+internal fun contentDisplayName(names: JSONObject?, filename: String, language: String = java.util.Locale.getDefault().language): String =
+    names?.optString(language)?.takeIf { it.isNotBlank() && it != "null" } ?: names?.optString("en")?.takeIf { it.isNotBlank() && it != "null" } ?: filename.substringBeforeLast('.', filename)
+
 internal data class ContentPart(val uuid: String, val kind: String, val name: String, val preview: String)
+internal data class StorePicture(val bitmap: Bitmap? = null, val gif: ByteArray? = null)
 internal data class ContentTransfer(val status: String, val downloaded: Long = 0, val total: Long = 0, val message: String? = null)
 internal data class ContentCatalog(val items: List<ContentPackage>, val more: Boolean, val page: Int, val count: Int = 0, val spent: Long = 0)
 
@@ -48,7 +52,9 @@ internal class ContentStoreRepository private constructor(context: Context) {
     val ownedByAccount = MutableStateFlow<Map<String, Set<String>>>(emptyMap())
     val wallet = MutableStateFlow(identity.profile()?.coins ?: 0.0)
     val owner = identity.changes.map { identity.profile()?.uuid }.distinctUntilChanged().stateIn(scope, SharingStarted.Eagerly, identity.profile()?.uuid)
-    private val pictures = LruCache<String, Bitmap>(12)
+    private val pictures = object : LruCache<String, StorePicture>(12 * 1048576) {
+        override fun sizeOf(key: String, value: StorePicture) = value.gif?.size ?: value.bitmap?.allocationByteCount ?: 0
+    }
     @Volatile private var localPackages = emptyMap<String, String>()
     init { installer.recover(); refreshLocal() }
     private fun refreshLocal() {
@@ -64,7 +70,10 @@ internal class ContentStoreRepository private constructor(context: Context) {
         json.optJSONObject("wallet")?.let { wallet.value = it.optDouble("coins", wallet.value) }
         val rows = json.getJSONArray("items"); retryAcknowledgements(secret)
         val packages = (0 until rows.length()).map { ContentPackage.parse(rows.getJSONObject(it)) }
-        identity.profile()?.uuid?.let { account -> ownedByAccount.update { it + (account to ((it[account] ?: emptySet()) + packages.filter { p -> p.owned }.map { p -> p.uuid })) } }
+        identity.profile()?.uuid?.let { account -> ownedByAccount.update { current ->
+            val previous = if (owned && page == 1) emptySet() else current[account] ?: emptySet()
+            current + (account to ((previous - packages.map { it.uuid }.toSet()) + packages.filter { it.owned }.map { it.uuid }))
+        } }
         ContentCatalog(packages, json.optBoolean("has_more"), json.optInt("page", page), json.optInt("count"), json.optLong("spent_coins"))
     }
     fun installed(uuid: String) = uuid in localPackages
@@ -75,17 +84,18 @@ internal class ContentStoreRepository private constructor(context: Context) {
         val edit = pending.edit(); pending.all.keys.filter { it.contains(":$uuid:") }.forEach { edit.remove(it) }; edit.commit()
         mutable.update { it - uuid }
     } }
-    suspend fun picture(url: String?): Bitmap? = withContext(Dispatchers.IO) {
+    suspend fun picture(url: String?): StorePicture? = withContext(Dispatchers.IO) {
         if (url == null) return@withContext null
         pictures.get(url)?.let { return@withContext it }
         val c = runCatching { api.contentDownload(url, identity.secret()) }.getOrNull() ?: return@withContext null
         try {
             if (c.responseCode != 200) return@withContext null
             val bytes = c.inputStream.use { it.readBytesBounded(16 * 1048576) }
+            if (bytes.size >= 6 && bytes.copyOfRange(0, 6).toString(Charsets.US_ASCII) in setOf("GIF87a", "GIF89a")) return@withContext StorePicture(gif = bytes).also { pictures.put(url, it) }
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }; BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
             if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@withContext null
             val opts = BitmapFactory.Options().apply { inSampleSize = maxOf(1, maxOf(bounds.outWidth, bounds.outHeight) / 640) }
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)?.also { pictures.put(url, it) }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)?.let { StorePicture(bitmap = it) }?.also { pictures.put(url, it) }
         } catch (_: Exception) { null } finally { api.finishConnection(c) }
     }
     private fun operation(key: String): String = pending.getString(key, null) ?: UUID.randomUUID().toString().also { check(pending.edit().putString(key, it).commit()) }

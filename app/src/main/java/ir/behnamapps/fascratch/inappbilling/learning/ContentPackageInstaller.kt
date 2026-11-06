@@ -109,7 +109,7 @@ internal class ContentPackageInstaller private constructor(private val root: Fil
                     } }
                     require(hash(out) == f.getString("sha256")) { "بررسی سلامت فایل ناموفق بود." }
                     records.put(JSONObject().put("kind", kind).put("local", local).put("bytes", bytes).put("sha256", f.getString("sha256"))
-                        .put("names", f.optJSONObject("names") ?: JSONObject().put("en", local.substringBeforeLast('.'))).put("names_before", names(kind).optJSONObject(local) ?: JSONObject.NULL))
+                        .put("names", JSONObject((f.optJSONObject("names") ?: JSONObject()).toString()).apply { if (optString("en").isBlank() || isNull("en")) put("en", name.substringBeforeLast('.', name)) }).put("names_before", names(kind).optJSONObject(local) ?: JSONObject.NULL))
                 }
             }
             check(sameAccount()) { "حساب تغییر کرده؛ دریافت را از حساب فعلی دوباره شروع کن." }

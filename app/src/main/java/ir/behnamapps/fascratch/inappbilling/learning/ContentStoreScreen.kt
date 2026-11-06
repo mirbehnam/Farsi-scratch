@@ -10,6 +10,7 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -35,46 +37,94 @@ import java.io.File
     val context = LocalContext.current
     val repo = remember { ContentStoreRepository.get(context) }
     val ownedByAccount by repo.ownedByAccount.collectAsState()
-    val owner by repo.owner.collectAsState(); val wallet by repo.wallet.collectAsState(); val transfers by repo.transfers.collectAsState()
-    var tab by remember { mutableStateOf(if (purchasesInitially) "owned" else "all") }; var kind by remember { mutableStateOf("") }; var query by remember { mutableStateOf("") }
-    var items by remember { mutableStateOf<List<ContentPackage>>(emptyList()) }; var catalog by remember { mutableStateOf<ContentCatalog?>(null) }
-    var loading by remember { mutableStateOf(false) }; var error by remember { mutableStateOf<String?>(null) }; var revision by remember { mutableIntStateOf(0) }
-    var selected by remember { mutableStateOf<ContentPackage?>(null) }; var buy by remember { mutableStateOf<ContentPackage?>(null) }; var remove by remember { mutableStateOf<Pair<String, String>?>(null) }
-    var preview by remember { mutableStateOf<ContentPart?>(null) }; val scope = rememberCoroutineScope()
+    val owner by repo.owner.collectAsState()
+    val wallet by repo.wallet.collectAsState()
+    val transfers by repo.transfers.collectAsState()
+    var tab by remember { mutableStateOf(if (purchasesInitially) "owned" else "all") }
+    var kind by remember { mutableStateOf("") }
+    var query by remember { mutableStateOf("") }
+    var items by remember { mutableStateOf<List<ContentPackage>>(emptyList()) }
+    var catalog by remember { mutableStateOf<ContentCatalog?>(null) }
+    var loading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var revision by remember { mutableIntStateOf(0) }
+    var selected by remember { mutableStateOf<ContentPackage?>(null) }
+    var buy by remember { mutableStateOf<ContentPackage?>(null) }
+    var remove by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var preview by remember { mutableStateOf<ContentPart?>(null) }
+    val scope = rememberCoroutineScope()
+
     suspend fun load(append: Boolean = false) {
         loading = true; error = null
-        try { val next = repo.load(query, kind, tab == "owned", if (append) (catalog?.page ?: 0) + 1 else 1); catalog = next; items = if (append) (items + next.items).distinctBy { it.uuid } else next.items }
-        catch (e: CancellationException) { throw e } catch (e: Exception) { error = e.message ?: "به اینترنت وصل شو و دوباره تلاش کن." }
+        try {
+            val next = repo.load(query, kind, tab == "owned", if (append) (catalog?.page ?: 0) + 1 else 1)
+            catalog = next
+            items = if (append) (items + next.items).distinctBy { it.uuid } else next.items
+        } catch (e: CancellationException) { throw e }
+        catch (e: Exception) { error = e.message ?: "به اینترنت وصل شو و دوباره تلاش کن." }
         finally { loading = false }
     }
     LaunchedEffect(tab, kind, query, owner, revision) { selected = null; if (tab != "installed") { delay(300); load() } }
+
     LearnerDialogTheme {
         Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = true)) {
             LearnerDialogWindowBounds()
             Box(Modifier.learnerSafeDialogBounds(), contentAlignment = Alignment.Center) {
-                Surface(Modifier.learnerDialogPanelBounds(), shape = RoundedCornerShape(24.dp), color = Color(0xFFF5F4FC)) {
-                    Column(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Surface(shape = RoundedCornerShape(14.dp), color = Color(0xFFFFE7CF)) { Text("✦", Modifier.padding(12.dp), fontSize = 24.sp, color = Color(0xFFD96D1B)) }
-                            Column(Modifier.weight(1f)) { Text(if (selected != null) selected!!.title else if (tab == "owned") "خریدهای من" else "دنیای آمادهٔ اسکرچ", fontWeight = FontWeight.Black, fontSize = 20.sp, maxLines = 1, overflow = TextOverflow.Ellipsis); Text("اسپرایت، پس‌زمینه و صدا؛ برای ایدهٔ بعدی تو", fontSize = 11.sp, color = Color(0xFF74758F)) }
-                            Surface(shape = RoundedCornerShape(30.dp), color = Color(0xFFFFEBCB)) { Text("● ${coinBalanceText(wallet)} سکه", Modifier.padding(horizontal = 12.dp, vertical = 8.dp), fontWeight = FontWeight.Bold, fontSize = 12.sp) }
-                            TextButton(onClick = { if (selected != null) selected = null else onClose() }) { Text(if (selected != null) "بازگشت" else "بستن ×") }
-                        }
-                        if (selected == null) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { listOf("all" to "فروشگاه", "owned" to "خریدهای من", "installed" to "روی دستگاه").forEach { (id, label) -> FilterChip(selected = tab == id, onClick = { tab = id }, label = { Text(label) }) } }
-                            if (tab == "all") Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                                OutlinedTextField(query, { query = it.take(120) }, label = { Text("چی لازم داری؟") }, modifier = Modifier.weight(1f), singleLine = true, shape = RoundedCornerShape(14.dp))
-                                listOf("" to "همه", "sprites" to "اسپرایت‌ها", "backdrops" to "پس‌زمینه‌ها", "sounds" to "صداها").forEach { (id, label) -> FilterChip(selected = kind == id, onClick = { kind = id }, label = { Text(label, fontSize = 11.sp) }) }
+                Surface(Modifier.learnerDialogPanelBounds(), shape = RoundedCornerShape(20.dp), color = Color(0xFFF5F4FC)) {
+                    Column(Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+
+                        // ───── نوار بالا: تب‌ها + موجودی سکه + بستن (بدون عنوان و آیکون) ─────
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (selected == null) {
+                                Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    listOf("all" to "فروشگاه", "owned" to "خریدهای من", "installed" to "روی دستگاه").forEach { (id, label) ->
+                                        FilterChip(selected = tab == id, onClick = { tab = id }, label = { Text(label, fontSize = 12.sp) })
+                                    }
+                                }
+                            } else Spacer(Modifier.weight(1f))
+                            Surface(shape = RoundedCornerShape(30.dp), color = Color(0xFFFFEBCB)) {
+                                Text("● ${coinBalanceText(wallet)} سکه", Modifier.padding(horizontal = 12.dp, vertical = 6.dp), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                            TextButton(onClick = { if (selected != null) selected = null else onClose() }, contentPadding = PaddingValues(horizontal = 10.dp)) {
+                                Text(if (selected != null) "بازگشت" else "بستن ×")
                             }
                         }
+
+                        // ───── جستجو + فیلتر نوع (یک ردیف فشرده) ─────
+                        if (selected == null && tab == "all") {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Surface(Modifier.weight(1f).height(40.dp), shape = RoundedCornerShape(20.dp), color = Color.White, border = BorderStroke(1.dp, Color(0xFFE7E1F5))) {
+                                    Box(Modifier.padding(horizontal = 14.dp), contentAlignment = Alignment.CenterStart) {
+                                        BasicTextField(
+                                            value = query, onValueChange = { query = it.take(120) }, singleLine = true,
+                                            textStyle = TextStyle(fontSize = 13.sp, color = Color(0xFF2B2B3A)), modifier = Modifier.fillMaxWidth()
+                                        )
+                                        if (query.isEmpty()) Text("🔍 چی لازم داری؟", fontSize = 13.sp, color = Color(0xFF9A9AAF))
+                                    }
+                                }
+                                Row(Modifier.weight(1.2f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    listOf("" to "همه", "sprites" to "اسپرایت‌ها", "backdrops" to "پس‌زمینه‌ها", "sounds" to "صداها").forEach { (id, label) ->
+                                        FilterChip(selected = kind == id, onClick = { kind = id }, label = { Text(label, fontSize = 11.sp) })
+                                    }
+                                }
+                            }
+                        }
+
                         if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-                        error?.let { message -> Row(Modifier.fillMaxWidth().background(Color(0xFFFFE4DA), RoundedCornerShape(12.dp)).padding(10.dp), verticalAlignment = Alignment.CenterVertically) { Text("☁ $message", Modifier.weight(1f), fontSize = 12.sp); TextButton(onClick = { revision++ }) { Text("تلاش دوباره") } } }
+                        error?.let { message ->
+                            Row(Modifier.fillMaxWidth().background(Color(0xFFFFE4DA), RoundedCornerShape(12.dp)).padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text("☁ $message", Modifier.weight(1f), fontSize = 12.sp)
+                                TextButton(onClick = { revision++ }) { Text("تلاش دوباره") }
+                            }
+                        }
+
                         val detail = selected?.let { if (it.uuid in (ownedByAccount[owner] ?: emptySet())) it.copy(owned = true) else it }
                         if (detail != null) {
-                            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            // ───── جزئیات بسته ─────
+                            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                                    PackagePicture(repo, detail.cover, Modifier.width(180.dp).height(120.dp))
-                                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                                    PackagePicture(repo, detail.cover, Modifier.width(200.dp).height(140.dp))
+                                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                         Text(detail.title, fontWeight = FontWeight.Black, fontSize = 20.sp)
                                         Text(detail.description, fontSize = 13.sp)
                                         Text("${detail.files.size} فایل · ${sizeText(detail.bytes)} · ${detail.downloads} دانلود", fontSize = 11.sp)
@@ -83,10 +133,20 @@ import java.io.File
                                     }
                                 }
                                 val transfer = transfers[detail.uuid]
-                                if (transfer?.status in setOf("preparing", "downloading")) { Text(transfer?.message ?: "در حال دریافت…", fontSize = 12.sp); if ((transfer?.total ?: 0) > 0) { LinearProgressIndicator(progress = { transfer!!.downloaded.toFloat() / transfer.total }, modifier = Modifier.fillMaxWidth()); Text("${sizeText(transfer!!.downloaded)} از ${sizeText(transfer.total)}", fontSize = 11.sp) } }
+                                if (transfer?.status in setOf("preparing", "downloading")) {
+                                    Text(transfer?.message ?: "در حال دریافت…", fontSize = 12.sp)
+                                    if ((transfer?.total ?: 0) > 0) {
+                                        LinearProgressIndicator(progress = { transfer!!.downloaded.toFloat() / transfer.total }, modifier = Modifier.fillMaxWidth())
+                                        Text("${sizeText(transfer!!.downloaded)} از ${sizeText(transfer.total)}", fontSize = 11.sp)
+                                    }
+                                }
                                 transfer?.message?.let { Text(it, fontSize = 12.sp) }
-                                if (repo.installed(detail.uuid)) Row(verticalAlignment = Alignment.CenterVertically) { Text("✓ در دستهٔ دانلودی‌ها آماده است", Modifier.weight(1f), color = Color(0xFF27715B)); TextButton(onClick = { remove = detail.uuid to detail.title }) { Text("حذف از دستگاه") } }
-                                else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (repo.installed(detail.uuid)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("✓ در دستهٔ دانلودی‌ها آماده است", Modifier.weight(1f), color = Color(0xFF27715B))
+                                        TextButton(onClick = { remove = detail.uuid to detail.title }) { Text("حذف از دستگاه") }
+                                    }
+                                } else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     val busy = transfer?.status in setOf("preparing", "downloading")
                                     when {
                                         detail.owned -> Button(enabled = !busy, onClick = { repo.acquire(detail, "coins", context) }) { Text("دانلود مجدد رایگان") }
@@ -99,21 +159,57 @@ import java.io.File
                                 }
                                 if (!detail.owned && detail.mode in setOf("ad", "choice")) Text("دریافت با تبلیغ مالکیت دائمی ندارد؛ پس از حذف فایل‌ها یا نصب دوباره باید تبلیغ ببینی.", fontSize = 11.sp, color = Color(0xFF74758F))
                                 Text("داخل این بسته", fontWeight = FontWeight.Bold)
-                                detail.files.forEach { part -> Surface(shape = RoundedCornerShape(14.dp), color = Color.White, modifier = Modifier.fillMaxWidth()) { Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) { Text(kindIcon(part.kind), Modifier.padding(8.dp), fontSize = 24.sp); Column(Modifier.weight(1f)) { Text(part.name, fontWeight = FontWeight.Bold, fontSize = 13.sp); Text(kindLabel(part.kind), fontSize = 11.sp) }; TextButton(onClick = { preview = part }) { Text(if (part.kind == "sounds") "پیش‌شنوایی" else "پیش‌نمایش") } } } }
+                                detail.files.forEach { part ->
+                                    Surface(shape = RoundedCornerShape(14.dp), color = Color.White, modifier = Modifier.fillMaxWidth()) {
+                                        Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Text(kindIcon(part.kind), Modifier.padding(8.dp), fontSize = 22.sp)
+                                            Column(Modifier.weight(1f)) { Text(part.name, fontWeight = FontWeight.Bold, fontSize = 13.sp); Text(kindLabel(part.kind), fontSize = 11.sp) }
+                                            TextButton(onClick = { preview = part }) { Text(if (part.kind == "sounds") "پیش‌شنوایی" else "پیش‌نمایش") }
+                                        }
+                                    }
+                                }
                                 Text("دریافت همیشه شامل همهٔ فایل‌هاست؛ فیلتر فقط نمایش فروشگاه را تغییر می‌دهد.", fontSize = 11.sp, color = Color(0xFF74758F))
                             }
                         } else if (tab == "installed") {
                             val local = repo.installedPackages()
-                            LazyVerticalGrid(GridCells.Adaptive(200.dp), Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            LazyVerticalGrid(GridCells.Adaptive(170.dp), Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 if (local.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { StoreEmpty("جای ایده‌های تازه اینجاست! هنوز بسته‌ای دانلود نکرده‌ای.") }
-                                items(local, key = { it.first }) { (uuid, title) -> Surface(shape = RoundedCornerShape(16.dp), color = Color.White) { Column(Modifier.padding(14.dp)) { Text("✓ $title", fontWeight = FontWeight.Bold); TextButton(onClick = { remove = uuid to title }) { Text("حذف از دستگاه") } } } }
+                                items(local, key = { it.first }) { (uuid, title) ->
+                                    Surface(shape = RoundedCornerShape(16.dp), color = Color.White) {
+                                        Column(Modifier.padding(12.dp)) {
+                                            Text("✓ $title", fontWeight = FontWeight.Bold)
+                                            TextButton(onClick = { remove = uuid to title }) { Text("حذف از دستگاه") }
+                                        }
+                                    }
+                                }
                             }
                         } else {
-                            if (tab == "owned") Surface(shape = RoundedCornerShape(14.dp), color = Color(0xFFEAE2FB)) { Text("کلکسیون تو: ${catalog?.count ?: 0} بسته · ${catalog?.spent ?: 0} سکه خرج‌شده در همین فروشگاه", Modifier.fillMaxWidth().padding(12.dp), fontWeight = FontWeight.Bold, fontSize = 13.sp) }
-                            LazyVerticalGrid(GridCells.Adaptive(185.dp), Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            // ───── فروشگاه / خریدهای من ─────
+                            if (tab == "owned") Surface(shape = RoundedCornerShape(12.dp), color = Color(0xFFEAE2FB)) {
+                                Text("کلکسیون تو: ${catalog?.count ?: 0} بسته · ${catalog?.spent ?: 0} سکه خرج‌شده در همین فروشگاه", Modifier.fillMaxWidth().padding(10.dp), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                            LazyVerticalGrid(GridCells.Adaptive(150.dp), Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 if (!loading && items.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { StoreEmpty(if (tab == "owned") "کلکسیونت منتظر اولین خرید دائمی است ✦" else "فعلاً بسته‌ای اینجا نیست؛ کمی بعد سر بزن ✦") }
-                                items(items, key = { it.uuid }) { item -> Surface(onClick = { selected = item }, shape = RoundedCornerShape(18.dp), color = Color.White, border = BorderStroke(1.dp, Color(0xFFE7E1F5))) { Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { PackagePicture(repo, item.cover, Modifier.fillMaxWidth().height(92.dp)); Text(item.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold); Text(item.types.joinToString(" · ") { kindLabel(it) }, fontSize = 11.sp, color = Color(0xFF77788F)); Text(if (repo.installed(item.uuid)) "✓ دانلودشده" else if (item.owned || item.uuid in (ownedByAccount[owner] ?: emptySet())) "◆ خریداری‌شده" else when (item.mode) { "free" -> "رایگان"; "ad" -> "با تماشای ویدیو"; "choice" -> "${item.coins} سکه یا ویدیو"; else -> "${item.coins} سکه" }, fontSize = 12.sp, color = Color(0xFF94601E)); Text("${item.downloads} دانلود · ${sizeText(item.bytes)}", fontSize = 10.sp, color = Color(0xFF88889B)); item.pricePaid?.let { Text("خرید تو: $it سکه · ${item.purchasedAt?.take(10).orEmpty()}", fontSize = 10.sp) } } } }
-                                if (catalog?.more == true) item(span = { GridItemSpan(maxLineSpan) }) { OutlinedButton(enabled = !loading, onClick = { scope.launch { load(true) } }) { Text("بسته‌های بیشتر") } }
+                                items(items, key = { it.uuid }) { item ->
+                                    val isOwned = item.owned || item.uuid in (ownedByAccount[owner] ?: emptySet())
+                                    Surface(onClick = { selected = item }, shape = RoundedCornerShape(16.dp), color = Color.White, border = BorderStroke(1.dp, Color(0xFFE7E1F5))) {
+                                        Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            PackagePicture(repo, item.cover, Modifier.fillMaxWidth().aspectRatio(1.35f))
+                                            Text(item.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                            Text(item.types.joinToString(" · ") { kindLabel(it) }, fontSize = 10.sp, color = Color(0xFF77788F), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Text(
+                                                if (repo.installed(item.uuid)) "✓ دانلودشده" else if (isOwned) "◆ خریداری‌شده" else when (item.mode) {
+                                                    "free" -> "رایگان"; "ad" -> "با تماشای ویدیو"; "choice" -> "${item.coins} سکه یا ویدیو"; else -> "${item.coins} سکه"
+                                                }, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF94601E)
+                                            )
+                                            Text("${item.downloads} دانلود · ${sizeText(item.bytes)}", fontSize = 10.sp, color = Color(0xFF88889B))
+                                            item.pricePaid?.let { Text("خرید تو: $it سکه · ${item.purchasedAt?.take(10).orEmpty()}", fontSize = 10.sp) }
+                                        }
+                                    }
+                                }
+                                if (catalog?.more == true) item(span = { GridItemSpan(maxLineSpan) }) {
+                                    OutlinedButton(enabled = !loading, onClick = { scope.launch { load(true) } }) { Text("بسته‌های بیشتر") }
+                                }
                             }
                         }
                     }
@@ -127,10 +223,10 @@ import java.io.File
 }
 
 @Composable private fun PackagePicture(repo: ContentStoreRepository, url: String?, modifier: Modifier) {
-    var bitmap by remember(url) { mutableStateOf<Bitmap?>(null) }
-    LaunchedEffect(url) { bitmap = repo.picture(url) }
+    var picture by remember(url) { mutableStateOf<StorePicture?>(null) }
+    LaunchedEffect(url) { picture = repo.picture(url) }
     Box(modifier.background(Brush.linearGradient(listOf(Color(0xFFFFE9CF), Color(0xFFEAE3FF))), RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
-        bitmap?.let { Image(it.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit) } ?: Text("✦", fontSize = 36.sp, color = Color(0xFF9166C9))
+        picture?.gif?.let { AnimatedStorePicture(it, Modifier.fillMaxSize()) } ?: picture?.bitmap?.let { Image(it.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit) } ?: Text("✦", fontSize = 36.sp, color = Color(0xFF9166C9))
     }
 }
 @Composable private fun StoreEmpty(text: String) { Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) { Text("✧", fontSize = 42.sp, color = Color(0xFFA37AC9)); Text(text, fontSize = 14.sp) } }

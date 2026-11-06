@@ -84,3 +84,13 @@ Operations retain their UUID and download grant across connection failures. Coin
 The dedicated Adivery placement is 969b9b33-4668-43dc-bab0-2efe5574fffb. The existing ad manager and server callback policy are reused. Production S2S delivery for this new placement must be tested after the backend migration and a test package are deployed.
 
 Validation on phone 2412DPC0AG (AMLZSW75XOHQRSFU): Website Debug and test APKs built and installed with data preserved. ContentStorePackageDeviceTest (3 cases), DownloadedMediaDeviceTest and DownloadedSpritesDeviceTest passed (5 total). Checks cover mixed-package installation, names preservation, duplicate prevention, deletion isolation, archive/account mismatch, journal recovery, native media catalog, and sprite import in both engines. Existing library test fixtures now supply names.json and select the actual library button to match the updated localized-name contract. Full production-network purchases/ads require deployment; no claim of that test is made here.
+
+### Content store GIF and multilingual-name update
+
+The server accepts optional fa/en/ar names independently. Native package details choose the phone locale, then English, then the original filename stem. Installation preserves the original filename stem as the metadata fallback rather than exposing the internal UUID filename. Existing translated metadata remains intact.
+
+Store covers now retain GIF bytes and use native animated image decoding (ImageDecoder on API 28+, Movie compatibility on API 24–27) instead of flattening the first frame to Bitmap. Only composed visible views animate; lifecycle/visibility callbacks pause them, and onRelease clears animation callbacks. The bounded picture cache accounts for GIF bytes and bitmap allocations. No new WebView is created for animated store cards.
+
+On phone 2412DPC0AG (AMLZSW75XOHQRSFU), ContentStorePresentationDeviceTest verified actual changing frames in the native view, stop on hidden/release, and fa/en/ar/filename fallback. Those two tests plus the three package installer tests passed. Current Website Debug and instrumentation APKs were built and installed with existing data preserved.
+
+Ownership returned by refreshed server pages replaces the corresponding cached flags, including administrator revocation. Revocation blocks future server redownload access; it does not delete already installed files from the device. An administrator's revocation preserves historical coin spending and permits a fresh paid purchase.

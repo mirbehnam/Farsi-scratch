@@ -108,12 +108,19 @@ private data class HallParticle(val x: Float, val y: Float, val radius: Float, v
 }
 
 @Composable internal fun ShowcaseHallContent(data: LearnerShowcase, modifier: Modifier = Modifier) {
+    var showStorePurchases by remember { mutableStateOf(false) }
+    val storeContext = androidx.compose.ui.platform.LocalContext.current
+    if (showStorePurchases) ContentStoreDialog(onClose = { showStorePurchases = false }, purchasesInitially = true)
     BoxWithConstraints(modifier.fillMaxWidth()) {
         val railWidth = (maxWidth * .29f).coerceIn(180.dp, 270.dp)
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Column(Modifier.width(railWidth).fillMaxHeight().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 ShowcaseIdentity(data)
                 ShowcasePublicProfile(data)
+                if (LearningIdentity.get(storeContext).profile()?.uuid == data.learner.uuid) {
+                    OutlinedButton(onClick = { showStorePurchases = true }, modifier = Modifier.fillMaxWidth()) { Text("خریدهای من", color = HallGold) }
+                }
+                HallStat("◆", "مجموعه ثروت", coinBalanceText(data.stats?.spentCoins ?: 0.0) + " سکه", Modifier.fillMaxWidth())
                 val stats = listOf(
                     Triple("🎬", "تماشای آموزش", data.stats?.let { showcaseTime(it.watchMs) } ?: "—"),
                     Triple("🧩", "برنامه‌نویسی", data.stats?.let { showcaseTime(it.codingMs) } ?: "—"),

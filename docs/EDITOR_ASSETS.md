@@ -88,7 +88,9 @@ WebView با `config.entryUrl(selectedEngine)` همان موتور را باز �
 دوباره انتخابگر را نمایش می‌دهد. انتخاب یک پروژهٔ ذخیره‌شده در «پروژه‌های من» نیز
 همین انتخابگر را باز می‌کند؛ پروژه فقط پس از انتخاب موتور در صف بارگذاری قرار
 می‌گیرد. بستن انتخابگر کاربر را به فهرست پروژه‌ها برمی‌گرداند. مسیر انتخاب فایل
-از گوشی از موتور انتخاب‌شدهٔ همان نشست (و در شروع تازه، موتور پیش‌فرض بسته) استفاده می‌کند.
+از گوشی ابتدا فایل را در کتابخانهٔ خصوصی ذخیره و فهرست را روی پروژهٔ جدید تازه
+می‌کند. ورود خودکار به ادیتور انجام نمی‌شود؛ کاربر باید روی کارت پروژه کلیک و
+سپس موتور را انتخاب کند.
 تعویض موتور فقط پس از بازگشت به خانه انجام می‌شود و WebView قبلی آزاد می‌شود.
 بریج‌های بارگذاری/ذخیره و ورودی متن تغییر نکرده‌اند.
 
@@ -133,3 +135,10 @@ WebView با `config.entryUrl(selectedEngine)` همان موتور را باز �
 ## Auto Builder
 
 ابزار `C:/Users/olobu_nanowoh/OneDrive/Desktop/main/scratch/auto-builder` ساخت هر دو خروجی، انتقال ایمن و ساخت APK را خودکار می‌کند. هر تغییر در مسیر ورودی، نوع خروجی، flavor، تسک Gradle یا قرارداد اشتراک رسانه باید در ابزار و مستندات آن نیز اعمال شود. پشتیبان و staging ابزار خارج از assets هستند و نباید به APK منتقل شوند.
+
+## چرخهٔ خروج و ورود مجدد
+
+مالک پایان عمر WebView ادیتور، callback `AndroidView.onRelease` است. خروج به خانه باید ورودی فایل، ورودی متن، کلیدهای فشرده، صف بارگذاری و مرجع WebView فعال را آزاد کند. پیش از destroy، View از والد جدا و callbackهای WebView قطع می‌شوند. از `pauseTimers()` استفاده نکنید؛ این API روی همهٔ WebViewهای فرایند اثر می‌گذارد و می‌تواند ورود بعدی را متوقف کند. آزادسازی native HTML player مستقل باقی می‌ماند. `EditorReentryDeviceTest` چند بار بین هر دو موتور و Home جابه‌جا می‌شود و نبود مرجع و View قدیمی را بررسی می‌کند.
+
+
+Downloaded sprites live outside editor assets in private `filesDir/downloaded_sprites`. Preserve them during build replacement and deduplication. See [DOWNLOADED_SPRITES.md](DOWNLOADED_SPRITES.md) for the downloader and local catalog contract.

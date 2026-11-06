@@ -222,6 +222,8 @@ fun HomeScreen(
     onLunaPlayer: () -> Unit,
     onMafiaApp: () -> Unit
 ) {
+    var showContentStore by remember { mutableStateOf(false) }
+    if (showContentStore) ir.behnamapps.fascratch.inappbilling.learning.ContentStoreDialog(onClose = { showContentStore = false })
     val transition = rememberInfiniteTransition(label = "home-motion")
 
     val glowAlpha by transition.animateFloat(
@@ -387,6 +389,7 @@ fun HomeScreen(
                 /* ---------- فوتر ---------- */
                 HomeFollowFooter(
                     onClick = onFollow,
+                    onStore = { showContentStore = true },
                     compact = compactHeight,
                     horizontalPadding = horizontalPadding,
                     modifier = Modifier
@@ -754,6 +757,7 @@ private fun HomeHeroBanner(
 @Composable
 private fun HomeFollowFooter(
     onClick: () -> Unit,
+    onStore: () -> Unit = {},
     compact: Boolean,
     horizontalPadding: Dp,
     modifier: Modifier
@@ -806,6 +810,10 @@ private fun HomeFollowFooter(
                 overflow = TextOverflow.Ellipsis
             )
 
+            androidx.compose.material3.TextButton(onClick = onStore) {
+                Text("دانلود اسپرایت، پس‌زمینه و صدا", fontFamily = HomeFontFamily, color = Amber,
+                    fontWeight = FontWeight.Bold, fontSize = if (compact) 10.sp else 12.sp, maxLines = 1)
+            }
             Spacer(Modifier.width(12.dp))
 
             Row(

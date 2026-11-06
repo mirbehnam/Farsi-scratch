@@ -10,4 +10,11 @@
    <include domain="sharedpref" path="."/>
    <exclude domain="sharedpref" path="device.xml"/>
 -->
+
+        <!-- Store downloads/ad capabilities are installation-local; permanent ownership comes from the server. -->
+        <exclude domain="sharedpref" path="content-store-operations.xml"/>
+        <exclude domain="file" path="content_store/"/>
+        <exclude domain="file" path="downloaded_sprites/"/>
+        <exclude domain="file" path="downloaded_backdrops/"/>
+        <exclude domain="file" path="downloaded_sounds/"/>
 </full-backup-content>

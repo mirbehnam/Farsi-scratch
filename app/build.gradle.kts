@@ -16,13 +16,13 @@ android {
         applicationId = "ir.behnamapps.fascratch"
         minSdk = 24
         targetSdk = 36
-        versionCode = 5
-        versionName = "1.4"
+        versionCode = 6
+        versionName = "1.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // 2026-12-01 00:00:00 Asia/Tehran
-        buildConfigField("long", "EXPIRATION_TIME_MILLIS", "1796070600000L")
+        buildConfigField("long", "EXPIRATION_TIME_MILLIS", "1809117000000L")
         buildConfigField("String", "COURSE_API_BASE", quoted("https://api.behnamapp.ir/scratch/v1"))
         buildConfigField("String", "COURSE_SKU", quoted("scratch_basic"))
     }

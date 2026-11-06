@@ -190,7 +190,6 @@ class MainActivity : ComponentActivity() {
     private val scratchTextInputBridge = ScratchTextInputBridge(this)
     private var pendingProjectForScratch: SavedScratchProject? = null
     private var homePhonePickerCallback: ((SavedScratchProject?) -> Unit)? = null
-    private var phoneImport: File? = null
     private var projectLoadCommandSent = false
     private var notificationPermissionResult: ((Boolean) -> Unit)? = null
     lateinit var projectRepository: ProjectRepository
@@ -240,9 +239,9 @@ class MainActivity : ComponentActivity() {
                             requireNotNull(contentResolver.openInputStream(uri)) { "Cannot read selected project" }.use { input ->
                                 file.outputStream().use { input.copyTo(it) }
                             }
-                            phoneImport?.parentFile?.deleteRecursively()
-                            phoneImport = file
-                            SavedScratchProject(file.nameWithoutExtension, file, null, file.lastModified())
+                            val saved = projectRepository.commitProject(file, file.name)
+                            folder.delete()
+                            saved
                         } catch (error: Exception) {
                             folder.deleteRecursively()
                             throw error
@@ -254,6 +253,7 @@ class MainActivity : ComponentActivity() {
                     Toast.makeText(this@MainActivity, "بازکردن فایل پروژه انجام نشد", Toast.LENGTH_SHORT).show()
                     null
                 }
+                if (project != null) projectLibraryVersion++
                 homeCallback(project)
             }
             return@registerForActivityResult
@@ -282,9 +282,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        runCatching { ir.behnamapps.fascratch.inappbilling.learning.ContentPackageInstaller.get(filesDir).recover() }
         NotificationChannels.create(this)
         FirebaseAnalytics.getInstance(this)
             .setUserProperty("distribution", BuildConfig.FLAVOR)
+        File(filesDir, "downloaded_sprites").mkdirs()
+        File(filesDir, "downloaded_backdrops").mkdirs()
+        File(filesDir, "downloaded_sounds").mkdirs()
         projectRepository = ProjectRepository(this)
         htmlProjectRepository = PackagedHtmlRepository(File(filesDir, "packaged_projects"))
         projectSaveBridge = ScratchProjectSaveBridge(this)
@@ -506,6 +510,13 @@ class MainActivity : ComponentActivity() {
         webView.removeJavascriptInterface("AndroidProjectSaver")
         webView.removeJavascriptInterface("AndroidScratchTextInput")
         if (activeScratchWebView === webView) {
+            releaseScratchKeys()
+            fileChooserCallback?.onReceiveValue(null)
+            fileChooserCallback = null
+            fileChooserParams = null
+            showProjectLibrary = false
+            pendingProjectForScratch = null
+            projectLoadCommandSent = false
             activeScratchWebView = null
             scratchTextInputSession = null
         }
@@ -803,7 +814,6 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         notificationPermissionResult = null
         homePhonePickerCallback = null
-        phoneImport?.parentFile?.deleteRecursively()
         fileChooserCallback?.onReceiveValue(null)
         pendingWebPermissionRequest?.deny()
         projectSaveBridge.dispose()
@@ -956,36 +966,36 @@ private fun FarsiScratchApp(activity: MainActivity) {
             val projects = remember(activity.projectLibraryVersion) {
                 activity.projectRepository.listProjects()
             }
-            ProjectLibraryDialog(
-                projects = projects,
-                onLoad = { project ->
-                    projectAwaitingEngine = project.projectFile.name
-                },
-                onLoadFromPhone = {
-                    activity.pickProjectFromPhone { project ->
-                        if (project != null) {
-                            activity.queueProjectFromHome(project)
-                            showMyProjects = false
-                            screen = AppScreen.Scratch
+            androidx.compose.runtime.key(activity.projectLibraryVersion) {
+                ProjectLibraryDialog(
+                    projects = projects,
+                    onLoad = { project ->
+                        projectAwaitingEngine = project.projectFile.name
+                    },
+                    onLoadFromPhone = {
+                        activity.pickProjectFromPhone { project ->
+                            if (project != null) {
+                                Toast.makeText(activity, "پروژه به فهرست پروژه‌های من اضافه شد", Toast.LENGTH_SHORT).show()
+                            }
                         }
-                    }
-                },
-                onDismiss = { showMyProjects = false },
-                showManagementActions = true,
-                htmlProjects = remember(activity.htmlLibraryVersion) { activity.htmlProjectRepository.listProjects() },
-                initialHtmlTab = htmlTabRequested,
-                preparingHtml = activity.preparingSavedHtml,
-                onPlayHtml = { project ->
-                    activity.playSavedHtml(project) {
-                        htmlTabRequested = true
-                        showMyProjects = false
-                        screen = AppScreen.HtmlPlayback
-                    }
-                },
-                onShareHtml = activity::shareSavedHtml,
-                onShare = activity::shareProject,
-                onDelete = activity::deleteProject
-            )
+                    },
+                    onDismiss = { showMyProjects = false },
+                    showManagementActions = true,
+                    htmlProjects = remember(activity.htmlLibraryVersion) { activity.htmlProjectRepository.listProjects() },
+                    initialHtmlTab = htmlTabRequested,
+                    preparingHtml = activity.preparingSavedHtml,
+                    onPlayHtml = { project ->
+                        activity.playSavedHtml(project) {
+                            htmlTabRequested = true
+                            showMyProjects = false
+                            screen = AppScreen.HtmlPlayback
+                        }
+                    },
+                    onShareHtml = activity::shareSavedHtml,
+                    onShare = activity::shareProject,
+                    onDelete = activity::deleteProject
+                )
+            }
         }
         if (!isExpired && showMyProjects && projectAwaitingEngine != null && screen == AppScreen.Home) {
             EditorEngineDialog(
@@ -1011,6 +1021,7 @@ private fun FarsiScratchApp(activity: MainActivity) {
         else if (activity.preparingSavedHtml) Unit
         else if (activity.packagedPlayback != null) activity.closePackagedPlayback()
         else if (showExit) showExit = false
+        else if (projectAwaitingEngine != null) projectAwaitingEngine = null
         else if (showMyProjects) showMyProjects = false
         else if (activity.showProjectLibrary) activity.dismissProjectLibrary()
         else if (showSocials) showSocials = false
@@ -1256,6 +1267,12 @@ internal fun ScratchScreen(activity: MainActivity, engine: EditorEngine, onQuick
     var scrollFraction by remember { mutableFloatStateOf(0f) }
     var showFloatingKeyboard by rememberSaveable { mutableStateOf(false) }
     var showGamepad by rememberSaveable { mutableStateOf(false) }
+    var showGamepadSettings by rememberSaveable { mutableStateOf(false) }
+    val gamepadPreferences = remember { activity.getSharedPreferences("gamepad_settings", android.content.Context.MODE_PRIVATE) }
+    var gamepadLayout by remember { mutableStateOf(GamepadLayout.decode(gamepadPreferences.getString("layout", null))) }
+    val gamepadDispatch = remember(activity) { GamepadKeyDispatch(activity::dispatchScratchKey) }
+    val stickKeyChange: (Int, Boolean) -> Unit = remember(gamepadDispatch) { { code, down -> gamepadDispatch.change(0, code, down) } }
+    val actionKeyChange: (Int, Boolean) -> Unit = remember(gamepadDispatch) { { code, down -> gamepadDispatch.change(1, code, down) } }
     var keyboardX by remember { mutableFloatStateOf(0f) }
     var keyboardY by remember { mutableFloatStateOf(0f) }
     var rootWidth by remember { mutableIntStateOf(0) }
@@ -1348,7 +1365,7 @@ internal fun ScratchScreen(activity: MainActivity, engine: EditorEngine, onQuick
             }
         }
 
-        if (showFloatingKeyboard || showGamepad) {
+        if (showFloatingKeyboard || (showGamepad && !showGamepadSettings)) {
             val panelModifier = Modifier
                 .offset { IntOffset(keyboardX.roundToInt(), keyboardY.roundToInt()) }
                 .onSizeChanged { keyboardWidth = it.width; keyboardHeight = it.height }
@@ -1360,7 +1377,7 @@ internal fun ScratchScreen(activity: MainActivity, engine: EditorEngine, onQuick
             }
             if (showGamepad) FloatingScratchGamepad(
                 modifier = panelModifier, onDrag = dragPanel,
-                onClose = { showGamepad = false }, onKeyChange = activity::dispatchScratchKey
+                onClose = { showGamepad = false }, onKeyChange = stickKeyChange
             ) else FloatingScratchKeyboard(
                 modifier = Modifier
                     .offset { IntOffset(keyboardX.roundToInt(), keyboardY.roundToInt()) }
@@ -1379,6 +1396,17 @@ internal fun ScratchScreen(activity: MainActivity, engine: EditorEngine, onQuick
                 onClose = { showFloatingKeyboard = false },
                 onKeyChange = activity::dispatchScratchKey
             )
+        }
+
+        if (showGamepad && !showGamepadSettings) {
+            FloatingGamepadActions(layout = gamepadLayout, onSettings = { showGamepadSettings = true }, onClose = { showGamepad = false }, onKeyChange = actionKeyChange)
+        }
+        if (showGamepad && showGamepadSettings) {
+            GamepadSettingsDialog(gamepadLayout, onDismiss = { showGamepadSettings = false }, onSave = {
+                gamepadLayout = it
+                gamepadPreferences.edit().putString("layout", GamepadLayout.encode(it)).apply()
+                showGamepadSettings = false
+            })
         }
 
         activity.scratchTextInputSession?.let { session ->
@@ -1510,7 +1538,8 @@ internal fun ScratchKeyButton(
     label: String,
     keyCode: Int,
     onKeyChange: (Int, Boolean) -> Unit,
-    modifier: Modifier = Modifier.size(38.dp)
+    modifier: Modifier = Modifier.size(38.dp),
+    glass: Boolean = false
 ) {
     var pressed by remember { mutableStateOf(false) }
     val buttonScale by animateFloatAsState(
@@ -1519,7 +1548,7 @@ internal fun ScratchKeyButton(
         label = "scratch-key-scale"
     )
     val buttonColor by animateColorAsState(
-        targetValue = if (pressed) ScratchBlue else Color(0xFFF4F1FA),
+        targetValue = if (pressed) ScratchBlue else if (glass) Color(0x553E3458) else Color(0xFFF4F1FA),
         animationSpec = tween(durationMillis = 90),
         label = "scratch-key-color"
     )
@@ -1558,9 +1587,10 @@ internal fun ScratchKeyButton(
             },
         contentAlignment = Alignment.Center
     ) {
-        Text(
+        if (label in listOf("↑", "↓", "←", "→")) GamepadKeyLabel(label, if (pressed || glass) Color.White else Color(0xFF211B35))
+        else Text(
             text = label,
-            color = if (pressed) Color.White else Color(0xFF211B35),
+            color = if (pressed || glass) Color.White else Color(0xFF211B35),
             fontSize = if (label == "SPACE") 10.sp else 21.sp,
             fontWeight = FontWeight.Black
         )
@@ -1755,6 +1785,9 @@ private fun ScratchWebView(
             .addPathHandler("/assets/", EditorAssetsPathHandler(context, editorAssets))
             .addPathHandler("/imports/", WebViewAssetLoader.InternalStoragePathHandler(context,
                 File(context.cacheDir, "phone_imports").apply { mkdirs() }))
+            .addPathHandler("/downloaded-sprites/", ir.behnamapps.fascratch.editor.DownloadedSpritesPathHandler(context))
+            .addPathHandler("/downloaded-backdrops/", ir.behnamapps.fascratch.editor.DownloadedMediaPathHandler(context, "backdrops"))
+            .addPathHandler("/downloaded-sounds/", ir.behnamapps.fascratch.editor.DownloadedMediaPathHandler(context, "sounds"))
             .addPathHandler("/projects/") { path ->
                 activity.projectRepository.openProjectForWeb(path)
             }
@@ -1820,18 +1853,23 @@ private fun ScratchWebView(
         }
     }
 
-    DisposableEffect(webView) {
-        onWebViewReady(webView)
-        onDispose {
+    AndroidView(
+        factory = { webView.also(onWebViewReady) },
+        modifier = Modifier.fillMaxSize(),
+        onRelease = { released ->
             onWebViewReady(null)
-            activity.detachScratchWebView(webView)
-            webView.stopLoading()
-            webView.webChromeClient = null
-            webView.destroy()
-        }
-    }
-    AndroidView(factory = { webView }, modifier = Modifier.fillMaxSize(),
-        update = { it.visibility = if (visible) View.VISIBLE else View.INVISIBLE })
+            activity.detachScratchWebView(released)
+            released.stopLoading()
+            released.onPause()
+            (released.parent as? android.view.ViewGroup)?.removeView(released)
+            released.webChromeClient = null
+            released.webViewClient = WebViewClient()
+            released.setOnScrollChangeListener(null)
+            released.removeAllViews()
+            released.destroy()
+        },
+        update = { it.visibility = if (visible) View.VISIBLE else View.INVISIBLE }
+    )
 }
 
 @Composable

@@ -72,7 +72,7 @@ class PhonePickerDeviceTest {
                 assertTrue(picked.await(20, TimeUnit.SECONDS))
                 assertEquals(1, picker.hits)
                 assertArrayEquals(fixture!!.readBytes(), imported!!.readBytes())
-                assertTrue(imported!!.canonicalPath.startsWith(java.io.File(owner.cacheDir, "phone_imports").canonicalPath))
+                assertTrue(imported!!.canonicalPath.startsWith(java.io.File(owner.filesDir, "scratch_projects").canonicalPath))
             } finally { instrumentation.removeMonitor(picker) }
             val deadline = android.os.SystemClock.elapsedRealtime() + 15000
             var editor: android.webkit.WebView? = null
@@ -135,6 +135,7 @@ class PhonePickerDeviceTest {
             instrumentation.runOnMainSync { assertNull(playerView.parent); assertEquals(android.view.View.VISIBLE, editor!!.visibility) }
         }
         fixture?.delete()
-        assertFalse("Phone import cache must be removed on Activity destruction", imported!!.exists())
+        assertTrue("Imported project must persist after Activity destruction", imported!!.exists())
+        imported?.delete()
     }
 }

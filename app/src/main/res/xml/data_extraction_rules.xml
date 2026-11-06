@@ -5,6 +5,13 @@
 -->
 <data-extraction-rules>
     <cloud-backup>
+        <!-- Store downloads/ad capabilities are installation-local; permanent ownership comes from the server. -->
+        <exclude domain="sharedpref" path="content-store-operations.xml"/>
+        <exclude domain="file" path="content_store/"/>
+        <exclude domain="file" path="downloaded_sprites/"/>
+        <exclude domain="file" path="downloaded_backdrops/"/>
+        <exclude domain="file" path="downloaded_sounds/"/>
+
         <!-- TODO: Use <include> and <exclude> to control what is backed up.
         <include .../>
         <exclude .../>
@@ -16,4 +23,12 @@
         <exclude .../>
     </device-transfer>
     -->
+    <device-transfer>
+        <!-- Store downloads/ad capabilities are installation-local; permanent ownership comes from the server. -->
+        <exclude domain="sharedpref" path="content-store-operations.xml"/>
+        <exclude domain="file" path="content_store/"/>
+        <exclude domain="file" path="downloaded_sprites/"/>
+        <exclude domain="file" path="downloaded_backdrops/"/>
+        <exclude domain="file" path="downloaded_sounds/"/>
+    </device-transfer>
 </data-extraction-rules>

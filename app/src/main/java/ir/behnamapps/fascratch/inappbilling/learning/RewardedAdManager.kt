@@ -20,7 +20,7 @@ internal object RewardedAdManager {
     private var configuredApp: String? = null
     private var placement: String? = null
     private var nextPrepare = 0L
-    private data class Showing(val owner: String, val ticket: RewardedAdTicket, val repo: LearningRepository, var shown: Boolean = false)
+    private data class Showing(val owner: String, val ticket: RewardedAdTicket, val repo: LearningRepository?, var shown: Boolean = false, val startContent: (suspend () -> Unit)? = null, val finishContent: (suspend (Boolean) -> Unit)? = null)
     private var showing: Showing? = null
     private var registered = false
     private var preparedNonce: String? = null
@@ -94,40 +94,48 @@ internal object RewardedAdManager {
     fun isLoaded(offer: RewardedAdOffer): Boolean = runCatching { placement == offer.placementId && Adivery.isLoaded(offer.placementId) }.getOrDefault(false)
 
     private suspend fun settle(active: Showing, earned: Boolean) {
+        active.finishContent?.let { it(earned); return }
         for (attempt in 0..5) {
-            try { active.repo.finishRewardedAd(active.owner, active.ticket.uuid, earned); return }
+            try { active.repo!!.finishRewardedAd(active.owner, active.ticket.uuid, earned); return }
             catch (e: CancellationException) { throw e }
             catch (e: Exception) {
                 if (e is CourseFailure && e.status in setOf(401, 403, 404, 410, 422)) throw e
-                if (attempt == 5 || active.repo.profiles.value[LearningIdentity.KEY]?.uuid != active.owner) throw e
+                if (attempt == 5 || active.repo!!.profiles.value[LearningIdentity.KEY]?.uuid != active.owner) throw e
                 delay(if (e is RewardedAdPending) 2_000 else minOf(120_000L, 5_000L shl attempt))
             }
         }
     }
 
-    fun show(owner: String, ticket: RewardedAdTicket, repository: LearningRepository) {
+    fun show(owner: String, ticket: RewardedAdTicket, repository: LearningRepository) = showInternal(Showing(owner, ticket, repository))
+    fun showContent(owner: String, ticket: RewardedAdTicket, start: suspend () -> Unit, finish: suspend (Boolean) -> Unit) =
+        showInternal(Showing(owner, ticket, null, startContent = start, finishContent = finish))
+
+    private fun showInternal(active: Showing) {
+        val owner = active.owner; val ticket = active.ticket
+        suspend fun finish(earned: Boolean) = settle(active, earned)
+
         if (showing != null || mutable.value.busy) return
         mutable.value = State(busy = true)
         scope.launch {
             try {
-                repository.startRewardedAd(owner, ticket.uuid)
+                if (active.startContent != null) active.startContent.invoke() else active.repo!!.startRewardedAd(owner, ticket.uuid)
                 check(preparedNonce == ticket.callbackNonce)
                 Adivery.setUserId(ticket.callbackNonce)
                 check(Adivery.isLoaded(ticket.placement))
-                showing = Showing(owner, ticket, repository)
+                showing = active
                 val attempt = showing
                 Adivery.showAd(ticket.placement)
                 // SDK 4.9.0 has no onError override on AdiveryListener. Handle silent non-show safely.
                 delay(10_000)
                 if (showing === attempt && showing?.shown == false) {
                     showing = null
-                    runCatching { repository.finishRewardedAd(owner, ticket.uuid, false) }
+                    runCatching { finish(false) }
                     mutable.value = State(message = "تبلیغ نمایش داده نشد؛ دوباره تلاش کن.")
                 }
             } catch (e: CancellationException) { throw e }
             catch (_: Exception) {
                 showing = null
-                runCatching { repository.finishRewardedAd(owner, ticket.uuid, false) }
+                runCatching { finish(false) }
                 mutable.value = State(message = "نمایش تبلیغ شروع نشد؛ سهمیه آزاد شد، دوباره تلاش کن.")
             }
         }

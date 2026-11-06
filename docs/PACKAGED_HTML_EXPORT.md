@@ -72,13 +72,21 @@ build including the queued-load fix. All 154 Android app unit tests passed.
 
 ## Native Home phone import
 
-Home → My Projects → Load from phone now opens ACTION_OPEN_DOCUMENT immediately.
-It stays on Home if cancelled. The selected URI is streamed on Dispatchers.IO
-into a UUID folder in private cache/phone_imports and loaded through /imports/.
-No permanent My Projects entry is created implicitly. The editor's existing file
-chooser remains unchanged. The current import is removed on replacement or
-Activity destruction; file names are sanitized before crossing the filesystem
-boundary. Both original Scratch and Turbo use their normal queued SB3 upload.
+Home → My Projects → Load from phone opens ACTION_OPEN_DOCUMENT immediately.
+Cancellation stays in the library. The selected URI is streamed on Dispatchers.IO
+into private staging, then committed through ProjectRepository into
+files/scratch_projects with collision-safe naming. The library refreshes and
+shows the newest card. Import never launches an editor automatically: only a user
+click on a saved project opens the engine chooser, then queues the chosen engine.
+The original phone file is not moved or removed. The completed import survives
+Activity destruction and uses the existing binary /projects/ handler, avoiding
+the failed temporary /imports/ fetch observed in a cold-start device test.
+The editor's own file picker remains unchanged.
+
+Validation: cold-start device tests on 2412DPC0AG passed the actual Home library,
+phone picker interception, persistent import, no automatic editor/engine launch,
+explicit card click and both engine choices, and confirmed the project title and
+SHOWING_WITHOUT_ID state in both Scratch and Turbo. Local unit tests also passed.
 
 The original Scratch high-quality-run button is also authorized to use the
 packaged HTML bridge: only main frames under the exact appassets origin and

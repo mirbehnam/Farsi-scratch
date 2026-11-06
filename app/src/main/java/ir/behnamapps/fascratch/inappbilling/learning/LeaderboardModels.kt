@@ -24,7 +24,7 @@ internal data class LeaderboardBoard(val viewer: String, val viewerRank: Int?, v
 }
 internal data class ShowcaseAvatar(val id: String, val title: String, val equipped: Boolean, val url: String?, val hash: String?)
 internal data class ShowcaseTrophy(val id: String, val title: String, val imageUrl: String? = null, val imageHash: String? = null)
-internal data class ShowcaseStats(val watchMs: Long = 0, val codingMs: Long = 0, val completedLessons: Int = 0)
+internal data class ShowcaseStats(val watchMs: Long = 0, val codingMs: Long = 0, val completedLessons: Int = 0, val spentCoins: Double = 0.0)
 internal data class LearnerShowcase(val learner: RankedLearner, val memberDays: Long, val avatars: List<ShowcaseAvatar>, val trophies: List<ShowcaseTrophy>, val stats: ShowcaseStats? = null,
     val socialLinks: Map<String, String> = emptyMap()) {
     companion object {
@@ -41,7 +41,7 @@ internal data class LearnerShowcase(val learner: RankedLearner, val memberDays: 
                         it.optString("image_url").takeUnless { value -> value.isBlank() || value == "null" },
                         it.optString("image_sha256").takeIf(AvatarImages::validHash))
                 } },
-                json.optJSONObject("stats")?.let { ShowcaseStats(it.optLong("watch_ms").coerceAtLeast(0), it.optLong("coding_ms").coerceAtLeast(0), it.optInt("completed_lessons").coerceAtLeast(0)) },
+                json.optJSONObject("stats")?.let { ShowcaseStats(it.optLong("watch_ms").coerceAtLeast(0), it.optLong("coding_ms").coerceAtLeast(0), it.optInt("completed_lessons").coerceAtLeast(0), it.optDouble("spent_total_coins", 0.0).coerceAtLeast(0.0)) },
                 PublicProfilePolicy.links(json.optJSONObject("social_links")))
         }
     }

@@ -93,6 +93,14 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
                         ?: json?.optJSONObject("error")?.optLong("retry_after")?.takeIf { it > 0 })
                 throw CourseFailure(when {
                     trafficMessage != null -> trafficMessage
+                    path.startsWith("content-store") -> when (status) {
+                        401 -> "برای دریافت، حساب را تازه‌سازی کن یا دوباره وارد شو."
+                        404 -> "این بسته در دسترس نیست یا از فروشگاه برداشته شده است."
+                        410 -> "مهلت دریافت تمام شده؛ دوباره اقدام کن."
+                        409 -> json?.optJSONObject("error")?.optString("message")?.takeIf { it.isNotBlank() && it != "این درخواست مجاز نیست." } ?: "موجودی سکه یا قیمت بسته تغییر کرده؛ فروشگاه را تازه کن."
+                        503 -> "فروشگاه فعلاً آماده نیست؛ کمی بعد دوباره تلاش کن."
+                        else -> "دریافت انجام نشد؛ اینترنت و وضعیت بسته را بررسی کن."
+                    }
                     path == "gift-codes/redeem" && code.startsWith("gift_") -> json?.optJSONObject("error")?.optString("message")?.takeIf { it.isNotBlank() } ?: "این هدیه در دسترس نیست."
                     path == "gift-codes/redeem" && code == "validation_failed" -> json?.optJSONObject("error")?.optJSONObject("fields")?.optJSONArray("code")?.optString(0) ?: "کد هدیه معتبر نیست."
                     path == "gift-codes/redeem" && status == 503 -> "دریافت هدیه فعلاً در دسترس نیست؛ کمی بعد تلاش کن."
@@ -217,22 +225,26 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
         request("learning/$path", token, body).getJSONObject("data")
 
     suspend fun auth(path: String, body: JSONObject? = null): JSONObject = request("accounts/auth/$path", body = body).getJSONObject("data")
+    internal suspend fun contentStore(path: String = "", session: String, body: JSONObject? = null): JSONObject =
+        request("content-store" + if (path.isEmpty()) "" else if (path.startsWith("?")) path else "/$path", body = body, accountSecret = session).getJSONObject("data")
+    internal fun contentDownload(url: String, session: String): HttpsURLConnection = connectionTo(url, accountSecret = session)
+
     suspend fun redeemGift(code: String, session: String): JSONObject = request("gift-codes/redeem", body = JSONObject().put("code", code.trim()), accountSecret = session).getJSONObject("data")
     suspend fun saveSupplementary(body: JSONObject, session: String): JSONObject =
         request("learning/profile/supplementary", body = body, accountSecret = session).getJSONObject("data")
     suspend fun savePublicProfile(body: JSONObject, session: String): JSONObject =
         request("learning/profile/public", body = body, accountSecret = session).getJSONObject("data")
     suspend fun marketplace(path: String, session: String, body: JSONObject? = null): JSONObject =
-        request("learning/marketplace" + if (path.isEmpty()) "" else "/$path", body = body, accountSecret = session).getJSONObject("data")
+        request("learning/marketplace" + if (path.isEmpty()) "" else if (path.startsWith("?")) path else "/$path", body = body, accountSecret = session).getJSONObject("data")
 
     suspend fun leaderboard(path: String, session: String): JSONObject =
-        request("learning/leaderboard" + if (path.isEmpty()) "" else "/$path", accountSecret = session).getJSONObject("data")
+        request("learning/leaderboard" + if (path.isEmpty()) "" else if (path.startsWith("?")) path else "/$path", accountSecret = session).getJSONObject("data")
 
     suspend fun showcaseVisit(target: String, session: String): JSONObject =
         request("learning/leaderboard/$target/visit", body = JSONObject(), accountSecret = session).getJSONObject("data")
 
     suspend fun missions(path: String, session: String, body: JSONObject? = null): JSONObject =
-        request("learning/missions" + if (path.isEmpty()) "" else "/$path", body = body, accountSecret = session).getJSONObject("data")
+        request("learning/missions" + if (path.isEmpty()) "" else if (path.startsWith("?")) path else "/$path", body = body, accountSecret = session).getJSONObject("data")
 
     suspend fun logout(session: String) {
         request("accounts/auth/logout", body = JSONObject(), accountSecret = session, timeoutMillis = 3_000)

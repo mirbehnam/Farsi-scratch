@@ -65,9 +65,10 @@ internal fun FloatingScratchGamepad(modifier: Modifier, onDrag: (Float, Float) -
             while (isActive) { held.toList().forEach { send(it, true) }; delay(50) }
         }
     }
-    Surface(modifier.width(174.dp), color = Color(0xEE211B35), shape = RoundedCornerShape(11.dp), shadowElevation = 10.dp) {
+    Surface(modifier.width(140.dp), color = Color(0x88211B35), shape = RoundedCornerShape(11.dp), shadowElevation = 0.dp,
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = .22f))) {
         Column {
-            Row(Modifier.fillMaxWidth().height(25.dp).background(Color(0xFF332A4E))
+            Row(Modifier.fillMaxWidth().height(25.dp).background(Color(0x88332A4E))
                 .pointerInput(Unit) { detectDragGestures { change, amount -> change.consume(); drag(amount.x, amount.y) } }
                 .padding(start = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("⠿", color = Color.White.copy(.62f), fontSize = 15.sp)
@@ -76,7 +77,7 @@ internal fun FloatingScratchGamepad(modifier: Modifier, onDrag: (Float, Float) -
                     Text("×", color = Color.White, fontSize = 17.sp)
                 }
             }
-            Canvas(Modifier.padding(8.dp).size(158.dp).semantics { contentDescription = "آنالوگ هشت‌جهته" }
+            Canvas(Modifier.padding(8.dp).size(124.dp).semantics { contentDescription = "آنالوگ هشت‌جهته" }
                 .pointerInput(foreground) {
                     if (!foreground) return@pointerInput
                     awaitEachGesture {
@@ -102,22 +103,20 @@ internal fun FloatingScratchGamepad(modifier: Modifier, onDrag: (Float, Float) -
                 }) {
                 val radius = size.minDimension / 2
                 val center = center
-                drawCircle(Color(0xFF39304F), radius)
+                drawCircle(Color(0x5539304F), radius)
                 for (i in 0..7) {
-                    drawArc(if (sector == i) Color(0xFF70DCC2) else Color(0xFF4C4262),
+                    drawArc(if (sector == i) Color(0xDD70DCC2) else Color(0x554C4262),
                         i * 45f - 21.5f, 43f, true, Offset.Zero, Size(size.width, size.height))
                     val angle = i * PI / 4
                     val point = center + Offset(cos(angle).toFloat(), sin(angle).toFloat()) * radius * .79f
                     drawCircle(if (sector == i) Color(0xFF153D36) else Color(0xFFBDB1D6), radius * .035f, point)
                 }
-                drawCircle(Color(0xFF211B35), radius * .57f)
+                drawCircle(Color(0x66211B35), radius * .57f)
                 drawCircle(Color.White.copy(.18f), radius * .57f, style = Stroke(1.dp.toPx()))
                 val angle = (sector ?: 0) * PI / 4
                 val shift = if (sector == null) Offset.Zero else Offset(cos(angle).toFloat(), sin(angle).toFloat()) * radius * .32f
                 drawCircle(if (sector == null) Color(0xFFE6DFF2) else Color(0xFF70DCC2), radius * .25f, center + shift)
             }
-            ScratchKeyButton("SPACE", KeyEvent.KEYCODE_SPACE, onKeyChange,
-                Modifier.padding(start = 8.dp, end = 8.dp, bottom = 8.dp).fillMaxWidth().height(31.dp))
         }
     }
 }

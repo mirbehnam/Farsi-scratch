@@ -224,14 +224,22 @@ private fun symbol(kind: String) = when(kind) { "celebration" -> "🎉"; "lesson
     LaunchedEffect(message.readKey,message.notificationVersion,session,lifecycle) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) { repository.read(message,session); awaitCancellation() }
     }
+    HomeMessagePanel(message,session,repository) { repository.acknowledge(message,session) }
+}
+
+/** Keep the safe window container separate from the bounded card; only message details scroll. */
+@Composable internal fun HomeMessagePanel(message: InboxMessage, session: String?, repository: InboxRepository?, onConfirm: () -> Unit) {
     LearnerDialogTheme {
-        Dialog(onDismissRequest = {}, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Dialog(onDismissRequest = {}, properties = DialogProperties(usePlatformDefaultWidth = false,decorFitsSystemWindows = true)) {
             LearnerDialogWindowBounds()
-            Surface(Modifier.learnerSafeDialogBounds().learnerDialogPanelBounds(), shape=RoundedCornerShape(24.dp), color=Color(0xFFF4FBFC)) {
-                Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement=Arrangement.spacedBy(10.dp)) {
-                    Text(if(message.scope=="personal") "💌 پیام شخصی برای تو" else "✨ پیامی از تیم اسکرچ",color=Color(0xFF246C7A),fontWeight=FontWeight.Bold)
-                    InboxDetails(message,session,repository,Modifier.weight(1f).fillMaxWidth())
-                    Button(onClick={repository.acknowledge(message,session)}, modifier=Modifier.align(Alignment.CenterHorizontally), shape=RoundedCornerShape(16.dp)) { Text("تأیید، متوجه شدم ✓") }
+            Box(Modifier.learnerSafeDialogBounds(),contentAlignment=Alignment.Center) {
+                Surface(Modifier.learnerDialogPanelBounds(), shape=RoundedCornerShape(24.dp), color=Color(0xFFF4FBFC)) {
+                    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                        Text(if(message.scope=="personal") "💌 پیام شخصی برای تو" else "✨ پیامی از تیم اسکرچ",color=Color(0xFF246C7A),fontWeight=FontWeight.Bold,
+                            maxLines=1,overflow=TextOverflow.Ellipsis)
+                        InboxDetails(message,session,repository,Modifier.weight(1f).fillMaxWidth())
+                        Button(onClick=onConfirm, modifier=Modifier.align(Alignment.CenterHorizontally), shape=RoundedCornerShape(16.dp)) { Text("تأیید، متوجه شدم ✓") }
+                    }
                 }
             }
         }

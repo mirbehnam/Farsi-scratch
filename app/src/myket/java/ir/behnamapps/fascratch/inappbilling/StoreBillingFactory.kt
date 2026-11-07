@@ -17,9 +17,9 @@ private class MyketBilling(private val activity: ComponentActivity) : BillingGat
     override val provider = "myket"
     private var helper: IabHelper? = null
     private var connected = false
-    private suspend fun connect(): IabHelper {
+    private suspend fun connect(): IabHelper = kotlinx.coroutines.withTimeout(30_000) {
         if (BuildConfig.BILLING_PUBLIC_KEY.isBlank()) throw CourseFailure("کلید عمومی پرداخت مایکت در این نسخه تنظیم نشده است.")
-        if (connected) return checkNotNull(helper)
+        if (connected) return@withTimeout checkNotNull(helper)
         val client = helper ?: IabHelper(activity, BuildConfig.BILLING_PUBLIC_KEY).also { it.enableDebugLogging(false); helper = it }
         suspendCancellableCoroutine<Unit> { continuation ->
             client.startSetup { result ->
@@ -30,7 +30,7 @@ private class MyketBilling(private val activity: ComponentActivity) : BillingGat
                 }
             }
         }
-        return client
+        client
     }
     private fun receipt(purchase: Purchase, sku: String): Receipt {
         if (purchase.sku != sku || purchase.packageName != activity.packageName || purchase.token.isBlank() || purchase.purchaseState != 0) {

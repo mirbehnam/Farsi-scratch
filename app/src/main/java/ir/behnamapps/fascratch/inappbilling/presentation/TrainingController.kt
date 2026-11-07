@@ -246,7 +246,8 @@ class TrainingController(
             }
             // Let the current SDK inventory callback finish; cancelling it can leave Myket busy.
             pauseStoreSync = true
-            storeMutex.withLock { withTimeout(180_000) { buy.execute(purchaseCourse, billing, restoreOnly) } }
+            // User interaction in the store must not time out and discard a completed payment.
+            storeMutex.withLock { buy.execute(purchaseCourse, billing, restoreOnly) }
             updateAccess(course, true)
             open(course)
         }

@@ -50,10 +50,13 @@ interface ReceiptStore {
 }
 
 /** A failed inventory query must NEVER be interpreted as "not owned" and trigger a new purchase. */
-class BuyCourse(private val backend: PurchaseBackend, private val receipts: ReceiptStore) {
+class BuyCourse(private val backend: PurchaseBackend, private val receipts: ReceiptStore, private val inventoryTimeoutMs: Long = 30_000) {
     suspend fun execute(course: Course, billing: BillingGateway, restoreOnly: Boolean): CourseAccess {
-        val previous = billing.owned(course.sku)
-        val receipt = previous ?: if (restoreOnly) {
+        val previous = kotlinx.coroutines.withTimeout(inventoryTimeoutMs) { billing.owned(course.sku) }
+        // A successfully queried but empty inventory must not discard an already-paid local receipt.
+        // Only explicit restoration uses this fallback; every receipt is still verified by the server.
+        val saved = if (restoreOnly && previous == null) receipts.receipt(course.id)?.takeIf { it.sku == course.sku && it.token.isNotBlank() } else null
+        val receipt = previous ?: saved ?: if (restoreOnly) {
             throw CourseFailure("خرید قبلی این دوره در حساب فعلی استور پیدا نشد.", code = "not_owned")
         } else {
             if (course.salesPaused) throw CourseFailure("در حال حاضر فروش متوقف شده است.", code = "sales_paused")

@@ -62,6 +62,57 @@ class PurchaseFlowTest {
         assertEquals(1, gateway.purchaseCalls); assertEquals("new-receipt", store.saved?.token); assertNull(store.granted)
     }
 
+    @Test fun explicitRestoreRetriesSavedPaidReceiptWhenInventoryIsEmpty() = runBlocking {
+        val store = Store().apply { saved = Receipt(course.sku, "paid-before-outage") }
+        val gateway = Gateway()
+        val backend = object : PurchaseBackend {
+            override suspend fun verify(course: Course, provider: String, receipt: Receipt, restore: Boolean): CourseAccess {
+                assertTrue(restore); assertEquals("paid-before-outage", receipt.token)
+                return CourseAccess(course.id, "server-verified", 100)
+            }
+        }
+        BuyCourse(backend,store).execute(course,gateway,true)
+        assertEquals(0,gateway.purchaseCalls); assertEquals("server-verified",store.granted?.token)
+    }
+    @Test fun savedReceiptFallbackNeverGrantsAccessOnServerFailureOrStartsAnotherPayment() = runBlocking {
+        val store = Store().apply { saved = Receipt(course.sku, "saved-paid-receipt") }
+        val gateway = Gateway()
+        val backend = object : PurchaseBackend {
+            override suspend fun verify(course: Course, provider: String, receipt: Receipt, restore: Boolean): CourseAccess = throw CourseFailure("Refunded",422,"refunded")
+        }
+        try { BuyCourse(backend,store).execute(course,gateway,true); fail("Server rejection must be propagated") } catch(error:CourseFailure){ assertEquals("refunded",error.code) }
+        assertNull(store.granted);assertEquals(0,gateway.purchaseCalls)
+    }
+    @Test fun savedReceiptForAnotherSkuCannotBeRestored() = runBlocking {
+        val store=Store().apply { saved=Receipt("other-sku","unrelated") };val gateway=Gateway()
+        val backend=object:PurchaseBackend { override suspend fun verify(course: Course, provider: String, receipt: Receipt, restore: Boolean):CourseAccess=error("Wrong SKU must not be submitted") }
+        try { BuyCourse(backend,store).execute(course,gateway,true);fail("Expected not owned") }catch(error:CourseFailure){assertEquals("not_owned",error.code)}
+        assertNull(store.granted);assertEquals(0,gateway.purchaseCalls)
+    }
+    @Test fun paymentInteractionCanOutliveInventoryDeadline() = runBlocking {
+        val store=Store()
+        val gateway=object:BillingGateway {
+            override val provider="cafebazaar"
+            override suspend fun owned(sku:String):Receipt?=null
+            override suspend fun purchase(sku:String):Receipt { kotlinx.coroutines.delay(40);return Receipt(sku,"paid") }
+            override fun close()=Unit
+        }
+        val backend=object:PurchaseBackend { override suspend fun verify(course:Course,provider:String,receipt:Receipt,restore:Boolean)=CourseAccess(course.id,"verified",100) }
+        BuyCourse(backend,store,inventoryTimeoutMs=10).execute(course,gateway,false)
+        assertNotNull(store.granted);assertEquals("paid",store.saved?.token)
+    }
+    @Test fun unresponsiveInventoryIsBoundedAndNeverStartsPayment() = runBlocking {
+        var purchases=0
+        val gateway=object:BillingGateway {
+            override val provider="myket"
+            override suspend fun owned(sku:String):Receipt?=kotlinx.coroutines.awaitCancellation()
+            override suspend fun purchase(sku:String):Receipt { purchases++;error("Must not charge") }
+            override fun close()=Unit
+        }
+        val backend=object:PurchaseBackend { override suspend fun verify(course:Course,provider:String,receipt:Receipt,restore:Boolean):CourseAccess=error("Must not verify") }
+        try { BuyCourse(backend,Store(),inventoryTimeoutMs=10).execute(course,gateway,false);fail("Expected timeout") }catch(_:kotlinx.coroutines.TimeoutCancellationException){}
+        assertEquals(0,purchases)
+    }
     @Test fun failedInventoryNeverStartsNewPurchase() = runBlocking {
         val gateway = Gateway(queryFails = true)
         val backend = object : PurchaseBackend {

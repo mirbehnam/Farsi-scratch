@@ -34,8 +34,8 @@ private class BazaarBilling(private val activity: ComponentActivity) : BillingGa
         shouldSupportSubscription = false))
     private var connection: Connection? = null
 
-    private suspend fun connect() {
-        if (connection?.getState() == ConnectionState.Connected) return
+    private suspend fun connect() = kotlinx.coroutines.withTimeout(30_000) {
+        if (connection?.getState() == ConnectionState.Connected) return@withTimeout
         connection?.disconnect()
         suspendCancellableCoroutine<Unit> { continuation ->
             connection = payment.connect {

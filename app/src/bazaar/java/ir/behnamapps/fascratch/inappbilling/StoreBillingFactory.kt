@@ -62,10 +62,11 @@ private class BazaarBilling(private val activity: ComponentActivity) : BillingGa
         }
     }
     override suspend fun purchase(sku: String): Receipt {
+        val trackingPayload = PurchaseTracking.prepare(activity)
         checkAccount()
         connect()
         return suspendCancellableCoroutine { continuation ->
-            payment.purchaseProduct(activity.activityResultRegistry, PurchaseRequest(sku)) {
+            payment.purchaseProduct(activity.activityResultRegistry, PurchaseRequest(sku, payload = trackingPayload)) {
                 purchaseSucceed { row ->
                     if (continuation.isActive) {
                         if (row.productId == sku && row.packageName == activity.packageName && row.purchaseState == PurchaseState.PURCHASED) continuation.resume(Receipt(row.productId, row.purchaseToken))

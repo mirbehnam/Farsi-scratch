@@ -51,6 +51,7 @@ private class MyketBilling(private val activity: ComponentActivity) : BillingGat
         }
     }
     override suspend fun purchase(sku: String): Receipt {
+        val trackingPayload = PurchaseTracking.prepare(activity)
         val client = connect()
         return suspendCancellableCoroutine { continuation ->
             client.launchPurchaseFlow(activity, sku, { result, purchase ->
@@ -58,7 +59,7 @@ private class MyketBilling(private val activity: ComponentActivity) : BillingGat
                     if (!result.isSuccess || purchase == null) continuation.resumeWithException(CourseFailure("خرید مایکت انجام نشد یا لغو شد؛ خرید قبلی را بازیابی کنید."))
                     else runCatching { receipt(purchase, sku) }.fold({ continuation.resume(it) }, { continuation.resumeWithException(it) })
                 }
-            }, "")
+            }, trackingPayload)
         }
     }
     override fun close() {

@@ -69,7 +69,7 @@ private class BazaarBilling(private val activity: ComponentActivity) : BillingGa
             payment.purchaseProduct(activity.activityResultRegistry, PurchaseRequest(sku, payload = trackingPayload)) {
                 purchaseSucceed { row ->
                     if (continuation.isActive) {
-                        if (row.productId == sku && row.packageName == activity.packageName && row.purchaseState == PurchaseState.PURCHASED) continuation.resume(Receipt(row.productId, row.purchaseToken))
+                        if (row.productId == sku && row.packageName == activity.packageName && row.purchaseState == PurchaseState.PURCHASED) continuation.resume(Receipt(row.productId, row.purchaseToken, trackingPayload.split(':')[1]))
                         else continuation.resumeWithException(CourseFailure("رسید بازار با برنامه مطابقت ندارد."))
                     }
                 }

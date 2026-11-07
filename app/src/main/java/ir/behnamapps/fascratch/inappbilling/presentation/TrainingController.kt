@@ -20,7 +20,8 @@ data class TrainingState(
     val courses: List<Course> = emptyList(), val purchasedIds: Set<String> = emptySet(), val prices: Map<String, String> = emptyMap(),
     val loadingPrices: Set<String> = emptySet(), val priceErrors: Set<String> = emptySet(),
     val catalogLayout: CatalogLayout? = null, val catalogCacheLoaded: Boolean = true,
-    val storeHelp: String? = null, val giftAccess: Map<String, Long> = emptyMap()
+    val storeHelp: String? = null, val giftAccess: Map<String, Long> = emptyMap(), val pendingPurchases: Set<String> = emptySet(),
+    val pendingReview: Set<String> = emptySet()
 )
 
 /** Catalog and per-course access stay separate. Store outages never block free previews. */
@@ -78,6 +79,14 @@ class TrainingController(
 
     init {
         scope.launch {
+            vault.changes.collect {
+                val (pending, review) = withContext(Dispatchers.IO) { vault.pendingCourseIds() to vault.pendingReviewIds() }
+                val completed = state.value.pendingPurchases - pending
+                mutable.update { it.copy(pendingPurchases = pending, pendingReview = review) }
+                if (completed.isNotEmpty()) learning?.refreshProfile()
+            }
+        }
+        scope.launch {
             learning?.profiles?.collect {
                 if (learning.requiresRecovery()) cancelDownload()
                 mutable.update { current -> current.copy(purchasedIds = current.courses.filter { ownsCourse(it.id) }.map { it.id }.toSet(),
@@ -101,7 +110,12 @@ class TrainingController(
         if (cached.first.isNotEmpty()) showCatalog(cached.first)
         mutable.update { it.copy(catalogCacheLoaded = true) }
         refreshCatalogLayout()
-        val courses = api.courses(if (billing.provider == "website") "cafebazaar" else billing.provider)
+        val courses = try { api.courses(if (billing.provider == "website") "cafebazaar" else billing.provider) }
+            catch (error: CourseFailure) {
+                // A catalog outage must not prevent saving a paid SDK receipt for a cached course.
+                if (cached.first.isNotEmpty()) syncStores(cached.first)
+                throw error
+            }
         withContext(Dispatchers.IO) { cache.saveCatalog(courses) }
         showCatalog(courses)
         state.value.course?.let { selected ->
@@ -172,20 +186,31 @@ class TrainingController(
         if (storeJob?.isActive == true) return
         pauseStoreSync = false
         storeJob = scope.launch {
+            // Resolve the existing account before binding newly discovered SDK receipts.
+            try { api.account() }
+            catch (error: CancellationException) { throw error }
+            catch (error: CourseFailure) {
+                val cachedAccount = learning?.profiles?.value?.get(ir.behnamapps.fascratch.inappbilling.learning.LearningIdentity.KEY)
+                if (!PurchaseRetryPolicy.retryable(error) || cachedAccount == null || learning?.requiresRecovery() == true) return@launch
+                // A cached identity can bind the receipt while security/network recovers; the server still rechecks authentication.
+            }
+            catch (_: Exception) { return@launch }
             for (course in courses) {
                 if (learning?.requiresRecovery() == true) break
                 if (pauseStoreSync) break
                 if (learning?.profiles?.value?.get(ir.behnamapps.fascratch.inappbilling.learning.LearningIdentity.KEY)?.courses?.any { it.uuid == course.id && it.accessSource == "gift" && it.canAccess() } == true) continue
-                // An explicitly signed-in account is authoritative. Automatic inventory must not switch it.
-                if (learning?.profiles?.value?.get(ir.behnamapps.fascratch.inappbilling.learning.LearningIdentity.KEY)?.registered == true) continue
+                // Already-confirmed account purchases need no SDK check; missing purchases do, including registered accounts.
+                if (learning?.profiles?.value?.get(ir.behnamapps.fascratch.inappbilling.learning.LearningIdentity.KEY)?.courses?.any { it.uuid == course.id && it.canAccess() } == true) continue
                 try {
                     storeMutex.withLock {
-                        withTimeout(60_000) { buy.execute(course, billing, restoreOnly = true) }
-                        updateAccess(course, true)
+                        val found = withTimeout(60_000) { buy.reconcile(course, billing) }
+                        if (found != null) updateAccess(course, true)
                     }
                 } catch (_: TimeoutCancellationException) { runCatching { billing.close() } }
                 catch (error: CancellationException) { throw error }
                 catch (error: CourseFailure) {
+                    if (error.code == "purchase_owner_mismatch") mutable.update { it.copy(message =
+                        "خرید «${course.title}» در استور پیدا شد، اما به حساب دیگری متصل است؛ برای ورود به حساب صاحب خرید، بازیابی خرید را بزن.") }
                     if (CoursePolicy.revokesAccess(error.code)) {
                         vault.revoke(course.id); updateAccess(course, false)
                         if (error.code != "not_owned" && state.value.course?.id == course.id) mutable.update { it.copy(message = error.userMessage) }
@@ -197,6 +222,7 @@ class TrainingController(
 
     fun select(course: Course) = action(course.id) {
         priceRefresher.refresh(listOf(course))
+        syncStores(listOf(course))
         open(course)
     }
 
@@ -238,7 +264,7 @@ class TrainingController(
         action(course.id, storePurchase = true) {
             pendingStorePurchase = course to restoreOnly
             var purchaseCourse = course
-            if (!restoreOnly) {
+            if (!restoreOnly && !vault.hasPendingReceipt(course.id)) {
                 purchaseCourse = api.coursePricing(course, provider())
                 val fresh = priceLabel(purchaseCourse.serverPriceToman)
                     ?: throw CourseFailure("قیمت این دوره در سرور تنظیم نشده است.")

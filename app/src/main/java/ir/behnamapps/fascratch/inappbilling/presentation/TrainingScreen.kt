@@ -237,6 +237,7 @@ private fun CourseOptions(state: TrainingState, expanded: Boolean, onExpanded: (
 private fun PurchasePanel(course: Course, state: TrainingState, onPurchase: (Course, Boolean) -> Unit, modifier: Modifier = Modifier, pinned: Boolean = false,
     courseOptions: @Composable () -> Unit = {}) {
     val canBuy = BuildConfig.BILLING_PROVIDER != "website"
+    val confirmationPending = course.id in state.pendingPurchases
     val price = state.prices[course.id]
     val panelScroll = rememberScrollState()
     LaunchedEffect(course.id) { panelScroll.scrollTo(0) }
@@ -264,6 +265,10 @@ private fun PurchasePanel(course: Course, state: TrainingState, onPurchase: (Cou
                 Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (state.purchased) {
                         Text("✓ خریداری شده", color = Ink, fontWeight = FontWeight.Bold)
+                    } else if (confirmationPending) {
+                        Text("رسید خرید محفوظ است", color = Ink, fontWeight = FontWeight.Bold)
+                        Text(if (course.id in state.pendingReview) "تأیید خرید نیاز به بررسی دارد؛ بازیابی خرید را بزن یا با پشتیبانی تماس بگیر. دوباره پرداخت نکن."
+                            else "تأیید در انتظار است؛ با اتصال اینترنت خودکار پیگیری می‌شود. دوباره پرداخت نکن. اگر حساب عوض شده، بازیابی خرید را بزن.", style = MaterialTheme.typography.bodySmall, color = Muted)
                     } else if (canBuy) {
                         CourseOfferPrice(course, price, if (course.id in state.loadingPrices) "دریافت قیمت…" else "قیمت در سرور ثبت نشده یا دریافت نشد", compact = true)
                     } else {
@@ -276,10 +281,10 @@ private fun PurchasePanel(course: Course, state: TrainingState, onPurchase: (Cou
                 HorizontalDivider(color = Line)
                 Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
                     if (course.salesPaused) Text("در حال حاضر فروش متوقف شده است", color = Muted, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 8.dp))
-                    Button(onClick = { onPurchase(course, false) }, enabled = !state.busy && price != null && !course.salesPaused,
+                    Button(onClick = { onPurchase(course, false) }, enabled = !state.busy && (confirmationPending || (price != null && !course.salesPaused)),
                         modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp), shape = RoundedCornerShape(14.dp),
                         elevation = ButtonDefaults.buttonElevation(defaultElevation = 3.dp, pressedElevation = 0.dp)) {
-                        Text(if (course.salesPaused) "فروش متوقف شده است" else "خرید دوره", fontWeight = FontWeight.Bold, fontSize = 19.sp)
+                        Text(if (confirmationPending) "پیگیری تأیید خرید" else if (course.salesPaused) "فروش متوقف شده است" else "خرید دوره", fontWeight = FontWeight.Bold, fontSize = 19.sp)
                     }
                 }
             }

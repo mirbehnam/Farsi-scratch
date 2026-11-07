@@ -285,6 +285,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ir.behnamapps.fascratch.inappbilling.data.PurchaseConfirmationJob.schedule(applicationContext)
         appLaunchPolicy.start(applicationContext)
         ir.behnamapps.fascratch.inappbilling.data.ClientCommands.launchPolicy = appLaunchPolicy
         runCatching { ir.behnamapps.fascratch.inappbilling.learning.ContentPackageInstaller.get(filesDir).recover() }

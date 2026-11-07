@@ -13,6 +13,7 @@ import java.util.Locale
 import javax.net.ssl.HttpsURLConnection
 
 class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
+    private val app = context?.applicationContext
     internal var requestOwner: RequestConnections? = null
 
     fun finishConnection(connection: HttpsURLConnection) {
@@ -88,9 +89,9 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
             val json = runCatching { JSONObject(String(bytes, Charsets.UTF_8)) }.getOrNull()
             if (status !in 200..299) {
                 val code = json?.optJSONObject("error")?.optString("code").orEmpty()
-                val trafficMessage = ir.behnamapps.fascratch.inappbilling.domain.TrafficErrorMessage.message(status, code,
-                    connection.getHeaderField("Retry-After")?.toLongOrNull()
-                        ?: json?.optJSONObject("error")?.optLong("retry_after")?.takeIf { it > 0 })
+                val retryAfter = PurchaseRetryPolicy.retryAfter(connection.getHeaderField("Retry-After"),
+                    json?.optJSONObject("error")?.optLong("retry_after")?.takeIf { it > 0 }, System.currentTimeMillis())
+                val trafficMessage = ir.behnamapps.fascratch.inappbilling.domain.TrafficErrorMessage.message(status, code, retryAfter)
                 throw CourseFailure(when {
                     trafficMessage != null -> trafficMessage
                     path.startsWith("content-store") -> when (status) {
@@ -120,7 +121,7 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
                     status == 401 || status == 403 -> "دسترسی نیاز به بازیابی و تأیید مجدد خرید دارد."
                     status == 404 -> "دوره یا درس در سرور پیدا نشد."
                     else -> "ارتباط با سرور یا استور برقرار نشد؛ دوباره تلاش کنید."
-                }, status, code, path.substringBefore('?'))
+                }, status, code, path.substringBefore('?'), retryAfter)
             }
             json ?: throw CourseFailure("پاسخ سرور معتبر نیست.")
         } catch (error: kotlinx.coroutines.CancellationException) { throw error }
@@ -207,18 +208,77 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
         return CoursePolicy.serverPrice(sku, price.optString("sku"), price.opt("amount_toman").takeUnless { it == JSONObject.NULL })
     }
 
-    override suspend fun verify(course: Course, provider: String, receipt: Receipt, restore: Boolean): CourseAccess = accountSessionMutex.withLock {
+    override suspend fun verify(course: Course, provider: String, receipt: Receipt, restore: Boolean): CourseAccess =
+        verifyInteractive(course, provider, receipt, restore, false, false)
+
+    override suspend fun retryPending(course: Course, provider: String, receipt: Receipt, explicitRestore: Boolean): CourseAccess =
+        verifyInteractive(course, provider, receipt, true, explicitRestore, true)
+
+    override suspend fun reconcile(course: Course, provider: String, receipt: Receipt): CourseAccess =
+        verifyInteractive(course, provider, receipt, true, false, true)
+
+    private suspend fun verifyInteractive(course: Course, provider: String, receipt: Receipt, restore: Boolean,
+        explicitRecovery: Boolean, retrying: Boolean): CourseAccess = accountSessionMutex.withLock {
+        val vault = app?.let { PurchaseVault(it) }
+        val owner = receipt.ownerUuid ?: identity?.profile()?.uuid
+        val pending = if (vault != null && owner != null) {
+            vault.beginConfirmation(course, provider, owner).also { vault.scheduleConfirmation() }
+        } else null
+        if (retrying && !explicitRecovery && pending == null)
+            throw CourseFailure("برای تأیید امن خرید، ابتدا وارد حساب شو و بازیابی را بزن.", 401, "purchase_account_required")
+        if (retrying && !explicitRecovery && pending?.blocked == true)
+            throw CourseFailure("تأیید خرید نیاز به بررسی دارد؛ بازیابی خرید را بزن یا با پشتیبانی تماس بگیر.", 409, "confirmation_review_required")
+        if (pending != null && !explicitRecovery && !PurchaseRetryPolicy.sameOwner(pending.owner, identity?.profile()?.uuid, identity?.requiresRecovery() == true))
+            throw CourseFailure("رسید خرید محفوظ است؛ برای تأیید آن وارد حساب هنگام خرید شو یا بازیابی خرید را انجام بده.", 409, "purchase_owner_mismatch")
+        if (vault != null && (vault.cooldownUntil() > System.currentTimeMillis() ||
+            (pending != null && pending.attempt > 0 && !pending.blocked && pending.next > System.currentTimeMillis())))
+            throw CourseFailure("رسید خرید محفوظ است و تأیید آن خودکار تکرار می‌شود؛ تا پایان زمان انتظار سرور صبر کن.", 429, "confirmation_pending")
+        confirmReceipt(course, provider, receipt, restore, pending,
+            background = retrying && !explicitRecovery)
+    }
+
+    internal suspend fun confirmPending(snapshot: PendingPurchase): CourseAccess? = accountSessionMutex.withLock {
+        val pending = app?.let { PurchaseVault(it).pending().firstOrNull { p -> p.courseId == snapshot.courseId && p.token == snapshot.token } }
+            ?: return@withLock null
+        if (pending.blocked || pending.next > System.currentTimeMillis() || PurchaseVault(app!!).cooldownUntil() > System.currentTimeMillis() ||
+            !PurchaseRetryPolicy.sameOwner(pending.owner, identity?.profile()?.uuid, identity?.requiresRecovery() == true)) return@withLock null
+        confirmReceipt(Course(pending.courseId, "", "", pending.sku), pending.provider,
+            Receipt(pending.sku, pending.token, pending.owner), true, pending, background = true)
+    }
+
+    private suspend fun confirmReceipt(course: Course, provider: String, receipt: Receipt, restore: Boolean,
+        pending: PendingPurchase?, background: Boolean): CourseAccess {
         val session = identity?.secret()
-        val response = request("purchases/${if (restore) "restore" else "verify"}", body = JSONObject()
-            .put("provider", provider).put("sku", receipt.sku).put("purchase_token", receipt.token), accountSecret = session).getJSONObject("data")
+        try {
+        val response = request("purchases/${if (background) "retry" else if (restore) "restore" else "verify"}", body = JSONObject()
+            .put("provider", provider).put("sku", receipt.sku).put("purchase_token", receipt.token)
+            .put("background", background), accountSecret = session).getJSONObject("data")
         if (response.optString("status") != "verified" || !response.optBoolean("has_access")) throw CourseFailure("خرید هنوز تأیید نشده است.")
+        if (background && response.optJSONObject("account")?.optJSONObject("profile")?.optString("uuid") != pending?.owner)
+            throw CourseFailure("تأیید خودکار به حساب هنگام خرید نیاز دارد.", 409, "purchase_owner_mismatch")
         if (identity != null && !identity.accept(response.optJSONObject("account"), expectedSecret = session))
-            throw CourseFailure("حساب تغییر کرده؛ بازیابی را دوباره انجام بده.", 409)
+            throw CourseFailure("حساب تغییر کرده؛ بازیابی را دوباره انجام بده.", 409, "purchase_account_required")
         val token = response.getString("access_token")
         require(token.matches(Regex("[a-f0-9]{64}")))
         val expiry = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US).apply { isLenient = false }.parse(response.getString("expires_at"))
             ?: throw CourseFailure("زمان اعتبار پاسخ معتبر نیست.")
-        CourseAccess(CoursePolicy.uuid(response.getString("course_uuid")), token, expiry.time)
+        val access = CourseAccess(CoursePolicy.uuid(response.getString("course_uuid")), token, expiry.time,
+            response.optJSONObject("account")?.optJSONObject("profile")?.optString("uuid")?.takeIf(String::isNotBlank))
+        require(access.courseId == course.id)
+        if (pending != null && app != null) PurchaseVault(app).complete(pending, access)
+        return access
+        } catch (error: kotlinx.coroutines.CancellationException) { throw error }
+        catch (error: Exception) {
+            val failure = error as? CourseFailure ?: CourseFailure("پاسخ تأیید خرید کامل دریافت نشد.")
+            if (pending != null && app != null) {
+                PurchaseVault(app).defer(pending, failure)
+                PurchaseConfirmationJob.schedule(app)
+                if (PurchaseRetryPolicy.retryable(failure)) throw CourseFailure(
+                    "رسید خرید محفوظ است؛ تأیید خرید در پس‌زمینه خودکار تکرار می‌شود. دوباره پرداخت نکن.\n" + failure.userMessage,
+                    failure.status, failure.code, failure.operation, failure.retryAfterSeconds)
+            }
+            throw failure
+        }
     }
 
     suspend fun learning(path: String, token: String? = null, body: JSONObject? = null): JSONObject =

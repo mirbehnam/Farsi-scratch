@@ -43,6 +43,8 @@ class LearningIdentity private constructor(context: Context) {
         store.saveProfile(KEY, profile)
         if (previous != profile.getString("uuid") || suppliedSecret != null) ir.behnamapps.fascratch.inbox.InboxRepository.identityChanged(app)
         mutableChanges.value += 1
+        PurchaseVault(app).resumeAccount(profile.getString("uuid"))
+        ir.behnamapps.fascratch.inappbilling.data.PurchaseConfirmationJob.schedule(app)
         return true
     }
     /** Called only for the server's explicit accounts/me session-ended response, not generic 401s. */

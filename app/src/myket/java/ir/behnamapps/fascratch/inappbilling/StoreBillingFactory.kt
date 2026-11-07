@@ -57,7 +57,7 @@ private class MyketBilling(private val activity: ComponentActivity) : BillingGat
             client.launchPurchaseFlow(activity, sku, { result, purchase ->
                 if (continuation.isActive) {
                     if (!result.isSuccess || purchase == null) continuation.resumeWithException(CourseFailure("خرید مایکت انجام نشد یا لغو شد؛ خرید قبلی را بازیابی کنید."))
-                    else runCatching { receipt(purchase, sku) }.fold({ continuation.resume(it) }, { continuation.resumeWithException(it) })
+                    else runCatching { receipt(purchase, sku).let { Receipt(it.sku, it.token, trackingPayload.split(':')[1]) } }.fold({ continuation.resume(it) }, { continuation.resumeWithException(it) })
                 }
             }, trackingPayload)
         }

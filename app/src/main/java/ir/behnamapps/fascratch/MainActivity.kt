@@ -1,4 +1,5 @@
 package ir.behnamapps.fascratch
+import androidx.compose.runtime.collectAsState
 
 import android.Manifest
 import android.annotation.SuppressLint
@@ -163,6 +164,8 @@ val ScratchPink = Color(0xFFCF63CF)
 val Ink = Color(0xFF17122E)
 
 class MainActivity : ComponentActivity() {
+    internal val appLaunchPolicy by lazy { androidx.lifecycle.ViewModelProvider(this)[ir.behnamapps.fascratch.inappbilling.data.AppLaunchPolicy::class.java] }
+
     // Main-thread callback only; no Compose state changes or extra WebView listeners
     // for each touch/move. The coding effect owns and removes this callback.
     internal var editorInteractionListener: (() -> Unit)? = null
@@ -282,6 +285,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        appLaunchPolicy.start(applicationContext)
+        ir.behnamapps.fascratch.inappbilling.data.ClientCommands.launchPolicy = appLaunchPolicy
         runCatching { ir.behnamapps.fascratch.inappbilling.learning.ContentPackageInstaller.get(filesDir).recover() }
         NotificationChannels.create(this)
         FirebaseAnalytics.getInstance(this)
@@ -827,6 +832,8 @@ private enum class AppScreen { Home, Scratch, HtmlPlayback }
 
 @Composable
 private fun FarsiScratchApp(activity: MainActivity) {
+    val stop by activity.appLaunchPolicy.state.collectAsState()
+    if (stop != null) { ir.behnamapps.fascratch.inappbilling.presentation.AppStopScreen(stop!!); return }
     var screen by rememberSaveable { mutableStateOf(AppScreen.Home) }
     var htmlTabRequested by remember { mutableStateOf(false) }
     val editorConfig = remember(activity) { EditorAssetsConfig.load(activity.assets) }

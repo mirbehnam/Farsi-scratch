@@ -8,12 +8,12 @@ internal data class InboxImage(val url: String, val hash: String, val bytes: Int
 internal data class InboxButton(val label: String, val url: String)
 internal data class InboxMessage(val id: String, val revision: Int, val notificationVersion: Int, val title: String, val body: String,
     val kind: String, val pinned: Boolean, val publishedMs: Long, val expiresMs: Long?, val dateLabel: String,
-    val buttons: List<InboxButton>, val image: InboxImage?, val scope: String) {
+    val buttons: List<InboxButton>, val image: InboxImage?, val scope: String, val showDialog: Boolean = false) {
     val readKey get() = "$scope:$id"
 }
 internal data class InboxFeed(val json: JSONObject, val messages: List<InboxMessage>, val etag: String?)
 internal data class InboxState(val messages: List<InboxMessage> = emptyList(), val read: Map<String, Int> = emptyMap(),
-    val initialized: Boolean = false, val refreshing: Boolean = false, val failed: Boolean = false, val sessionKey: String? = null) {
+    val initialized: Boolean = false, val refreshing: Boolean = false, val failed: Boolean = false, val sessionKey: String? = null, val acknowledged: Map<String, Int> = emptyMap()) {
     val unread get() = messages.count { InboxPolicy.unread(it.notificationVersion, read[it.readKey]) }
 }
 
@@ -73,7 +73,7 @@ internal object InboxPolicy {
             require(published > 0 && (expiry == null || expiry > published))
             InboxMessage(id, revision, notification, text(row,"title",100), text(row,"body",4000),
                 row.getString("kind").takeIf { it in setOf("info","celebration","lesson","warning") } ?: "info", row.getBoolean("pinned"),
-                published, expiry, text(row,"date_label",80), buttons, image, scope)
+                published, expiry, text(row,"date_label",80), buttons, image, scope, row.optBoolean("show_dialog", false))
         }
         return InboxFeed(JSONObject().put("data",data), messages, etag?.take(200))
     }

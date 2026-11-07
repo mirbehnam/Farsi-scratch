@@ -22,12 +22,13 @@ internal data class ClientCommandState(val initialized: Boolean = false, val blo
 
 /** Public control plane only. Never clears credentials, learning outbox or downloaded lessons. */
 internal object ClientCommands {
+    internal var launchPolicy: AppLaunchPolicy? = null
     private val mutex = Mutex()
     private val mutable = MutableStateFlow(ClientCommandState())
     val state = mutable.asStateFlow()
     private var attemptedAt: Long? = null
 
-    suspend fun refresh(context: Context) = withContext(Dispatchers.IO) {
+    suspend fun refresh(context: Context, force: Boolean = false) = withContext(Dispatchers.IO) {
         mutex.withLock {
             val app = context.applicationContext
             val prefs = app.getSharedPreferences("scratch-client-commands", Context.MODE_PRIVATE)
@@ -37,25 +38,27 @@ internal object ClientCommands {
                     prefs.getLong("applied_generation", 0), profileStop = cached?.let { profileStop(it) })
             }
             val now = SystemClock.elapsedRealtime()
-            if (attemptedAt?.let { now - it < 25_000 } == true) return@withLock
+            if (!force && attemptedAt?.let { now - it < 25_000 } == true) return@withLock
             attemptedAt = now
             val config = runCatching {
-                val connection = URL(BuildConfig.COURSE_API_BASE.trimEnd('/') + "/client-controls").openConnection() as HttpsURLConnection
+                val connection = URL(BuildConfig.COURSE_API_BASE.trimEnd('/') + "/client-controls?app_stop=1").openConnection() as HttpsURLConnection
                 try {
                     connection.connectTimeout = 2500; connection.readTimeout = 2500
                     connection.instanceFollowRedirects = false; connection.useCaches = false
                     connection.setRequestProperty("Accept", "application/json")
                     require(connection.responseCode == 200)
-                    JSONObject(connection.inputStream.use { String(it.readBytesBounded(32 * 1024), Charsets.UTF_8) }).getJSONObject("data").also {
+                    JSONObject(connection.inputStream.use { String(it.readBytesBounded(256 * 1024), Charsets.UTF_8) }).getJSONObject("data").also {
                         require(it.getInt("schema") == 1 && it.getLong("cache_generation") >= 0)
                         require(it.getJSONArray("rules").length() <= 30)
                         blockedMessage(it, BuildConfig.FLAVOR, BuildConfig.VERSION_CODE) // Validate before persistence/deletion.
+                        AppLaunchPolicy.select(it,BuildConfig.FLAVOR,BuildConfig.VERSION_CODE)
                     }
                 } finally { connection.disconnect() }
             }.getOrNull() ?: return@withLock
             val generation = config.getLong("cache_generation")
             val message = blockedMessage(config, BuildConfig.FLAVOR, BuildConfig.VERSION_CODE)
-            prefs.edit().putString("config", config.toString()).commit()
+            if (!prefs.edit().putString("config", config.toString()).commit()) return@withLock
+            launchPolicy?.received(config)
             mutable.value = mutable.value.copy(blockedMessage = message, profileStop = profileStop(config))
             var applied = prefs.getLong("applied_generation", 0)
             val previous = applied

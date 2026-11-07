@@ -62,7 +62,7 @@ internal class InboxDisk(context: Context) {
                 else total += item.length()
             }
         // Only encrypted read ids are retained across logins; bound even multi-account test devices.
-        root.listFiles()?.filter { it.isFile && it.name.startsWith("reads-") }?.sortedByDescending { it.lastModified() }?.drop(20)?.forEach { AtomicFile(it).delete() }
+        root.listFiles()?.filter { it.isFile && (it.name.startsWith("reads-") || it.name.startsWith("engagement-")) }?.sortedByDescending { it.lastModified() }?.drop(20)?.forEach { AtomicFile(it).delete() }
     }
     companion object {
         fun bounded(input: InputStream, max: Int): ByteArray {

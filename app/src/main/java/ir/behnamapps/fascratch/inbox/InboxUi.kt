@@ -58,6 +58,8 @@ import kotlinx.coroutines.launch
     }
     InboxEnvelope(state.unread,modifier) { opened = true }
     if(opened) InboxDialog(repository) { opened = false }
+    val pending = state.messages.firstOrNull { it.showDialog && (state.acknowledged[it.readKey] ?: 0) < it.notificationVersion }
+    if(!opened && pending != null) HomeMessageDialog(pending,state.sessionKey,repository)
 }
 
 @Composable private fun InboxEnvelope(unread: Int, modifier: Modifier, onOpen: () -> Unit) {
@@ -144,7 +146,7 @@ private fun symbol(kind: String) = when(kind) { "celebration" -> "🎉"; "lesson
                 if(unread) Box(Modifier.size(7.dp).background(Color(0xFFEAA935),CircleShape))
             }
             if(message.body.isNotEmpty()) Text(message.body,style = MaterialTheme.typography.bodySmall,color = Color(0xFF718991),maxLines = 2,overflow = TextOverflow.Ellipsis)
-            Text((if(message.pinned) "📌 " else "") + (if(message.scope == "personal") "🔒 برای تو · " else "") + message.dateLabel,style = MaterialTheme.typography.labelSmall,color = Color(0xFF8A9A9F))
+            Text((if(message.pinned) "📌 " else "") + (if(message.scope == "personal") "🔒 پیام شخصی · " else "") + message.dateLabel,style = MaterialTheme.typography.labelSmall,color = Color(0xFF8A9A9F))
         }
     }
 }
@@ -214,5 +216,24 @@ private fun symbol(kind: String) = when(kind) { "celebration" -> "🎉"; "lesson
         val message = InboxMessage("preview",1,1,"یک خبر خوب برای برنامه‌نویس‌ها!","سلام! یک پروژهٔ تازه بساز و ایده‌هایت را به زندگی بیاور ✨\nاین پیام از طرف تیم اسکرچ برای تو فرستاده شده است.","celebration",true,1,null,"۱۴۰۵/۰۸/۰۱",
             listOf(InboxButton("بیشتر بدان","https://behnamapp.ir")),InboxImage("","a".repeat(64),1,800,600),"public")
         Surface(Modifier.fillMaxSize(),color = Color.White) { InboxDetails(message,null,null,Modifier.fillMaxSize()) }
+    }
+}
+
+@Composable private fun HomeMessageDialog(message: InboxMessage, session: String?, repository: InboxRepository) {
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(message.readKey,message.notificationVersion,session,lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) { repository.read(message,session); awaitCancellation() }
+    }
+    LearnerDialogTheme {
+        Dialog(onDismissRequest = {}, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+            LearnerDialogWindowBounds()
+            Surface(Modifier.learnerSafeDialogBounds().learnerDialogPanelBounds(), shape=RoundedCornerShape(24.dp), color=Color(0xFFF4FBFC)) {
+                Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                    Text(if(message.scope=="personal") "💌 پیام شخصی برای تو" else "✨ پیامی از تیم اسکرچ",color=Color(0xFF246C7A),fontWeight=FontWeight.Bold)
+                    InboxDetails(message,session,repository,Modifier.weight(1f).fillMaxWidth())
+                    Button(onClick={repository.acknowledge(message,session)}, modifier=Modifier.align(Alignment.CenterHorizontally), shape=RoundedCornerShape(16.dp)) { Text("تأیید، متوجه شدم ✓") }
+                }
+            }
+        }
     }
 }

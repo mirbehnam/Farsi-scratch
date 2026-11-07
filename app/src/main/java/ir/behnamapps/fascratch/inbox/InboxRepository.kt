@@ -40,6 +40,7 @@ internal class InboxRepository private constructor(context: Context) {
     private data class Session(val uuid: String, val secret: String, val key: String)
     @Volatile private var session: Session? = null
     private var personalKey: String? = null
+    private var engagement = JSONObject()
     private var publicFeed: InboxFeed? = null
     private var personalFeed: InboxFeed? = null
     private var publicRead = emptyMap<String,Int>()
@@ -78,13 +79,13 @@ internal class InboxRepository private constructor(context: Context) {
     private fun rebuild() {
         val privateVisible = session?.key != null && session?.key == personalKey
         val messages = InboxPolicy.visibleMessages(publicFeed?.messages.orEmpty(),personalFeed?.messages.orEmpty(),session?.key,personalKey,System.currentTimeMillis())
-        mutable.value = mutable.value.copy(messages = messages,read = publicRead + if(privateVisible) personalRead else emptyMap(), sessionKey = session?.key)
+        mutable.value = mutable.value.copy(messages = messages,read = publicRead + if(privateVisible) personalRead else emptyMap(), sessionKey = session?.key, acknowledged = engagement.keys().asSequence().associateWith { engagement.optJSONObject(it)?.optInt("ack") ?: 0 })
     }
 
     private suspend fun initialize() = withContext(Dispatchers.IO) {
         metadata.withLock {
             if (!mutable.value.initialized) {
-                publicFeed = cachedFeed(null); publicRead = readMarks(null)
+                publicFeed = cachedFeed(null); publicRead = readMarks(null); loadEngagement()
                 mutable.value = mutable.value.copy(initialized = true); rebuild()
             }
         }
@@ -94,7 +95,7 @@ internal class InboxRepository private constructor(context: Context) {
         val next = capture()
         metadata.withLock {
             if (next?.key == session?.key && personalKey == next?.key) return@withLock false
-            session = next; personalKey = next?.key; generation.incrementAndGet(); lastPersonal = 0L; personalCooldown = 0L
+            session = next; personalKey = next?.key; loadEngagement(); generation.incrementAndGet(); lastPersonal = 0L; personalCooldown = 0L
             personalFeed = if(next != null) cachedFeed(next) else null
             personalRead = if(next != null) readMarks(next.uuid) else emptyMap()
             runCatching { disk.clearPrivate(next?.key) }; rebuild(); true
@@ -105,7 +106,7 @@ internal class InboxRepository private constructor(context: Context) {
     private fun identityChanged() {
         val epoch = generation.incrementAndGet(); session = null; bitmaps.evictAll()
         mutable.value = mutable.value.copy(messages = mutable.value.messages.filter { it.scope == "public" },
-            read = mutable.value.read.filterKeys { it.startsWith("public:") },sessionKey = null)
+            read = mutable.value.read.filterKeys { it.startsWith("public:") },sessionKey = null, acknowledged = emptyMap())
         io.launch {
             metadata.withLock {
                 if(generation.get() == epoch) { personalFeed = null; personalKey = null; personalRead = emptyMap(); runCatching { disk.clearPrivate() }; rebuild() }
@@ -159,7 +160,7 @@ internal class InboxRepository private constructor(context: Context) {
                         storeFeed(account,feed)
                         if(account == null) { publicFeed = feed; publicRead = publicRead.filterKeys { key -> feed.messages.any { it.readKey == key } }; writeMarks(null,publicRead) }
                         else { personalFeed = feed; personalKey = account.key; personalRead = personalRead.filterKeys { key -> feed.messages.any { it.readKey == key } }; writeMarks(account.uuid,personalRead) }
-                        rebuild(); pruneImages()
+                        pruneEngagement(scope,feed.messages); rebuild(); pruneImages()
                     }
                 } catch(cancelled: CancellationException) { throw cancelled }
                 catch(error: InboxHttp) {
@@ -171,6 +172,7 @@ internal class InboxRepository private constructor(context: Context) {
                 } catch(_: Exception) { failed = true }
             }
             mutable.value = mutable.value.copy(failed = failed)
+            synchronizeEngagement()
             // Bounded warm-up; never decode images or block the text snapshot on media downloads.
             coroutineScope {
                 val candidates = state.value.messages.filter { it.image != null }.sortedBy { !InboxPolicy.unread(it.notificationVersion,state.value.read[it.readKey]) }.take(8)
@@ -183,6 +185,7 @@ internal class InboxRepository private constructor(context: Context) {
         metadata.withLock {
             if(message.scope == "personal" && expectedSession != session?.key) return@withLock
             if(mutable.value.messages.none { it.readKey == message.readKey && it.notificationVersion == message.notificationVersion }) return@withLock
+            markEngagement(message,"read");
             if(message.scope == "public") { publicRead = publicRead + (message.readKey to message.notificationVersion); writeMarks(null,publicRead) }
             else { personalRead = personalRead + (message.readKey to message.notificationVersion); writeMarks(session?.uuid,personalRead) }
             rebuild()
@@ -198,6 +201,72 @@ internal class InboxRepository private constructor(context: Context) {
         }
     } }
 
+    private fun installation(): String {
+        val name = "installation.json"
+        val old = disk.read(name,false,100)?.toString(Charsets.UTF_8)
+        if(old != null && InboxPolicy.uuid(old)) return old
+        return java.util.UUID.randomUUID().toString().also { disk.write(name,it.toByteArray(),false) }
+    }
+    private fun engagementName() = "engagement-" + sha((session?.uuid ?: installation()).toByteArray()) + ".bin"
+    private fun loadEngagement() { engagement = runCatching { JSONObject(disk.read(engagementName(),true,128*1024)?.toString(Charsets.UTF_8) ?: "{}") }.getOrDefault(JSONObject()) }
+    private fun persistEngagement() { runCatching { disk.write(engagementName(),engagement.toString().toByteArray(),true) } }
+    private fun markEngagement(message: InboxMessage, type: String) {
+        val row = engagement.optJSONObject(message.readKey) ?: JSONObject()
+        row.put(type,maxOf(row.optInt(type),message.notificationVersion)); engagement.put(message.readKey,row); persistEngagement()
+    }
+    private fun pruneEngagement(scope: String, messages: List<InboxMessage>) {
+        val valid = messages.map { it.readKey }.toSet()
+        engagement.keys().asSequence().toList().filter { it.startsWith("$scope:") && it !in valid }.forEach { engagement.remove(it) }
+        persistEngagement()
+    }
+    fun acknowledge(message: InboxMessage, expectedSession: String?) { io.launch {
+        try {
+            metadata.withLock {
+                if(expectedSession != session?.key || state.value.messages.none { it.readKey == message.readKey && it.notificationVersion == message.notificationVersion }) return@withLock
+                markEngagement(message,"ack"); markEngagement(message,"read"); rebuild()
+            }
+            read(message,expectedSession); synchronizeEngagement()
+        } catch(cancelled: CancellationException) { throw cancelled } catch(_: Exception) { /* Durable confirmation retries on next refresh. */ }
+    } }
+    private val engagementSync = Mutex()
+    private suspend fun synchronizeEngagement() {
+        if(!engagementSync.tryLock()) return
+        try {
+            val account = session; val epoch = generation.get()
+            val events = metadata.withLock {
+                val list = mutableListOf<JSONObject>()
+                state.value.messages.forEach { message ->
+                    val row = engagement.optJSONObject(message.readKey) ?: JSONObject()
+                    fun event(type: String, version: Int) = JSONObject().put("id",message.id).put("scope",message.scope).put("notification_version",version).put("type",type)
+                    val ack = row.optInt("ack"); val read = row.optInt("read")
+                    list += event(if(ack>=message.notificationVersion) "ack" else if(read>=message.notificationVersion) "read" else "delivered",message.notificationVersion)
+                    if(ack in 1 until message.notificationVersion) list += event("ack",ack)
+                }; list
+            }
+            for(batch in events.chunked(100)) {
+                if(epoch != generation.get()) return
+                val body = JSONObject().put("installation",installation()).put("flavor",BuildConfig.FLAVOR).put("version",BuildConfig.VERSION_CODE).put("events",org.json.JSONArray(batch))
+                val connection = URL("$base/inbox/events").openConnection() as HttpsURLConnection
+                val result = try {
+                    connection.connectTimeout=4000; connection.readTimeout=6000; connection.instanceFollowRedirects=false; connection.useCaches=false
+                    connection.requestMethod="POST"; connection.doOutput=true; connection.setRequestProperty("Content-Type","application/json"); connection.setRequestProperty("Accept","application/json")
+                    account?.let { connection.setRequestProperty("X-Scratch-Account",it.secret) }
+                    connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+                    require(connection.responseCode==200)
+                    JSONObject(connection.inputStream.use { String(InboxDisk.bounded(it,64*1024),Charsets.UTF_8) }).getJSONObject("data").getJSONObject("acknowledged")
+                } finally { connection.disconnect() }
+                metadata.withLock {
+                    if(epoch != generation.get() || (account != null && !sameSession(account))) return@withLock
+                    result.keys().forEach { key ->
+                        if(state.value.messages.any { it.readKey==key }) {
+                            val row=engagement.optJSONObject(key)?:JSONObject(); row.put("ack",maxOf(row.optInt("ack"),result.optInt(key))); engagement.put(key,row)
+                        }
+                    }; persistEngagement(); rebuild()
+                }
+            }
+        } catch(cancelled: CancellationException) { throw cancelled } catch(_: Exception) { /* Retry from Home; never interrupt users. */ }
+        finally { engagementSync.unlock() }
+    }
     private fun imageName(message: InboxMessage, key: String?) = if(message.scope == "public") "public-image-${message.image!!.hash}.webp" else "private-image-$key-${message.image!!.hash}.bin"
     private fun visible(message: InboxMessage, key: String?): Boolean = (message.scope == "public" || (key != null && key == session?.key)) &&
         state.value.messages.any { it.readKey == message.readKey && it.image?.hash == message.image?.hash }

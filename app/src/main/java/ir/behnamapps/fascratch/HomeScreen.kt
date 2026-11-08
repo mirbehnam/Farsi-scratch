@@ -223,7 +223,7 @@ fun HomeScreen(
     onMafiaApp: () -> Unit
 ) {
     var showContentStore by remember { mutableStateOf(false) }
-    if (showContentStore) ir.behnamapps.fascratch.inappbilling.learning.ContentStoreDialog(onClose = { showContentStore = false })
+    if (showContentStore) ir.behnamapps.fascratch.inappbilling.learning.ContentStoreEntryDialog(onClose = { showContentStore = false })
     val transition = rememberInfiniteTransition(label = "home-motion")
 
     val glowAlpha by transition.animateFloat(

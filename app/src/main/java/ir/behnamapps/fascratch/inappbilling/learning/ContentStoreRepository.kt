@@ -65,7 +65,7 @@ internal class ContentStoreRepository private constructor(context: Context) {
     suspend fun load(query: String = "", kind: String = "", owned: Boolean = false, page: Int = 1): ContentCatalog = withContext(Dispatchers.IO) {
         if (identity.profile() == null) api.account()
         val secret = identity.secret()
-        val path = if (owned) "owned?page=$page" else "?q=${URLEncoder.encode(query, "UTF-8")}&kind=$kind&page=$page"
+        val path = if (owned) "owned?page=$page&kind=$kind" else "?q=${URLEncoder.encode(query, "UTF-8")}&kind=$kind&page=$page"
         val json = api.contentStore(path, secret); checkSession(secret)
         json.optJSONObject("wallet")?.let { wallet.value = it.optDouble("coins", wallet.value) }
         val rows = json.getJSONArray("items"); retryAcknowledgements(secret)
@@ -77,7 +77,14 @@ internal class ContentStoreRepository private constructor(context: Context) {
         ContentCatalog(packages, json.optBoolean("has_more"), json.optInt("page", page), json.optInt("count"), json.optLong("spent_coins"))
     }
     fun installed(uuid: String) = uuid in localPackages
-    fun installedPackages(): List<Pair<String, String>> = localPackages.toList()
+    fun installedPackages(kind: String = ""): List<Pair<String, String>> {
+        if (kind.isBlank()) return localPackages.toList()
+        val entries = installer.entries()
+        return localPackages.toList().filter { (id, _) ->
+            val files = entries.optJSONObject(id)?.optJSONArray("files") ?: return@filter false
+            (0 until files.length()).any { files.getJSONObject(it).optString("kind") == kind }
+        }
+    }
     suspend fun remove(uuid: String) = withContext(Dispatchers.IO) { mutex.withLock {
         saveAcknowledgements()
         installer.remove(uuid); refreshLocal()
@@ -198,7 +205,8 @@ internal class ContentStoreRepository private constructor(context: Context) {
                     }
                     output.fd.sync(); require(got == bytes) { "دانلود ناقص است؛ دوباره تلاش کن." }
                 } }
-                installer.install(part, ticket, item.title, owner) { identity.secret() == secret }; refreshLocal()
+                installer.install(part, ticket, item.title, owner,
+                    importProject = { file, title, origin -> ir.behnamapps.fascratch.ProjectRepository(app).importStoreProject(file, title, origin); Unit }) { identity.secret() == secret }; refreshLocal()
             } finally { api.finishConnection(c); part.delete() }
             mutable.update { it + (item.uuid to ContentTransfer("installed", bytes, bytes, "آماده است! در کتابخانه، دستهٔ دانلودی‌ها را باز کن.")) }
             retryAcknowledgements(secret); LearningRepository.get(app).refreshProfile()

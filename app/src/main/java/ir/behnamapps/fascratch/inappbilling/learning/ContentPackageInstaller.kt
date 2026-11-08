@@ -9,7 +9,7 @@ import java.security.MessageDigest
 import java.util.zip.ZipFile
 
 /** Owns only store-prefixed files listed in its private journal, never a user's independent files. */
-internal class ContentPackageInstaller private constructor(private val root: File) {
+internal class ContentPackageInstaller(private val root: File) {
     private val folder = File(root, "content_store").apply { mkdirs() }
     private val catalog = AtomicFile(File(folder, "installed.json"))
     private val journal = AtomicFile(File(folder, "install-journal.json"))
@@ -20,7 +20,7 @@ internal class ContentPackageInstaller private constructor(private val root: Fil
         catch (e: Exception) { file.failWrite(output); throw e }
     }
     private fun target(kind: String, name: String): File {
-        require(kind in setOf("sprites", "backdrops", "sounds"))
+        require(kind in setOf("sprites", "backdrops", "sounds", "projects"))
         require(name.startsWith("store-") && !name.contains('/') && !name.contains('\\'))
         val dir = File(root, "downloaded_$kind").apply { mkdirs() }
         return File(dir, name).also { require(it.canonicalFile.parentFile == dir.canonicalFile && it.canonicalFile == File(dir.canonicalFile, name)) }
@@ -76,7 +76,8 @@ internal class ContentPackageInstaller private constructor(private val root: Fil
         for (i in 0 until files.length()) files.getJSONObject(i).let { target(it.getString("kind"), it.getString("local")).delete(); restoreName(it) }
         all.remove(uuid); write(catalog, all)
     }
-    @Synchronized fun install(archive: File, ticket: JSONObject, title: String, owner: String, sameAccount: () -> Boolean) {
+    @Synchronized fun install(archive: File, ticket: JSONObject, title: String, owner: String,
+        importProject: ((File, String, String) -> Unit)? = null, sameAccount: () -> Boolean) {
         recover()
         require(archive.length() == ticket.getLong("bytes") && hash(archive) == ticket.getString("sha256")) { "فایل کامل دریافت نشده؛ دوباره تلاش کن." }
         val uuid = ticket.getString("item_uuid"); java.util.UUID.fromString(uuid)
@@ -97,7 +98,8 @@ internal class ContentPackageInstaller private constructor(private val root: Fil
                 for (i in 0 until files.length()) {
                     val f = files.getJSONObject(i); val fileId = f.getString("uuid"); java.util.UUID.fromString(fileId)
                     val kind = f.getString("kind"); val name = f.getString("name"); val ext = name.substringAfterLast('.').lowercase()
-                    require(ext in when (kind) { "sprites" -> setOf("sprite3"); "backdrops" -> setOf("svg", "png", "jpg", "jpeg"); "sounds" -> setOf("wav", "mp3"); else -> emptySet() })
+                    require(ext in when (kind) { "sprites" -> setOf("sprite3"); "backdrops" -> setOf("svg", "png", "jpg", "jpeg"); "sounds" -> setOf("wav", "mp3"); "projects" -> setOf("sb3"); else -> emptySet() })
+                    require(kind != "projects" || importProject != null) { "این نسخه از نصب پروژه پشتیبانی نمی‌کند." }
                     val key = "files/$fileId.$ext"; require(f.getString("path") == key && seen.add(key))
                     val entry = zip.getEntry(key) ?: error("یکی از فایل‌های بسته ناقص است.")
                     val bytes = f.getLong("bytes"); total += bytes; require(bytes in 1..134217728 && total <= 536870912 && entry.size == bytes)
@@ -127,6 +129,14 @@ internal class ContentPackageInstaller private constructor(private val root: Fil
             }
             for (i in 0 until records.length()) {
                 val f = records.getJSONObject(i); setName(f.getString("kind"), f.getString("local"), f.getJSONObject("names"))
+            }
+            for (i in 0 until files.length()) {
+                val f = files.getJSONObject(i)
+                if (f.getString("kind") == "projects") {
+                    check(sameAccount()) { "حساب تغییر کرده؛ دریافت را دوباره انجام بده." }
+                    val local = "store-$uuid-${f.getString("uuid")}.sb3"
+                    importProject!!(target("projects", local), contentDisplayName(f.optJSONObject("names"), f.getString("name")), "$uuid:${f.getString("uuid")}")
+                }
             }
             val all = read(catalog); all.put(uuid, item); write(catalog, all); journal.delete()
         } catch (e: Exception) { recover(); throw e }

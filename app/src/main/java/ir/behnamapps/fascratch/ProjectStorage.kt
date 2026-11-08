@@ -21,8 +21,9 @@ data class SavedScratchProject(
     val modifiedAt: Long
 )
 
-class ProjectRepository(private val activity: MainActivity) {
-    private val projectsDirectory = File(activity.filesDir, "scratch_projects").apply { mkdirs() }
+class ProjectRepository(private val context: android.content.Context) {
+    private val projectsDirectory = File(context.filesDir, "scratch_projects").apply { mkdirs() }
+    private val storeImports = android.util.AtomicFile(File(projectsDirectory, ".store-imports.json"))
 
     fun listProjects(): List<SavedScratchProject> =
         projectsDirectory.listFiles()
@@ -40,7 +41,7 @@ class ProjectRepository(private val activity: MainActivity) {
             .sortedByDescending(SavedScratchProject::modifiedAt)
 
     fun createIncomingFile(): File =
-        File.createTempFile("scratch_", ".sb3", activity.cacheDir)
+        File.createTempFile("scratch_", ".sb3", context.cacheDir)
 
     fun deleteProject(project: SavedScratchProject): Boolean {
         project.previewFile?.delete()
@@ -62,7 +63,7 @@ class ProjectRepository(private val activity: MainActivity) {
         )
     }
 
-    fun commitProject(incomingFile: File, requestedName: String): SavedScratchProject {
+    fun commitProject(incomingFile: File, requestedName: String): SavedScratchProject = synchronized(storeImportLock) {
         val cleanBaseName = requestedName
             .removeSuffix(".sb3")
             .replace(Regex("[\\\\/:*?\"<>|]"), "_")
@@ -76,8 +77,8 @@ class ProjectRepository(private val activity: MainActivity) {
             incomingFile.delete()
         }
 
-        ir.behnamapps.fascratch.inappbilling.learning.LearningRepository.get(activity).savedProjectChanged()
-        return SavedScratchProject(
+        ir.behnamapps.fascratch.inappbilling.learning.LearningRepository.get(context).savedProjectChanged()
+        SavedScratchProject(
             name = projectFile.nameWithoutExtension,
             projectFile = projectFile,
             previewFile = null,
@@ -86,6 +87,7 @@ class ProjectRepository(private val activity: MainActivity) {
     }
 
     fun captureProjectPreview(project: SavedScratchProject, onComplete: (Boolean) -> Unit) {
+        val activity = context as? MainActivity ?: run { onComplete(false); return }
         val rootView = activity.window.decorView
         if (rootView.width <= 0 || rootView.height <= 0) {
             onComplete(false)
@@ -136,6 +138,29 @@ class ProjectRepository(private val activity: MainActivity) {
         }
         return candidate
     }
+
+    /** A persistent origin mapping makes retries idempotent, and never overwrites the user's edited copy. */
+    fun importStoreProject(source: File, requestedName: String, origin: String): File = synchronized(storeImportLock) {
+        require(origin.matches(Regex("[a-f0-9-]{36}:[a-f0-9-]{36}")))
+        java.util.zip.ZipFile(source).use { zip -> require(zip.getEntry("project.json") != null) { "پروژهٔ دانلودشده معتبر نیست." } }
+        val mapping = runCatching { storeImports.openRead().use { org.json.JSONObject(it.readBytes().toString(Charsets.UTF_8)) } }.getOrDefault(org.json.JSONObject())
+        val previous = mapping.optString(origin).takeIf { it.isNotBlank() && !it.contains('/') && !it.contains('\\') }
+            ?.let { File(projectsDirectory, it) }
+        if (previous?.isFile == true) return@synchronized previous
+        val name = requestedName.removeSuffix(".sb3").replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().take(80).ifBlank { "پروژهٔ دانلودی" }
+        // Persist the intended destination BEFORE copying, so a killed process cannot create duplicates.
+        val target = previous ?: uniqueProjectFile(name)
+        mapping.put(origin, target.name)
+        val journal = storeImports.startWrite()
+        try { journal.write(mapping.toString().toByteArray(Charsets.UTF_8)); storeImports.finishWrite(journal) }
+        catch (e: Exception) { storeImports.failWrite(journal); throw e }
+        val atomic = android.util.AtomicFile(target); val output = atomic.startWrite()
+        try { source.inputStream().use { it.copyTo(output) }; atomic.finishWrite(output) }
+        catch (e: Exception) { atomic.failWrite(output); throw e }
+        ir.behnamapps.fascratch.inappbilling.learning.LearningRepository.get(context).savedProjectChanged()
+        target
+    }
+    companion object { private val storeImportLock = Any() }
 }
 
 class ScratchProjectSaveBridge(private val activity: MainActivity) {

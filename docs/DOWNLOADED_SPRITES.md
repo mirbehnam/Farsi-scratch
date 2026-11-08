@@ -97,6 +97,12 @@ Ownership returned by refreshed server pages replaces the corresponding cached f
 ### 300px artwork update
 
 Store manifests may include an optional thumbnail_url per file. Native package details show this image when available and retain the previous kind icon when the server omits it. Backdrop artwork is generated as a compact 300x300 WebP; sound artwork is a music icon, separate from the audio preview URL. GIF compression, when explicitly approved by the administrator, now produces a 300x300 frame while preserving the image aspect ratio and animation. Original media and existing package archives remain unchanged.
+## WebP backdrop support and automatic PNG conversion (2026-11-08)
+
+Content store packages can include backdrops in `.webp` format for reduced download bandwidth and smaller package sizes. When `ContentPackageInstaller` installs a package containing a `.webp` backdrop, it verifies the archive SHA-256 integrity in the staging folder and then converts the image to lossless PNG (`store-<item_uuid>-<file_uuid>.png`) before placing it into `filesDir/downloaded_backdrops`.
+
+This conversion guarantees 100% contract compliance with both Scratch 3 and TurboWarp engines, as well as `DownloadedMediaPathHandler`, which index and load PNG/JPG/SVG backdrops without requiring engine bridge or web asset modifications. The journal and `names.json` catalog index the converted PNG filename, ensuring atomic rollbacks and proper localized name display.
+
 ## Store category entry and complete projects (2026-11-08)
 
 The Home store entry now opens four illustrated categories. Category filtering never changes a bundle's contents. The three editor Downloaded libraries above keep their existing contract. A new host-only `filesDir/downloaded_projects` directory holds immutable SB3 store originals; these are not sprite/backdrop/sound library entries. ProjectRepository imports editable copies into the existing `scratch_projects` directory without automatically opening an editor. Its atomic `.store-imports.json` maps bundle/file UUIDs to imported filenames so retries cannot overwrite user edits or create duplicate copies. Store removal deletes only the managed original; the user's project stays in My Projects. Do not include either downloaded content or import journals in editor asset replacement. See STORE_CATEGORIES_AND_PROJECTS.md for API capabilities, ownership, installation recovery and rollout.

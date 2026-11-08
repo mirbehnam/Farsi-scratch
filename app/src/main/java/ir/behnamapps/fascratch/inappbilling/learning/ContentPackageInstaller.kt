@@ -1,5 +1,7 @@
 package ir.behnamapps.fascratch.inappbilling.learning
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.util.AtomicFile
 import org.json.JSONArray
 import org.json.JSONObject
@@ -98,7 +100,7 @@ internal class ContentPackageInstaller(private val root: File) {
                 for (i in 0 until files.length()) {
                     val f = files.getJSONObject(i); val fileId = f.getString("uuid"); java.util.UUID.fromString(fileId)
                     val kind = f.getString("kind"); val name = f.getString("name"); val ext = name.substringAfterLast('.').lowercase()
-                    require(ext in when (kind) { "sprites" -> setOf("sprite3"); "backdrops" -> setOf("svg", "png", "jpg", "jpeg"); "sounds" -> setOf("wav", "mp3"); "projects" -> setOf("sb3"); else -> emptySet() })
+                    require(ext in when (kind) { "sprites" -> setOf("sprite3"); "backdrops" -> setOf("svg", "png", "jpg", "jpeg", "webp"); "sounds" -> setOf("wav", "mp3"); "projects" -> setOf("sb3"); else -> emptySet() })
                     require(kind != "projects" || importProject != null) { "این نسخه از نصب پروژه پشتیبانی نمی‌کند." }
                     val key = "files/$fileId.$ext"; require(f.getString("path") == key && seen.add(key))
                     val entry = zip.getEntry(key) ?: error("یکی از فایل‌های بسته ناقص است.")
@@ -110,8 +112,22 @@ internal class ContentPackageInstaller(private val root: File) {
                         output.fd.sync(); require(count == bytes)
                     } }
                     require(hash(out) == f.getString("sha256")) { "بررسی سلامت فایل ناموفق بود." }
-                    records.put(JSONObject().put("kind", kind).put("local", local).put("bytes", bytes).put("sha256", f.getString("sha256"))
-                        .put("names", JSONObject((f.optJSONObject("names") ?: JSONObject()).toString()).apply { if (optString("en").isBlank() || isNull("en")) put("en", name.substringBeforeLast('.', name)) }).put("names_before", names(kind).optJSONObject(local) ?: JSONObject.NULL))
+                    val finalLocal: String; val finalBytes: Long; val finalHash: String
+                    if (kind == "backdrops" && ext == "webp") {
+                        val bitmap = BitmapFactory.decodeFile(out.absolutePath) ?: error("تصویر پس‌زمینهٔ وب‌پی قابل خواندن نیست.")
+                        val pngLocal = "store-$uuid-$fileId.png"; val pngOut = File(stage, pngLocal)
+                        FileOutputStream(pngOut).use { fos ->
+                            bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)
+                            fos.fd.sync()
+                        }
+                        bitmap.recycle()
+                        out.delete()
+                        finalLocal = pngLocal; finalBytes = pngOut.length(); finalHash = hash(pngOut)
+                    } else {
+                        finalLocal = local; finalBytes = bytes; finalHash = f.getString("sha256")
+                    }
+                    records.put(JSONObject().put("kind", kind).put("local", finalLocal).put("bytes", finalBytes).put("sha256", finalHash)
+                        .put("names", JSONObject((f.optJSONObject("names") ?: JSONObject()).toString()).apply { if (optString("en").isBlank() || isNull("en")) put("en", name.substringBeforeLast('.', name)) }).put("names_before", names(kind).optJSONObject(finalLocal) ?: JSONObject.NULL))
                 }
             }
             check(sameAccount()) { "حساب تغییر کرده؛ دریافت را از حساب فعلی دوباره شروع کن." }

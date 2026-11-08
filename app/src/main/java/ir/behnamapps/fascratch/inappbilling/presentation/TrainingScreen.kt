@@ -2,6 +2,11 @@
 
 package ir.behnamapps.fascratch.inappbilling.presentation
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.keyframes
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -16,6 +21,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
@@ -60,7 +67,8 @@ internal fun TrainingScreen(state: TrainingState, controller: TrainingController
             else pendingPurchase = course to restore
         }, { controller.download(it) },
         controller::cancelDownload, onPlay, controller::refreshPrices, controller::catalogReady, controller::catalogFailed,
-        learnerHeader = { DelayedLearnerChip(selectedProfile, state.course?.id ?: "catalog", badgeSize = 64.dp) { learning?.refreshProfile(); showProfile = true } },
+        // Compact badge: a 64dp badge made the top bar too tall in landscape.
+        learnerHeader = { DelayedLearnerChip(selectedProfile, state.course?.id ?: "catalog", badgeSize = 44.dp) { learning?.refreshProfile(); showProfile = true } },
         learnerCelebration = { if (state.course != null && selectedProfile != null && learning != null) LevelCelebration(state.course.id, selectedProfile, learning) },
         onGift = { showGift = true })
     if (showGift && learning != null) GiftCodeDialog(learning, selectedProfile?.registered != true,
@@ -94,14 +102,14 @@ internal fun TrainingContent(
 ) {
     var filter by rememberSaveable(state.course?.id) { mutableStateOf(LessonFilter.ALL) }
     var optionsExpanded by remember(state.course?.id) { mutableStateOf(false) }
-    val canBuy = BuildConfig.BILLING_PROVIDER != "website"
     var failedLayout by remember { mutableStateOf<String?>(null) }
     val courseOptions: @Composable () -> Unit = {
-        CourseOptions(state, optionsExpanded, { optionsExpanded = it }, onRefresh, onRefreshPrices, onPurchase, onGift)
+        CourseOptions(state, optionsExpanded, { optionsExpanded = it }, onRefresh, onRefreshPrices, onGift)
     }
     Column(Modifier.fillMaxSize().background(Paper).windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 16.dp)) {
-        Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(onClick = onBack) { Text(if (state.course == null) "بازگشت" else "همهٔ دوره‌ها") }
+        // Compact top bar: vertical space is scarce in landscape.
+        Row(Modifier.fillMaxWidth().heightIn(min = 44.dp).padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = onBack, contentPadding = PaddingValues(horizontal = 8.dp)) { Text(if (state.course == null) "بازگشت" else "همهٔ دوره‌ها") }
             Text(persian(state.course?.title ?: "آکادمی اسکرچ فارسی"), Modifier.weight(1f), fontWeight = FontWeight.Bold,
                 color = Ink, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (state.course != null) {
@@ -143,7 +151,8 @@ internal fun TrainingContent(
         } else BoxWithConstraints(Modifier.weight(1f).padding(bottom = 10.dp)) {
             // A single column remains usable with unusually large display scaling.
             val split = maxWidth >= 580.dp && maxHeight >= 240.dp * LocalDensity.current.fontScale
-            val panelWidth = (maxWidth * .32f).coerceIn(228.dp, 280.dp)
+            // Landscape: a slightly wider pinned side panel gives the purchase actions room.
+            val panelWidth = (maxWidth * .34f).coerceIn(244.dp, 300.dp)
             val curriculum: @Composable (Modifier) -> Unit = { modifier ->
                 Curriculum(course, state, filter, modifier,
                     onDownload, onCancelDownload, onPlay,
@@ -211,9 +220,10 @@ private fun CourseMetadata(course: Course) {
     durationLabel(course.durationSeconds)?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = Muted) }
 }
 
+/** Secondary actions only. "Restore purchase" now lives next to the buy button in [PurchasePanel]. */
 @Composable
 private fun CourseOptions(state: TrainingState, expanded: Boolean, onExpanded: (Boolean) -> Unit,
-    onRefresh: () -> Unit, onRefreshPrices: () -> Unit, onPurchase: (Course, Boolean) -> Unit, onGift: () -> Unit) {
+                          onRefresh: () -> Unit, onRefreshPrices: () -> Unit, onGift: () -> Unit) {
     Box {
         IconButton(onClick = { onExpanded(true) }, modifier = Modifier.semantics { contentDescription = "گزینه‌های بیشتر" }) {
             Text("⋮", fontSize = 28.sp, color = Ink)
@@ -223,9 +233,6 @@ private fun CourseOptions(state: TrainingState, expanded: Boolean, onExpanded: (
             DropdownMenuItem(text = { Text("تازه‌سازی") }, enabled = !state.busy, onClick = { onExpanded(false); onRefresh() })
             if (BuildConfig.BILLING_PROVIDER != "website") {
                 DropdownMenuItem(text = { Text("تازه‌سازی قیمت") }, enabled = !state.busy, onClick = { onExpanded(false); onRefreshPrices() })
-                state.course?.takeIf { !state.purchased }?.let { course ->
-                    DropdownMenuItem(text = { Text("بازیابی خرید") }, enabled = !state.busy, onClick = { onExpanded(false); onPurchase(course, true) })
-                }
                 HorizontalDivider(color = Line)
                 DropdownMenuItem(text = { Text("پرداخت از طریق " + if (BuildConfig.BILLING_PROVIDER == "myket") "مایکت" else "کافه‌بازار") }, enabled = false, onClick = {})
             }
@@ -235,21 +242,22 @@ private fun CourseOptions(state: TrainingState, expanded: Boolean, onExpanded: (
 
 @Composable
 private fun PurchasePanel(course: Course, state: TrainingState, onPurchase: (Course, Boolean) -> Unit, modifier: Modifier = Modifier, pinned: Boolean = false,
-    courseOptions: @Composable () -> Unit = {}) {
+                          courseOptions: @Composable () -> Unit = {}) {
     val canBuy = BuildConfig.BILLING_PROVIDER != "website"
     val confirmationPending = course.id in state.pendingPurchases
+    val needsRestore = course.id in state.pendingReview
     val price = state.prices[course.id]
     val panelScroll = rememberScrollState()
     LaunchedEffect(course.id) { panelScroll.scrollTo(0) }
     Surface(modifier, shape = RoundedCornerShape(20.dp), color = Color.White, border = BorderStroke(1.dp, Line)) {
         Column {
-            // Reserve only the primary CTA. All variable-height content shares one bounded
-            // scroll viewport, so variable-height prices never squeeze the summary to zero.
+            // The footer (buy + restore) is always visible. All variable-height content shares one
+            // bounded scroll viewport, so long prices/descriptions never push the actions off-screen.
             // Inline panels already belong to the curriculum's scrolling grid: do not nest
             // an unbounded vertical scroller there.
             val bodyModifier = if (pinned) Modifier.weight(1f).verticalScroll(panelScroll) else Modifier
             Column(bodyModifier.fillMaxWidth()) {
-                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text(persian(course.title), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Ink)
                         courseOptions()
@@ -261,30 +269,35 @@ private fun PurchasePanel(course: Course, state: TrainingState, onPurchase: (Cou
                         if (showDescription) Text(persian(course.description), style = MaterialTheme.typography.bodySmall, color = Muted)
                     }
                 }
-                HorizontalDivider(color = Line)
-                Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (state.purchased) {
-                        Text("✓ خریداری شده", color = Ink, fontWeight = FontWeight.Bold)
-                    } else if (confirmationPending) {
-                        Text("رسید خرید محفوظ است", color = Ink, fontWeight = FontWeight.Bold)
-                        Text(if (course.id in state.pendingReview) "تأیید خرید نیاز به بررسی دارد؛ بازیابی خرید را بزن یا با پشتیبانی تماس بگیر. دوباره پرداخت نکن."
-                            else "تأیید در انتظار است؛ با اتصال اینترنت خودکار پیگیری می‌شود. دوباره پرداخت نکن. اگر حساب عوض شده، بازیابی خرید را بزن.", style = MaterialTheme.typography.bodySmall, color = Muted)
-                    } else if (canBuy) {
-                        CourseOfferPrice(course, price, if (course.id in state.loadingPrices) "دریافت قیمت…" else "قیمت در سرور ثبت نشده یا دریافت نشد", compact = true)
-                    } else {
-                        Text("خرید در نسخهٔ فروشگاهی", color = Ink, fontWeight = FontWeight.Bold)
-                        Text("برای خرید، نسخهٔ مایکت یا کافه‌بازار برنامه را نصب کنید.", style = MaterialTheme.typography.bodySmall, color = Muted)
+                Surface(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), shape = RoundedCornerShape(14.dp), color = Mint) {
+                    Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        if (state.purchased) {
+                            Text("✓ خریداری شده", color = Ink, fontWeight = FontWeight.Bold)
+                        } else if (confirmationPending) {
+                            Text("رسید خرید محفوظ است", color = Ink, fontWeight = FontWeight.Bold)
+                            Text(if (needsRestore) "تأیید خرید نیاز به بررسی دارد؛ دکمهٔ «بازیابی خرید» را بزن یا با پشتیبانی تماس بگیر. دوباره پرداخت نکن."
+                            else "تأیید در انتظار است؛ با اتصال اینترنت خودکار پیگیری می‌شود. دوباره پرداخت نکن. اگر حساب عوض شده، «بازیابی خرید» را بزن.", style = MaterialTheme.typography.bodySmall, color = Muted)
+                        } else if (canBuy) {
+                            CourseOfferPrice(course, price, if (course.id in state.loadingPrices) "دریافت قیمت…" else "قیمت در سرور ثبت نشده یا دریافت نشد", compact = true)
+                        } else {
+                            Text("خرید در نسخهٔ فروشگاهی", color = Ink, fontWeight = FontWeight.Bold)
+                            Text("برای خرید، نسخهٔ مایکت یا کافه‌بازار برنامه را نصب کنید.", style = MaterialTheme.typography.bodySmall, color = Muted)
+                        }
                     }
                 }
+                Spacer(Modifier.height(6.dp))
             }
             if (!state.purchased && canBuy) {
                 HorizontalDivider(color = Line)
-                Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
-                    if (course.salesPaused) Text("در حال حاضر فروش متوقف شده است", color = Muted, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 8.dp))
+                Column(Modifier.fillMaxWidth().background(Color(0xFFFBFAF6)).padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (course.salesPaused) Text("در حال حاضر فروش متوقف شده است", color = Muted, style = MaterialTheme.typography.bodySmall)
+                    // Restore sits above the main action and gently "beats" so returning buyers notice it first.
+                    PulsingRestoreButton(enabled = !state.busy, urgent = needsRestore, onClick = { onPurchase(course, true) })
                     Button(onClick = { onPurchase(course, false) }, enabled = !state.busy && (confirmationPending || (price != null && !course.salesPaused)),
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp), shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), shape = RoundedCornerShape(14.dp),
                         elevation = ButtonDefaults.buttonElevation(defaultElevation = 3.dp, pressedElevation = 0.dp)) {
-                        Text(if (confirmationPending) "پیگیری تأیید خرید" else if (course.salesPaused) "فروش متوقف شده است" else "خرید دوره", fontWeight = FontWeight.Bold, fontSize = 19.sp)
+                        Text(if (confirmationPending) "پیگیری تأیید خرید" else if (course.salesPaused) "فروش متوقف شده است" else "خرید دوره", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                     }
                 }
             }
@@ -292,10 +305,45 @@ private fun PurchasePanel(course: Course, state: TrainingState, onPurchase: (Cou
     }
 }
 
+/** Heartbeat-style "lub-dub" pulse: the button scales and its green glow swells in rhythm. */
+@Composable
+private fun PulsingRestoreButton(enabled: Boolean, urgent: Boolean, onClick: () -> Unit) {
+    val transition = rememberInfiniteTransition(label = "restoreHeartbeat")
+    val beat by transition.animateFloat(
+        initialValue = 0f, targetValue = 0f, label = "beat",
+        animationSpec = infiniteRepeatable(keyframes {
+            durationMillis = if (urgent) 1200 else 1600
+            0f at 0 using FastOutSlowInEasing
+            1f at 140 using FastOutSlowInEasing   // lub
+            0.25f at 280 using FastOutSlowInEasing
+            0.75f at 400 using FastOutSlowInEasing // dub
+            0f at 600
+            0f at 1200
+        })
+    )
+    val pulse = if (enabled) beat else 0f
+    val shape = RoundedCornerShape(14.dp)
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("قبلاً این دوره را خریده‌ای؟", style = MaterialTheme.typography.labelSmall, color = Muted)
+        Surface(onClick = onClick, enabled = enabled, shape = shape,
+            color = if (urgent) PreviewGreen else PreviewTint,
+            border = BorderStroke(1.dp + (1.5f * pulse).dp, PreviewGreen.copy(alpha = .55f + .45f * pulse)),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)
+                .graphicsLayer { val s = 1f + .035f * pulse; scaleX = s; scaleY = s }
+                .shadow((2f + 10f * pulse).dp, shape, ambientColor = PreviewGreen, spotColor = PreviewGreen)) {
+            Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                Text("↻", color = if (urgent) Color.White else PreviewGreen, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.width(8.dp))
+                Text("بازیابی خرید", color = if (urgent) Color.White else PreviewGreen, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1)
+            }
+        }
+    }
+}
+
 @Composable
 private fun Curriculum(course: Course, state: TrainingState, filter: LessonFilter,
-    modifier: Modifier, onDownload: (Lesson) -> Unit, onCancel: () -> Unit,
-    onPlay: (Lesson) -> Unit, inlinePurchase: (@Composable () -> Unit)?
+                       modifier: Modifier, onDownload: (Lesson) -> Unit, onCancel: () -> Unit,
+                       onPlay: (Lesson) -> Unit, inlinePurchase: (@Composable () -> Unit)?
 ) {
     val gridState = rememberLazyGridState()
     LaunchedEffect(course.id, filter) { gridState.scrollToItem(0) }
@@ -334,7 +382,7 @@ private fun LessonCard(lesson: Lesson, state: TrainingState, onDownload: (Lesson
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Text(persian(lesson.title), fontWeight = FontWeight.Bold, color = Ink, style = MaterialTheme.typography.bodyMedium)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                DifficultyBadge(lesson.difficulty, lesson.difficultyLabel)
+                        DifficultyBadge(lesson.difficulty, lesson.difficultyLabel)
                         if (lesson.isPreview) Badge("مشاهده رایگان", PreviewGreen, Color.White)
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {

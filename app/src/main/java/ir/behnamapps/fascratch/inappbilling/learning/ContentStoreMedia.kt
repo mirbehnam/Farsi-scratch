@@ -25,10 +25,11 @@ import java.io.File
         modifier = Modifier.graphicsLayer { scaleX = if (enabled) pulse else 1f; scaleY = if (enabled) pulse else 1f }) { Text("دانلود رایگان") }
 }
 
-@Composable internal fun StoreImagePreview(part: ContentPart, repo: ContentStoreRepository, close: () -> Unit) {
+@Composable internal fun StoreImagePreview(part: ContentPart, repo: ContentStoreRepository,
+    load: suspend (String?) -> StorePicture? = { repo.picture(it) }, close: () -> Unit) {
     var picture by remember(part.uuid) { mutableStateOf<StorePicture?>(null) }
     var loading by remember(part.uuid) { mutableStateOf(true) }
-    LaunchedEffect(part.uuid) { picture = repo.picture(part.preview) ?: repo.picture(part.thumbnail); loading = false }
+    LaunchedEffect(part.uuid) { picture = load(part.preview) ?: load(part.thumbnail); loading = false }
     AlertDialog(onDismissRequest = close, title = { Text(part.name) }, text = {
         Box(Modifier.fillMaxWidth().height(220.dp)) {
             val current = picture
@@ -43,7 +44,8 @@ import java.io.File
 }
 
 /** One selected row plays; leaving the package or selecting another row releases playback. */
-@Composable internal fun InlineSoundPreview(part: ContentPart, selected: Boolean, select: (Boolean) -> Unit) {
+@Composable internal fun InlineSoundPreview(part: ContentPart, selected: Boolean,
+    load: (suspend () -> File)? = null, select: (Boolean) -> Unit) {
     val context = LocalContext.current
     var loading by remember(part.uuid) { mutableStateOf(false) }
     var error by remember(part.uuid) { mutableStateOf<String?>(null) }
@@ -53,7 +55,7 @@ import java.io.File
         var local: File? = null
         loading = true; error = null
         try {
-            local = withContext(Dispatchers.IO) {
+            local = if (load != null) load() else withContext(Dispatchers.IO) {
                 val api = CourseApi(context); val c = api.contentDownload(part.preview, LearningIdentity.get(context).secret())
                 try {
                     check(c.responseCode == 200)

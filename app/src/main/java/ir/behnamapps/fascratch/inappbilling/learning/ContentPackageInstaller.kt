@@ -53,7 +53,7 @@ internal class ContentPackageInstaller(private val root: File) {
         val j = read(journal)
         if (!j.has("uuid")) return
         val saved = read(catalog)
-        if (!saved.has(j.getString("uuid"))) {
+        if (!saved.has(j.getString("uuid")) || (j.has("install_uuid") && saved.optJSONObject(j.getString("uuid"))?.optString("install_uuid") != j.optString("install_uuid"))) {
             val files = j.optJSONArray("files") ?: JSONArray()
             for (i in 0 until files.length()) files.getJSONObject(i).let { f -> runCatching { target(f.getString("kind"), f.getString("local")).delete(); restoreName(f) } }
         }
@@ -68,6 +68,13 @@ internal class ContentPackageInstaller(private val root: File) {
         }
     }
     @Synchronized fun entries(): JSONObject = read(catalog)
+    @Synchronized fun installedPart(uuid: String, fileUuid: String): Boolean {
+        val files = read(catalog).optJSONObject(uuid)?.optJSONArray("files") ?: return false
+        return (0 until files.length()).any { i -> val f = files.getJSONObject(i)
+            (f.optString("uuid") == fileUuid || f.optString("local").substringBeforeLast('.').endsWith("-$fileUuid")) && runCatching { target(f.getString("kind"), f.getString("local")).let { it.isFile && it.length() == f.getLong("bytes") } }.getOrDefault(false)
+        }
+    }
+    @Synchronized fun completePackage(uuid: String): Boolean = installed(uuid) && (read(catalog).optJSONObject(uuid)?.optBoolean("complete", true) == true)
     @Synchronized fun acknowledge(uuid: String) {
         val all = read(catalog); val item = all.optJSONObject(uuid) ?: return
         item.remove("ack_uuid"); item.remove("ack_hash"); item.remove("ack_owner"); write(catalog, all)
@@ -83,8 +90,10 @@ internal class ContentPackageInstaller(private val root: File) {
         recover()
         require(archive.length() == ticket.getLong("bytes") && hash(archive) == ticket.getString("sha256")) { "فایل کامل دریافت نشده؛ دوباره تلاش کن." }
         val uuid = ticket.getString("item_uuid"); java.util.UUID.fromString(uuid)
-        if (installed(uuid)) return
-        if (read(catalog).has(uuid)) remove(uuid)
+        val partial = ticket.optBoolean("partial", false)
+        if (!partial && completePackage(uuid)) return
+        val previous = if (partial) read(catalog).optJSONObject(uuid) else null
+        if (!partial && read(catalog).has(uuid)) remove(uuid)
         val expected = ticket.getJSONObject("manifest"); require(expected.getString("item_uuid") == uuid && expected.getInt("format") == 1)
         val files = expected.getJSONArray("files"); require(files.length() in 1..100)
         val stage = File(folder, "stage-$uuid").apply { mkdirs() }
@@ -116,23 +125,24 @@ internal class ContentPackageInstaller(private val root: File) {
                     if (kind == "backdrops" && ext == "webp") {
                         val bitmap = BitmapFactory.decodeFile(out.absolutePath) ?: error("تصویر پس‌زمینهٔ وب‌پی قابل خواندن نیست.")
                         val pngLocal = "store-$uuid-$fileId.png"; val pngOut = File(stage, pngLocal)
-                        FileOutputStream(pngOut).use { fos ->
-                            bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)
-                            fos.fd.sync()
-                        }
-                        bitmap.recycle()
+                        try {
+                            FileOutputStream(pngOut).use { fos ->
+                                check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)) { "تبدیل پس‌زمینه به PNG کامل نشد." }
+                                fos.fd.sync()
+                            }
+                        } finally { bitmap.recycle() }
                         out.delete()
                         finalLocal = pngLocal; finalBytes = pngOut.length(); finalHash = hash(pngOut)
                     } else {
                         finalLocal = local; finalBytes = bytes; finalHash = f.getString("sha256")
                     }
-                    records.put(JSONObject().put("kind", kind).put("local", finalLocal).put("bytes", finalBytes).put("sha256", finalHash)
+                    records.put(JSONObject().put("uuid", fileId).put("kind", kind).put("local", finalLocal).put("bytes", finalBytes).put("sha256", finalHash)
                         .put("names", JSONObject((f.optJSONObject("names") ?: JSONObject()).toString()).apply { if (optString("en").isBlank() || isNull("en")) put("en", name.substringBeforeLast('.', name)) }).put("names_before", names(kind).optJSONObject(finalLocal) ?: JSONObject.NULL))
                 }
             }
             check(sameAccount()) { "حساب تغییر کرده؛ دریافت را از حساب فعلی دوباره شروع کن." }
             val item = JSONObject().put("uuid", uuid).put("title", title).put("files", records).put("ack_uuid", ticket.getString("download_uuid"))
-                .put("ack_hash", ticket.getString("sha256")).put("ack_owner", owner)
+                .put("ack_hash", ticket.getString("sha256")).put("ack_owner", owner).put("install_uuid", ticket.getString("download_uuid"))
             // Recovering a killed process rolls back the complete, named set before reopening a library.
             for (i in 0 until records.length()) {
                 val f = records.getJSONObject(i); require(!target(f.getString("kind"), f.getString("local")).exists()) { "فایل هم‌نامی وجود دارد؛ آن را بازنویسی نکردیم." }
@@ -154,6 +164,14 @@ internal class ContentPackageInstaller(private val root: File) {
                     importProject!!(target("projects", local), contentDisplayName(f.optJSONObject("names"), f.getString("name")), "$uuid:${f.getString("uuid")}")
                 }
             }
+            val merged = JSONArray()
+            previous?.optJSONArray("files")?.let { old -> for (i in 0 until old.length()) merged.put(old.getJSONObject(i)) }
+            for (i in 0 until records.length()) merged.put(records.getJSONObject(i))
+            val expectedIds = expected.optJSONArray("all_file_uuids")
+            val complete = !partial || (expectedIds != null && (0 until expectedIds.length()).all { index ->
+                (0 until merged.length()).any { merged.getJSONObject(it).optString("uuid") == expectedIds.getString(index) }
+            })
+            item.put("files", merged).put("complete", complete)
             val all = read(catalog); all.put(uuid, item); write(catalog, all); journal.delete()
         } catch (e: Exception) { recover(); throw e }
         finally { stage.listFiles()?.forEach { it.delete() }; stage.delete() }

@@ -48,7 +48,7 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
             connectTimeout = 15_000; readTimeout = 30_000; instanceFollowRedirects = false
             useCaches = false
             setRequestProperty("Accept", "application/json")
-            if (URL(target).path.contains("/content-store")) setRequestProperty("X-Scratch-Content-Capabilities", "projects")
+            if (URL(target).path.contains("/content-store")) setRequestProperty("X-Scratch-Content-Capabilities", "projects,webp-backdrops")
             identity?.let { setRequestProperty("X-Scratch-Account", accountSecret ?: it.secret()) }
             if (token != null) {
                 require(token.matches(Regex("[a-f0-9]{64}")))

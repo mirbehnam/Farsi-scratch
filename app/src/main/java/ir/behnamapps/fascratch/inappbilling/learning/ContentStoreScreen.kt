@@ -52,6 +52,7 @@ import java.io.File
     var buy by remember { mutableStateOf<ContentPackage?>(null) }
     var remove by remember { mutableStateOf<Pair<String, String>?>(null) }
     var preview by remember { mutableStateOf<ContentPart?>(null) }
+    var playingSound by remember(selected?.uuid) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     suspend fun load(append: Boolean = false) {
@@ -150,7 +151,7 @@ import java.io.File
                                 } else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     val busy = transfer?.status in setOf("preparing", "downloading")
                                     when {
-                                        detail.owned -> Button(enabled = !busy, onClick = { repo.acquire(detail, "coins", context) }) { Text("دانلود مجدد رایگان") }
+                                        detail.owned -> OwnedDownloadButton(enabled = !busy) { repo.acquire(detail, "coins", context) }
                                         detail.mode == "free" -> Button(enabled = !busy, onClick = { repo.acquire(detail, "free", context) }) { Text("دانلود رایگان") }
                                         else -> {
                                             if (detail.mode in setOf("coins", "choice")) Button(enabled = !busy, onClick = { if (wallet < detail.coins) error = "سکهٔ کافی نداری؛ موجودی کیف و قیمت بسته را بررسی کن." else buy = detail }) { Text("خرید دائمی · ${detail.coins} سکه") }
@@ -165,11 +166,12 @@ import java.io.File
                                         Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                                             if (part.thumbnail != null) PackagePicture(repo, part.thumbnail, Modifier.size(54.dp).padding(4.dp)) else Text(kindIcon(part.kind), Modifier.padding(8.dp), fontSize = 22.sp)
                                             Column(Modifier.weight(1f)) { Text(part.name, fontWeight = FontWeight.Bold, fontSize = 13.sp); Text(kindLabel(part.kind), fontSize = 11.sp) }
-                                            TextButton(onClick = { preview = part }) { Text(if (part.kind == "sounds") "پیش‌شنوایی" else "پیش‌نمایش") }
+                                            if (detail.owned) TextButton(enabled = transfer?.status !in setOf("preparing", "downloading") && !repo.installedPart(detail.uuid, part.uuid), onClick = { repo.acquirePart(detail, part) }) { Text(if (repo.installedPart(detail.uuid, part.uuid)) "✓ دریافت شده" else "دانلود فایل") }
+                                            if (part.kind == "sounds") InlineSoundPreview(part, playingSound == part.uuid) { playingSound = if (it) part.uuid else null } else TextButton(onClick = { preview = part }) { Text("پیش‌نمایش") }
                                         }
                                     }
                                 }
-                                Text("دریافت همیشه شامل همهٔ فایل‌هاست؛ فیلتر فقط نمایش فروشگاه را تغییر می‌دهد.", fontSize = 11.sp, color = Color(0xFF74758F))
+                                Text("با خرید دائمی، کل بسته یا هر فایل را جداگانه دانلود کن.", fontSize = 11.sp, color = Color(0xFF74758F))
                             }
                         } else if (tab == "installed") {
                             val local = repo.installedPackages(kind)
@@ -217,7 +219,7 @@ import java.io.File
                 }
             }
         }
-        buy?.let { item -> AlertDialog(onDismissRequest = { buy = null }, title = { Text("خرید دائمی این بسته؟") }, text = { Text("${item.title}\n${item.coins} سکه از کیف تو کم می‌شود و دانلود خودکار شروع می‌شود.\n" + if (LearningIdentity.get(context).profile()?.registered != true) "برای بازیابی پس از نصب دوباره، حسابت را با گوگل یا نام کاربری ثبت کن." else "با ورود دوباره به همین حساب، خریدت قابل بازیابی است.") }, confirmButton = { Button(onClick = { buy = null; repo.acquire(item, "coins", context) }) { Text("تأیید خرید و دانلود") } }, dismissButton = { TextButton(onClick = { buy = null }) { Text("انصراف") } }) }
+        buy?.let { item -> AlertDialog(onDismissRequest = { buy = null }, title = { Text("خرید دائمی این بسته؟") }, text = { Text("${item.title}\n${item.coins} سکه از کیف تو کم می‌شود و دانلود خودکار شروع می‌شود.\n" + if (LearningIdentity.get(context).profile()?.registered != true) "برای بازیابی پس از نصب دوباره، حسابت را با گوگل یا نام کاربری ثبت کن." else "با ورود دوباره به همین حساب، خریدت قابل بازیابی است.") }, confirmButton = { Button(onClick = { buy = null; repo.acquire(item, "coins", context, purchaseOnly = true) }) { Text("تأیید خرید") } }, dismissButton = { TextButton(onClick = { buy = null }) { Text("انصراف") } }) }
         remove?.let { (uuid, title) ->
             val projectNotice = if(repo.installedPackages("projects").any { it.first == uuid }) "\nنسخهٔ قابل‌ویرایش در «پروژه‌های من» حذف نمی‌شود." else ""
             AlertDialog(onDismissRequest = { remove = null }, title = { Text("حذف از حافظهٔ دستگاه؟") },
@@ -225,7 +227,7 @@ import java.io.File
                 confirmButton = { TextButton(onClick = { scope.launch { repo.remove(uuid); remove = null; revision++ } }) { Text("حذف فایل‌های همین بسته") } },
                 dismissButton = { TextButton(onClick = { remove = null }) { Text("انصراف") } })
         }
-        preview?.let { part -> ContentPreview(part) { preview = null } }
+        preview?.let { part -> StoreImagePreview(part, repo) { preview = null } }
     }
 }
 
@@ -241,31 +243,3 @@ internal fun kindLabel(kind: String) = when (kind) { "sprites" -> "اسپرای�
 private fun kindIcon(kind: String) = when (kind) { "sprites" -> "🐱"; "backdrops" -> "🌄"; "projects" -> "🧩"; else -> "♫" }
 private fun sizeText(bytes: Long) = "%.1f MB".format(java.util.Locale.US, bytes / 1048576.0)
 
-/** Preview-only WebView: no JS, bridges, files, editor, or network access. */
-@Composable private fun ContentPreview(part: ContentPart, close: () -> Unit) {
-    val context = LocalContext.current; var image by remember { mutableStateOf<String?>(null) }; var sound by remember { mutableStateOf<File?>(null) }; var error by remember { mutableStateOf<String?>(null) }
-    val player = remember { MediaPlayer() }; var prepared by remember { mutableStateOf(false) }
-    LaunchedEffect(part.uuid) {
-        try {
-            withContext(Dispatchers.IO) {
-                val api = CourseApi(context); val c = api.contentDownload(part.preview, LearningIdentity.get(context).secret())
-                try {
-                    check(c.responseCode == 200) { "پیش‌نمایش فعلاً در دسترس نیست." }
-                    val bytes = c.inputStream.use { it.readBytesBounded(16 * 1048576) }; val mime = c.contentType.orEmpty().substringBefore(';')
-                    if (part.kind == "sounds") { val file = File(context.cacheDir, "store-preview-${part.uuid}.mp3"); file.writeBytes(bytes); sound = file }
-                    else { require(mime in setOf("image/png", "image/jpeg", "image/svg+xml", "image/webp", "image/gif")); image = "data:$mime;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP) }
-                } finally { api.finishConnection(c) }
-            }
-        } catch (e: CancellationException) { throw e } catch (_: Exception) { error = "پیش‌نمایش آماده نشد؛ اینترنت را بررسی کن یا کمی بعد دوباره تلاش کن." }
-    }
-    DisposableEffect(Unit) { onDispose { player.release(); sound?.delete() } }
-    AlertDialog(onDismissRequest = close, title = { Text(part.name) }, text = {
-        Column(Modifier.fillMaxWidth().heightIn(min = 100.dp, max = 240.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            error?.let { Text(it) }
-            if (part.kind == "sounds") {
-                if (sound == null && error == null) CircularProgressIndicator()
-                else Button(enabled = sound != null, onClick = { runCatching { if (!prepared) { player.setDataSource(sound!!.absolutePath); player.prepare(); prepared = true }; if (player.isPlaying) player.pause() else player.start() }.onFailure { error = "پخش پیش‌شنوایی ممکن نشد." } }) { Text("پخش / مکث پیش‌شنوایی") }
-            } else image?.let { data -> AndroidView(modifier = Modifier.fillMaxWidth().height(200.dp), factory = { ctx -> WebView(ctx).apply { settings.javaScriptEnabled = false; settings.allowFileAccess = false; settings.allowContentAccess = false; settings.blockNetworkLoads = true; webViewClient = WebViewClient(); setBackgroundColor(android.graphics.Color.TRANSPARENT); loadDataWithBaseURL(null, "<html><meta name='viewport' content='width=device-width'><body style='margin:0;display:flex;justify-content:center'><img style='max-width:100%;max-height:190px' src='$data'></body></html>", "text/html", "UTF-8", null) } }, onRelease = { view -> (view.parent as? ViewGroup)?.removeView(view); view.stopLoading(); view.removeAllViews(); view.destroy() }) } ?: if (error == null) CircularProgressIndicator() else Unit
-        }
-    }, confirmButton = { TextButton(onClick = close) { Text("بستن") } })
-}

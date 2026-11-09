@@ -77,4 +77,53 @@ class ContentStorePackageDeviceTest {
             installer.recover(); assertFalse(file.exists()); assertFalse(journal.exists())
         } finally { file.delete(); journal.delete() }
     }
+    @Test fun singleFilesMergeWithoutDuplicatesAndBecomeACompletePackage() {
+        val installer = ContentPackageInstaller.get(context.filesDir); val (full, ticket) = fixture(); val id = ticket.getString("item_uuid")
+        val manifest = ticket.getJSONObject("manifest"); val files = manifest.getJSONArray("files")
+        val allIds = JSONArray(); for (i in 0 until files.length()) allIds.put(files.getJSONObject(i).getString("uuid"))
+        try {
+            for (i in 0 until files.length()) {
+                val file = files.getJSONObject(i)
+                val selected = JSONObject(manifest.toString()).put("files", JSONArray().put(file)).put("all_file_uuids", allIds)
+                val bytes = java.util.zip.ZipFile(full).use { z -> z.getInputStream(z.getEntry(file.getString("path"))).readBytes() }
+                val subset = File(context.cacheDir, "single-${UUID.randomUUID()}.zip").apply { writeBytes(zip(mapOf(file.getString("path") to bytes, "manifest.json" to selected.toString().toByteArray()))) }
+                try {
+                    val singleTicket = JSONObject(ticket.toString()).put("partial", true).put("manifest", selected).put("download_uuid", UUID.randomUUID().toString()).put("bytes", subset.length()).put("sha256", ContentPackageInstaller.hash(subset))
+                    installer.install(subset, singleTicket, "Single files", "test-owner") { true }
+                    assertTrue(installer.installedPart(id, file.getString("uuid")))
+                    assertEquals(i + 1, installer.entries().getJSONObject(id).getJSONArray("files").length())
+                    assertEquals(i == files.length() - 1, installer.completePackage(id))
+                } finally { subset.delete() }
+            }
+            assertTrue(installer.completePackage(id))
+        } finally { installer.remove(id); full.delete() }
+    }
+    @Test fun interruptedSingleInstallRollsBackNewFileAndPreservesPreviousParts() {
+        val installer = ContentPackageInstaller.get(context.filesDir); val (archive, ticket) = fixture(); val id = ticket.getString("item_uuid")
+        try {
+            installer.install(archive, ticket, "Original", "test-owner") { true }
+            val fileUuid = UUID.randomUUID().toString(); val local = "store-$id-$fileUuid.wav"
+            val file = File(context.filesDir, "downloaded_sounds/$local").apply { writeText("partial") }
+            val journal = JSONObject().put("uuid", id).put("install_uuid", UUID.randomUUID().toString()).put("files", JSONArray().put(JSONObject().put("kind", "sounds").put("local", local)))
+            File(context.filesDir, "content_store/install-journal.json").writeText(journal.toString())
+            installer.recover(); assertFalse(file.exists()); assertTrue(installer.completePackage(id))
+        } finally { installer.remove(id); archive.delete() }
+    }
+    @Test fun webpBackdropIsConvertedToPngAndItsLocalIntegrityIsRecorded() {
+        val installer = ContentPackageInstaller.get(context.filesDir); val id = UUID.randomUUID().toString(); val uuid = UUID.randomUUID().toString()
+        val bitmap = android.graphics.Bitmap.createBitmap(24, 12, android.graphics.Bitmap.Config.ARGB_8888).apply { eraseColor(android.graphics.Color.GREEN) }
+        val bytes = ByteArrayOutputStream().use { out -> bitmap.compress(android.graphics.Bitmap.CompressFormat.WEBP, 90, out); out.toByteArray() }; bitmap.recycle()
+        val path = "files/$uuid.webp"; val file = JSONObject().put("uuid", uuid).put("kind", "backdrops").put("name", "scene.webp").put("path", path).put("bytes", bytes.size).put("sha256", sha(bytes))
+        val manifest = JSONObject().put("format", 1).put("item_uuid", id).put("files", JSONArray().put(file))
+        val archive = File(context.cacheDir, "webp-$id.zip").apply { writeBytes(zip(mapOf(path to bytes, "manifest.json" to manifest.toString().toByteArray()))) }
+        val ticket = JSONObject().put("item_uuid", id).put("download_uuid", UUID.randomUUID().toString()).put("bytes", archive.length()).put("sha256", ContentPackageInstaller.hash(archive)).put("manifest", manifest)
+        try {
+            installer.install(archive, ticket, "WebP", "test-owner") { true }
+            val record = installer.entries().getJSONObject(id).getJSONArray("files").getJSONObject(0)
+            assertTrue(record.getString("local").endsWith(".png"))
+            val png = File(context.filesDir, "downloaded_backdrops/${record.getString("local")}")
+            assertEquals(ContentPackageInstaller.hash(png), record.getString("sha256")); assertEquals(png.length(), record.getLong("bytes"))
+            val decoded = android.graphics.BitmapFactory.decodeFile(png.absolutePath); assertNotNull(decoded); decoded.recycle()
+        } finally { installer.remove(id); archive.delete() }
+    }
 }

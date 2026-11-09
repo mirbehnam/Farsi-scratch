@@ -76,7 +76,27 @@ internal class ContentStoreRepository private constructor(context: Context) {
         } }
         ContentCatalog(packages, json.optBoolean("has_more"), json.optInt("page", page), json.optInt("count"), json.optLong("spent_coins"))
     }
-    fun installed(uuid: String) = uuid in localPackages
+    fun installed(uuid: String) = installer.completePackage(uuid)
+    fun installedPart(uuid: String, fileUuid: String) = installer.installedPart(uuid, fileUuid)
+    fun acquirePart(item: ContentPackage, file: ContentPart) {
+        if (installedPart(item.uuid, file.uuid) || mutable.value[item.uuid]?.status in setOf("preparing", "downloading")) return
+        mutable.update { it + (item.uuid to ContentTransfer("preparing", message = "در حال آماده‌سازی فایل…")) }
+        scope.launch {
+            val secret = identity.secret(); val owner = identity.profile()?.uuid
+            if (owner == null) { fail(item.uuid, IllegalStateException("ابتدا وارد حسابت شو.")); return@launch }
+            val key = "$owner:${item.uuid}:file:${file.uuid}"
+            try {
+                val op = operation(key)
+                val result = api.contentStore("${item.uuid}/files/${file.uuid}/acquire", secret, JSONObject().put("operation_uuid", op)); checkSession(secret)
+                saveAcknowledgements()
+                download(item, result.getJSONObject("download"), owner, secret)
+                pending.edit().remove(key).apply()
+            } catch (e: CancellationException) { throw e } catch (e: Exception) {
+                if (e is ir.behnamapps.fascratch.inappbilling.domain.CourseFailure && e.status in setOf(409, 410)) pending.edit().remove(key).apply()
+                fail(item.uuid, e)
+            }
+        }
+    }
     fun installedPackages(kind: String = ""): List<Pair<String, String>> {
         if (kind.isBlank()) return localPackages.toList()
         val entries = installer.entries()
@@ -106,7 +126,7 @@ internal class ContentStoreRepository private constructor(context: Context) {
         } catch (_: Exception) { null } finally { api.finishConnection(c) }
     }
     private fun operation(key: String): String = pending.getString(key, null) ?: UUID.randomUUID().toString().also { check(pending.edit().putString(key, it).commit()) }
-    fun acquire(item: ContentPackage, method: String, context: Context) {
+    fun acquire(item: ContentPackage, method: String, context: Context, purchaseOnly: Boolean = false) {
         if (mutable.value[item.uuid]?.status in setOf("downloading", "preparing")) return
         mutable.update { it + (item.uuid to ContentTransfer("preparing", message = "در حال آماده‌سازی…")) }
         scope.launch {
@@ -114,7 +134,7 @@ internal class ContentStoreRepository private constructor(context: Context) {
             try {
                 if (identity.profile() == null) api.account()
                 val secret = identity.secret(); val owner = identity.profile()?.uuid ?: error("ابتدا حساب را تازه کن.")
-                val key = "$owner:${item.uuid}:$method"; currentKey = key; val op = operation(key)
+                val key = "$owner:${item.uuid}:$method${if (purchaseOnly) ":purchase" else ""}"; currentKey = key; val op = operation(key)
                 val saved = pending.getString("ticket:$key", null)?.let { JSONObject(it) }
                 if (saved != null) {
                     try {
@@ -147,9 +167,14 @@ internal class ContentStoreRepository private constructor(context: Context) {
                             })
                     }
                 } else {
-                    val result = api.contentStore("${item.uuid}/acquire", secret, JSONObject().put("operation_uuid", op).put("method", method).put("price_coins", item.coins)); checkSession(secret)
+                    val result = api.contentStore("${item.uuid}/acquire", secret, JSONObject().put("operation_uuid", op).put("method", method).put("price_coins", item.coins).put("purchase_only", purchaseOnly)); checkSession(secret)
                     result.optJSONObject("wallet")?.let { wallet.value = it.optDouble("coins", wallet.value) }
                     if (method == "coins") ownedByAccount.update { it + (owner to ((it[owner] ?: emptySet()) + item.uuid)) }
+                    if (purchaseOnly) {
+                        pending.edit().remove(key).apply()
+                        mutable.update { it + (item.uuid to ContentTransfer("purchased", message = "خرید انجام شد؛ حالا می‌توانی دانلود کنی.")) }
+                        return@launch
+                    }
                     val ticket = result.getJSONObject("download"); pending.edit().putString("ticket:$key", ticket.toString()).commit()
                     download(item, ticket, owner, secret); pending.edit().remove(key).remove("ticket:$key").apply()
                 }

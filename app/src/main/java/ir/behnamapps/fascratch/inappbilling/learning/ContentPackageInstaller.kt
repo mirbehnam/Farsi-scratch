@@ -49,14 +49,35 @@ internal class ContentPackageInstaller(private val root: File) {
         val kind = f.getString("kind"); val local = f.getString("local")
         if (names(kind).optJSONObject(local)?.toString() == f.optJSONObject("names")?.toString()) setName(kind, local, f.optJSONObject("names_before"))
     }
+    private fun backupFolder(operation: String): File {
+        java.util.UUID.fromString(operation)
+        return File(folder, "backup-$operation")
+    }
+    private fun recordKey(f: JSONObject) = f.getString("kind") + ":" + f.getString("local")
     @Synchronized fun recover() {
         val j = read(journal)
         if (!j.has("uuid")) return
         val saved = read(catalog)
+        val previousFiles = j.optJSONObject("previous")?.optJSONArray("files") ?: JSONArray()
+        val previousKeys = (0 until previousFiles.length()).map { recordKey(previousFiles.getJSONObject(it)) }.toSet()
+        val backup = j.optString("install_uuid").takeIf { it.isNotBlank() }?.let { backupFolder(it) }
         if (!saved.has(j.getString("uuid")) || (j.has("install_uuid") && saved.optJSONObject(j.getString("uuid"))?.optString("install_uuid") != j.optString("install_uuid"))) {
             val files = j.optJSONArray("files") ?: JSONArray()
-            for (i in 0 until files.length()) files.getJSONObject(i).let { f -> runCatching { target(f.getString("kind"), f.getString("local")).delete(); restoreName(f) } }
+            for (i in 0 until files.length()) files.getJSONObject(i).let { f ->
+                val destination = target(f.getString("kind"), f.getString("local"))
+                val old = backup?.let { File(it, f.getString("kind") + "-" + f.getString("local")) }
+                if (recordKey(f) !in previousKeys || old?.exists() == true) check(!destination.exists() || destination.delete())
+                restoreName(f)
+                if (old?.exists() == true) check(old.renameTo(destination)) { "بازیابی نسخهٔ قبلی فایل انجام نشد." }
+            }
+        } else if (j.has("previous")) {
+            val current = saved.getJSONObject(j.getString("uuid")).getJSONArray("files")
+            val keep = (0 until current.length()).map { recordKey(current.getJSONObject(it)) }.toSet()
+            for (i in 0 until previousFiles.length()) previousFiles.getJSONObject(i).let { f ->
+                if (recordKey(f) !in keep) { val path = target(f.getString("kind"), f.getString("local")); check(!path.exists() || path.delete()); restoreName(f) }
+            }
         }
+        backup?.listFiles()?.forEach { check(it.delete()) }; backup?.delete()
         journal.delete()
     }
     @Synchronized fun installed(uuid: String): Boolean {
@@ -92,8 +113,7 @@ internal class ContentPackageInstaller(private val root: File) {
         val uuid = ticket.getString("item_uuid"); java.util.UUID.fromString(uuid)
         val partial = ticket.optBoolean("partial", false)
         if (!partial && completePackage(uuid)) return
-        val previous = if (partial) read(catalog).optJSONObject(uuid) else null
-        if (!partial && read(catalog).has(uuid)) remove(uuid)
+        val previous = read(catalog).optJSONObject(uuid)
         val expected = ticket.getJSONObject("manifest"); require(expected.getString("item_uuid") == uuid && expected.getInt("format") == 1)
         val files = expected.getJSONArray("files"); require(files.length() in 1..100)
         val stage = File(folder, "stage-$uuid").apply { mkdirs() }
@@ -143,11 +163,19 @@ internal class ContentPackageInstaller(private val root: File) {
             check(sameAccount()) { "حساب تغییر کرده؛ دریافت را از حساب فعلی دوباره شروع کن." }
             val item = JSONObject().put("uuid", uuid).put("title", title).put("files", records).put("ack_uuid", ticket.getString("download_uuid"))
                 .put("ack_hash", ticket.getString("sha256")).put("ack_owner", owner).put("install_uuid", ticket.getString("download_uuid"))
+            if (previous != null) item.put("previous", previous)
+            val previousFiles = previous?.optJSONArray("files") ?: JSONArray()
+            val previousKeys = (0 until previousFiles.length()).map { recordKey(previousFiles.getJSONObject(it)) }.toSet()
             // Recovering a killed process rolls back the complete, named set before reopening a library.
             for (i in 0 until records.length()) {
-                val f = records.getJSONObject(i); require(!target(f.getString("kind"), f.getString("local")).exists()) { "فایل هم‌نامی وجود دارد؛ آن را بازنویسی نکردیم." }
+                val f = records.getJSONObject(i); require(!target(f.getString("kind"), f.getString("local")).exists() || recordKey(f) in previousKeys) { "فایل هم‌نامی وجود دارد؛ آن را بازنویسی نکردیم." }
             }
             write(journal, item)
+            val backup = backupFolder(ticket.getString("download_uuid"))
+            for (i in 0 until records.length()) {
+                val f = records.getJSONObject(i); val dest = target(f.getString("kind"), f.getString("local"))
+                if (dest.exists()) { check(backup.exists() || backup.mkdirs()); check(dest.renameTo(File(backup, f.getString("kind") + "-" + f.getString("local")))) }
+            }
             for (i in 0 until records.length()) {
                 val f = records.getJSONObject(i); val dest = target(f.getString("kind"), f.getString("local"))
                 require(!dest.exists()) { "فایل هم‌نامی وجود دارد؛ آن را بازنویسی نکردیم." }
@@ -165,14 +193,27 @@ internal class ContentPackageInstaller(private val root: File) {
                 }
             }
             val merged = JSONArray()
-            previous?.optJSONArray("files")?.let { old -> for (i in 0 until old.length()) merged.put(old.getJSONObject(i)) }
+            val incoming = (0 until records.length()).map { recordKey(records.getJSONObject(it)) }.toSet()
+            if (partial) previous?.optJSONArray("files")?.let { old -> for (i in 0 until old.length()) if (recordKey(old.getJSONObject(i)) !in incoming) merged.put(old.getJSONObject(i)) }
             for (i in 0 until records.length()) merged.put(records.getJSONObject(i))
             val expectedIds = expected.optJSONArray("all_file_uuids")
             val complete = !partial || (expectedIds != null && (0 until expectedIds.length()).all { index ->
                 (0 until merged.length()).any { merged.getJSONObject(it).optString("uuid") == expectedIds.getString(index) }
             })
+            // Successful replacement keeps the original independent name baseline. The on-disk
+            // journal still contains the immediate pre-install names for rollback.
+            for (i in 0 until records.length()) {
+                val fresh = records.getJSONObject(i)
+                for (k in 0 until previousFiles.length()) {
+                    val old = previousFiles.getJSONObject(k)
+                    if (recordKey(fresh) == recordKey(old) && fresh.optJSONObject("names_before")?.toString() == old.optJSONObject("names")?.toString()) {
+                        fresh.put("names_before", old.optJSONObject("names_before") ?: JSONObject.NULL)
+                    }
+                }
+            }
             item.put("files", merged).put("complete", complete)
-            val all = read(catalog); all.put(uuid, item); write(catalog, all); journal.delete()
+            item.remove("previous")
+            val all = read(catalog); all.put(uuid, item); write(catalog, all); recover()
         } catch (e: Exception) { recover(); throw e }
         finally { stage.listFiles()?.forEach { it.delete() }; stage.delete() }
     }

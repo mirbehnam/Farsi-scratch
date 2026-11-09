@@ -90,6 +90,7 @@ class ContentStorePackageDeviceTest {
                 try {
                     val singleTicket = JSONObject(ticket.toString()).put("partial", true).put("manifest", selected).put("download_uuid", UUID.randomUUID().toString()).put("bytes", subset.length()).put("sha256", ContentPackageInstaller.hash(subset))
                     installer.install(subset, singleTicket, "Single files", "test-owner") { true }
+                    installer.install(subset, singleTicket, "Single file retry", "test-owner") { true }
                     assertTrue(installer.installedPart(id, file.getString("uuid")))
                     assertEquals(i + 1, installer.entries().getJSONObject(id).getJSONArray("files").length())
                     assertEquals(i == files.length() - 1, installer.completePackage(id))
@@ -107,6 +108,21 @@ class ContentStorePackageDeviceTest {
             val journal = JSONObject().put("uuid", id).put("install_uuid", UUID.randomUUID().toString()).put("files", JSONArray().put(JSONObject().put("kind", "sounds").put("local", local)))
             File(context.filesDir, "content_store/install-journal.json").writeText(journal.toString())
             installer.recover(); assertFalse(file.exists()); assertTrue(installer.completePackage(id))
+        } finally { installer.remove(id); archive.delete() }
+    }
+    @Test fun recoveryRestoresAnOverwrittenManagedFileBeforeTheNewCatalogCommit() {
+        val installer = ContentPackageInstaller.get(context.filesDir); val (archive, ticket) = fixture(); val id = ticket.getString("item_uuid")
+        try {
+            installer.install(archive, ticket, "Original", "test-owner") { true }
+            val previous = installer.entries().getJSONObject(id); val record = previous.getJSONArray("files").getJSONObject(0)
+            val destination = File(context.filesDir, "downloaded_${record.getString("kind")}/${record.getString("local")}")
+            val original = destination.readBytes(); val operation = UUID.randomUUID().toString()
+            val backup = File(context.filesDir, "content_store/backup-$operation").apply { mkdirs() }
+            val saved = File(backup, record.getString("kind") + "-" + record.getString("local"))
+            assertTrue(destination.renameTo(saved)); destination.writeText("interrupted replacement")
+            val journal = JSONObject().put("uuid", id).put("install_uuid", operation).put("previous", previous).put("files", JSONArray().put(record))
+            File(context.filesDir, "content_store/install-journal.json").writeText(journal.toString())
+            installer.recover(); assertArrayEquals(original, destination.readBytes()); assertTrue(installer.completePackage(id)); assertFalse(backup.exists())
         } finally { installer.remove(id); archive.delete() }
     }
     @Test fun webpBackdropIsConvertedToPngAndItsLocalIntegrityIsRecorded() {

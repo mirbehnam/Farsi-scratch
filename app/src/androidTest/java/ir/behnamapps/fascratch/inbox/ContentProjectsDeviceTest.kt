@@ -34,6 +34,12 @@ class ContentProjectsDeviceTest {
         }finally{executor.shutdownNow();root.deleteRecursively()}
     }
     @Test fun interruptedProjectInstallRetriesWithoutDuplicatesAndPreservesEditsAfterPackageRemoval() {
+        verifyProjectInstall(false)
+    }
+    @Test fun individualProjectDownloadRetriesWithoutDuplicatingTheEditableProject() {
+        verifyProjectInstall(true)
+    }
+    private fun verifyProjectInstall(partial: Boolean) {
         val app=InstrumentationRegistry.getInstrumentation().targetContext
         val root=File(app.cacheDir,"project-package-test-${UUID.randomUUID()}").apply{mkdirs()}
         val context=object:ContextWrapper(app){override fun getFilesDir()=root}
@@ -51,6 +57,7 @@ class ContentProjectsDeviceTest {
         }
         val ticket=JSONObject().put("item_uuid",id).put("download_uuid",UUID.randomUUID().toString()).put("bytes",zip.length())
             .put("sha256",ContentPackageInstaller.hash(zip)).put("manifest",manifest)
+        if(partial){ticket.put("partial",true);manifest.put("all_file_uuids",JSONArray().put(fileId))}
         try{
             try{installer.install(zip,ticket,"test","owner",{source,title,origin->repository.importStoreProject(source,title,origin);error("Interrupted")}){true};fail("Must interrupt")}
             catch(expected:IllegalStateException){assertEquals("Interrupted",expected.message)}

@@ -21,8 +21,11 @@ data class TrainingState(
     val loadingPrices: Set<String> = emptySet(), val priceErrors: Set<String> = emptySet(),
     val catalogLayout: CatalogLayout? = null, val catalogCacheLoaded: Boolean = true,
     val storeHelp: String? = null, val giftAccess: Map<String, Long> = emptyMap(), val pendingPurchases: Set<String> = emptySet(),
-    val pendingReview: Set<String> = emptySet()
+    val pendingReview: Set<String> = emptySet(), val recovery: PurchaseRecoveryState? = null
 )
+
+data class PurchaseRecoveryState(val course: Course, val startedMs: Long,
+    val automatic: Boolean, val running: Boolean = true, val message: String? = null)
 
 /** Catalog and per-course access stay separate. Store outages never block free previews. */
 class TrainingController(
@@ -33,6 +36,36 @@ class TrainingController(
     private val mutable = MutableStateFlow(TrainingState(catalogCacheLoaded = false))
     val state = mutable.asStateFlow()
     private val buy = BuyCourse(api, vault, onTiming = PurchaseTiming::record)
+    private var recoveryRetryJob: Job? = null
+    private var purchaseRequests: RequestConnections? = null
+
+    private fun receiptFound(course: Course, automatic: Boolean) {
+        mutable.update { current ->
+            if (current.recovery?.course?.id == course.id && current.recovery.running) current
+            else current.copy(recovery = PurchaseRecoveryState(course, android.os.SystemClock.elapsedRealtime(), automatic), message = null)
+        }
+    }
+    private fun recoveryFinished(courseId: String, message: String? = null) {
+        if (message != null && state.value.recovery?.automatic == true) pauseStoreSync = true
+        mutable.update { current -> if (current.recovery?.course?.id != courseId) current
+            else current.copy(recovery = if (message == null) null else current.recovery.copy(running = false, message = message)) }
+    }
+    fun dismissRecovery() { if (state.value.recovery?.running == false) mutable.update { it.copy(recovery = null) } }
+    fun retryRecovery() {
+        val recovery = state.value.recovery ?: return
+        if (recoveryRetryJob?.isActive == true) return
+        recoveryRetryJob = scope.launch {
+            pauseStoreSync = true
+            storeRequests?.close()
+            purchaseRequests?.close()
+            // The dialog exists only after the SDK returned a receipt, so its callback is already complete.
+            val previous = if (recovery.automatic) storeJob else activeJob
+            if (previous?.isActive == true) previous.cancelAndJoin()
+            if (state.value.busy) return@launch
+            mutable.update { it.copy(recovery = null) }
+            purchase(true, recovery.course)
+        }
+    }
     private var pendingStorePurchase: Pair<Course, Boolean>? = null
 
     fun dismissStoreHelp() {
@@ -84,6 +117,7 @@ class TrainingController(
                 val (pending, review) = withContext(Dispatchers.IO) { vault.pendingCourseIds() to vault.pendingReviewIds() }
                 val completed = state.value.pendingPurchases - pending
                 mutable.update { it.copy(pendingPurchases = pending, pendingReview = review) }
+                if (state.value.recovery?.course?.id in completed) mutable.update { it.copy(recovery = null) }
                 if (completed.isNotEmpty()) learning?.refreshProfile()
             }
         }
@@ -190,7 +224,8 @@ class TrainingController(
             val requests = RequestConnections()
             storeRequests = requests
             val backgroundApi = api.withRequestOwner(requests)
-            val backgroundBuy = BuyCourse(backgroundApi, vault, onTiming = { stage, ms -> PurchaseTiming.record("automatic_$stage", ms) })
+            val backgroundBuy = BuyCourse(backgroundApi, vault, onTiming = { stage, ms -> PurchaseTiming.record("automatic_$stage", ms) },
+                onReceiptFound = { receiptFound(it, automatic = true) })
             try {
                 // Resolve the existing account before binding newly discovered SDK receipts.
                 try { backgroundApi.account() }
@@ -210,18 +245,23 @@ class TrainingController(
                     try {
                         storeMutex.withLock {
                             val found = withTimeout(60_000) { backgroundBuy.reconcile(course, billing) }
-                            if (found != null) updateAccess(course, true)
+                            if (found != null) { updateAccess(course, true); recoveryFinished(course.id) }
                         }
-                    } catch (_: TimeoutCancellationException) { runCatching { billing.close() } }
+                    } catch (_: TimeoutCancellationException) {
+                        runCatching { billing.close() }
+                        recoveryFinished(course.id, "پاسخ تأیید خرید طول کشید؛ دوباره تلاش کن یا با ما تماس بگیر.")
+                    }
                     catch (error: CancellationException) { throw error }
                     catch (error: CourseFailure) {
+                        recoveryFinished(course.id, if (error.code == "purchase_owner_mismatch")
+                            "خرید قبلی پیدا شد. برای بازیابی حساب صاحب خرید، «تلاش مجدد» را بزن." else error.userMessage)
                         if (error.code == "purchase_owner_mismatch") mutable.update { it.copy(message =
                             "خرید «${course.title}» در استور پیدا شد، اما به حساب دیگری متصل است؛ برای ورود به حساب صاحب خرید، بازیابی خرید را بزن.") }
                         if (CoursePolicy.revokesAccess(error.code)) {
                             vault.revoke(course.id); updateAccess(course, false)
                             if (error.code != "not_owned" && state.value.course?.id == course.id) mutable.update { it.copy(message = error.userMessage) }
                         }
-                    } catch (_: Exception) { /* Retain prior verified offline access on transient failure. */ }
+                    } catch (_: Exception) { recoveryFinished(course.id, "تأیید خرید کامل نشد؛ دوباره تلاش کن یا با ما تماس بگیر.") }
                 }
             } finally {
                 requests.close()
@@ -286,11 +326,18 @@ class TrainingController(
             // Its next HTTP request is also rejected by the closed owner, releasing the SDK lock.
             storeRequests?.close()
             // User interaction in the store must not time out and discard a completed payment.
+            val requests = RequestConnections()
+            purchaseRequests = requests
+            val interactiveBuy = BuyCourse(api.withRequestOwner(requests), vault, onTiming = PurchaseTiming::record,
+                onReceiptFound = { receiptFound(it, automatic = false) })
             val started = System.nanoTime()
-            storeMutex.withLock {
-                PurchaseTiming.since("interactive_queue", started)
-                buy.execute(purchaseCourse, billing, restoreOnly)
-            }
+            try {
+                storeMutex.withLock {
+                    PurchaseTiming.since("interactive_queue", started)
+                    interactiveBuy.execute(purchaseCourse, billing, restoreOnly)
+                }
+                recoveryFinished(course.id)
+            } finally { requests.close(); if (purchaseRequests === requests) purchaseRequests = null }
             updateAccess(course, true)
             open(course)
         }
@@ -352,11 +399,13 @@ class TrainingController(
         activeJob = scope.launch {
             try { block() }
             catch (_: TimeoutCancellationException) {
+                if (storePurchase && courseId != null) recoveryFinished(courseId, "تأیید خرید طول کشید؛ دوباره تلاش کن یا با ما تماس بگیر.")
                 runCatching { billing.close() }
                 mutable.update { it.copy(message = "پاسخ به‌موقع دریافت نشد؛ دوباره تلاش کنید.") }
             }
             catch (error: CancellationException) { throw error }
             catch (error: CourseFailure) {
+                if (storePurchase && courseId != null) recoveryFinished(courseId, error.userMessage)
                 if (CoursePolicy.revokesAccess(error.code) && courseId != null) {
                     vault.revoke(courseId)
                     mutable.update { it.copy(purchasedIds = it.purchasedIds - courseId, purchased = if (it.course?.id == courseId) false else it.purchased) }
@@ -364,7 +413,10 @@ class TrainingController(
                 mutable.update { it.copy(message = if (storePurchase && StoreAccountPolicy.hasHelp(error.code)) null else error.userMessage,
                     storeHelp = error.code.takeIf { storePurchase && StoreAccountPolicy.hasHelp(it) }) }
             }
-            catch (_: Exception) { mutable.update { it.copy(message = "عملیات کامل نشد؛ اینترنت، فضای ذخیره‌سازی و تنظیمات دوره را بررسی کنید.") } }
+            catch (_: Exception) {
+                if (storePurchase && courseId != null) recoveryFinished(courseId, "تأیید خرید انجام نشد؛ دوباره تلاش کن یا با ما تماس بگیر.")
+                mutable.update { it.copy(message = "عملیات کامل نشد؛ اینترنت، فضای ذخیره‌سازی و تنظیمات دوره را بررسی کنید.") }
+            }
             finally {
                 if (state.value.storeHelp == null) pendingStorePurchase = null
                 mutable.update { it.copy(busy = false, downloadingId = null, progress = 0f) }

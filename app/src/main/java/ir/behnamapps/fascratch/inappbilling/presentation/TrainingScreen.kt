@@ -49,6 +49,10 @@ private enum class LessonFilter { ALL, PREVIEW, DOWNLOADED }
 @Composable
 internal fun TrainingScreen(state: TrainingState, controller: TrainingController, onBack: () -> Unit, onPlay: (Lesson) -> Unit) {
     val context = LocalContext.current
+    state.recovery?.let { recovery ->
+        PurchaseRecoveryDialog(recovery, canRetry = !state.busy || !recovery.automatic,
+            onRetry = controller::retryRecovery, onClose = controller::dismissRecovery)
+    }
     if (BuildConfig.BILLING_PROVIDER == "cafebazaar" && state.storeHelp != null) {
         StoreAccountHelpDialog(state.storeHelp, state.busy, controller::dismissStoreHelp) {
             if (purchaseNetworkAvailable(context)) controller.retryStorePurchase()

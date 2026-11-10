@@ -35,4 +35,17 @@ class RequestConnectionsTest {
         scope.register(connection); scope.finished(connection); scope.close()
         assertEquals(1L, connection.disconnected.count)
     }
+    @Test fun yieldingBackgroundRequestsDoesNotDisconnectInteractiveRestore() {
+        val background = RequestConnections()
+        val interactive = RequestConnections()
+        val automaticRequest = Connection()
+        val restoreRequest = Connection()
+        background.register(automaticRequest)
+        interactive.register(restoreRequest)
+        background.close()
+        assertTrue(automaticRequest.disconnected.await(3, TimeUnit.SECONDS))
+        assertEquals(1L, restoreRequest.disconnected.count)
+        interactive.finished(restoreRequest)
+        interactive.close()
+    }
 }

@@ -16,6 +16,8 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
     private val app = context?.applicationContext
     internal var requestOwner: RequestConnections? = null
 
+    internal fun withRequestOwner(owner: RequestConnections) = CourseApi(app).apply { requestOwner = owner }
+
     fun finishConnection(connection: HttpsURLConnection) {
         requestOwner?.finished(connection)
         connection.disconnect()

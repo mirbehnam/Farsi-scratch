@@ -65,6 +65,7 @@ class TrainingController(
         } })
     private var activeJob: Job? = null
     private var storeJob: Job? = null
+    private var storeRequests: RequestConnections? = null
     private var pauseStoreSync = false
     private var layoutJob: Job? = null
     private val layoutCacheMutex = Mutex()
@@ -186,36 +187,45 @@ class TrainingController(
         if (storeJob?.isActive == true) return
         pauseStoreSync = false
         storeJob = scope.launch {
-            // Resolve the existing account before binding newly discovered SDK receipts.
-            try { api.account() }
-            catch (error: CancellationException) { throw error }
-            catch (error: CourseFailure) {
-                val cachedAccount = learning?.profiles?.value?.get(ir.behnamapps.fascratch.inappbilling.learning.LearningIdentity.KEY)
-                if (!PurchaseRetryPolicy.retryable(error) || cachedAccount == null || learning?.requiresRecovery() == true) return@launch
-                // A cached identity can bind the receipt while security/network recovers; the server still rechecks authentication.
-            }
-            catch (_: Exception) { return@launch }
-            for (course in courses) {
-                if (learning?.requiresRecovery() == true) break
-                if (pauseStoreSync) break
-                if (learning?.profiles?.value?.get(ir.behnamapps.fascratch.inappbilling.learning.LearningIdentity.KEY)?.courses?.any { it.uuid == course.id && it.accessSource == "gift" && it.canAccess() } == true) continue
-                // Already-confirmed account purchases need no SDK check; missing purchases do, including registered accounts.
-                if (learning?.profiles?.value?.get(ir.behnamapps.fascratch.inappbilling.learning.LearningIdentity.KEY)?.courses?.any { it.uuid == course.id && it.canAccess() } == true) continue
-                try {
-                    storeMutex.withLock {
-                        val found = withTimeout(60_000) { buy.reconcile(course, billing) }
-                        if (found != null) updateAccess(course, true)
-                    }
-                } catch (_: TimeoutCancellationException) { runCatching { billing.close() } }
+            val requests = RequestConnections()
+            storeRequests = requests
+            val backgroundApi = api.withRequestOwner(requests)
+            val backgroundBuy = BuyCourse(backgroundApi, vault)
+            try {
+                // Resolve the existing account before binding newly discovered SDK receipts.
+                try { backgroundApi.account() }
                 catch (error: CancellationException) { throw error }
                 catch (error: CourseFailure) {
-                    if (error.code == "purchase_owner_mismatch") mutable.update { it.copy(message =
-                        "خرید «${course.title}» در استور پیدا شد، اما به حساب دیگری متصل است؛ برای ورود به حساب صاحب خرید، بازیابی خرید را بزن.") }
-                    if (CoursePolicy.revokesAccess(error.code)) {
-                        vault.revoke(course.id); updateAccess(course, false)
-                        if (error.code != "not_owned" && state.value.course?.id == course.id) mutable.update { it.copy(message = error.userMessage) }
-                    }
-                } catch (_: Exception) { /* Retain prior verified offline access on transient failure. */ }
+                    val cachedAccount = learning?.profiles?.value?.get(ir.behnamapps.fascratch.inappbilling.learning.LearningIdentity.KEY)
+                    if (!PurchaseRetryPolicy.retryable(error) || cachedAccount == null || learning?.requiresRecovery() == true) return@launch
+                    // A cached identity can bind the receipt while security/network recovers; the server still rechecks authentication.
+                }
+                catch (_: Exception) { return@launch }
+                for (course in courses) {
+                    if (learning?.requiresRecovery() == true) break
+                    if (pauseStoreSync) break
+                    if (learning?.profiles?.value?.get(ir.behnamapps.fascratch.inappbilling.learning.LearningIdentity.KEY)?.courses?.any { it.uuid == course.id && it.accessSource == "gift" && it.canAccess() } == true) continue
+                    // Already-confirmed account purchases need no SDK check; missing purchases do, including registered accounts.
+                    if (learning?.profiles?.value?.get(ir.behnamapps.fascratch.inappbilling.learning.LearningIdentity.KEY)?.courses?.any { it.uuid == course.id && it.canAccess() } == true) continue
+                    try {
+                        storeMutex.withLock {
+                            val found = withTimeout(60_000) { backgroundBuy.reconcile(course, billing) }
+                            if (found != null) updateAccess(course, true)
+                        }
+                    } catch (_: TimeoutCancellationException) { runCatching { billing.close() } }
+                    catch (error: CancellationException) { throw error }
+                    catch (error: CourseFailure) {
+                        if (error.code == "purchase_owner_mismatch") mutable.update { it.copy(message =
+                            "خرید «${course.title}» در استور پیدا شد، اما به حساب دیگری متصل است؛ برای ورود به حساب صاحب خرید، بازیابی خرید را بزن.") }
+                        if (CoursePolicy.revokesAccess(error.code)) {
+                            vault.revoke(course.id); updateAccess(course, false)
+                            if (error.code != "not_owned" && state.value.course?.id == course.id) mutable.update { it.copy(message = error.userMessage) }
+                        }
+                    } catch (_: Exception) { /* Retain prior verified offline access on transient failure. */ }
+                }
+            } finally {
+                requests.close()
+                if (storeRequests === requests) storeRequests = null
             }
         }
     }
@@ -272,6 +282,9 @@ class TrainingController(
             }
             // Let the current SDK inventory callback finish; cancelling it can leave Myket busy.
             pauseStoreSync = true
+            // Release background HTTP immediately; never cancel the store SDK inventory callback.
+            // Its next HTTP request is also rejected by the closed owner, releasing the SDK lock.
+            storeRequests?.close()
             // User interaction in the store must not time out and discard a completed payment.
             storeMutex.withLock { buy.execute(purchaseCourse, billing, restoreOnly) }
             updateAccess(course, true)

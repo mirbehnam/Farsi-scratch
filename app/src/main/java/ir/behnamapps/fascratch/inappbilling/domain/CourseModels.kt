@@ -56,21 +56,26 @@ interface ReceiptStore {
 }
 
 /** A failed inventory query must NEVER be interpreted as "not owned" and trigger a new purchase. */
-class BuyCourse(private val backend: PurchaseBackend, private val receipts: ReceiptStore, private val inventoryTimeoutMs: Long = 30_000) {
+class BuyCourse(private val backend: PurchaseBackend, private val receipts: ReceiptStore, private val inventoryTimeoutMs: Long = 30_000,
+    private val onTiming: (String, Long) -> Unit = { _, _ -> }) {
+    private suspend fun <T> timed(stage: String, block: suspend () -> T): T {
+        val started = System.nanoTime()
+        try { return block() } finally { onTiming(stage, (System.nanoTime() - started) / 1_000_000) }
+    }
     /** Inventory discovery only. Empty results and SDK outages can never start payment or revoke an account purchase. */
     suspend fun reconcile(course: Course, billing: BillingGateway): CourseAccess? {
         if (receipts.hasPendingReceipt(course.id) && !receipts.requiresStoreRediscovery(course.id)) {
             val receipt = receipts.receipt(course.id)?.takeIf { it.sku == course.sku && it.token.isNotBlank() }
                 ?: throw CourseFailure("رسید با دوره مطابقت ندارد.")
-            return backend.retryPending(course, billing.provider, receipt, false).also {
+            return timed("pending_confirmation") { backend.retryPending(course, billing.provider, receipt, false) }.also {
                 if (it.courseId != course.id) throw CourseFailure("دسترسی برگشتی با دوره مطابقت ندارد.")
                 receipts.saveAccess(it)
             }
         }
-        val receipt = kotlinx.coroutines.withTimeout(inventoryTimeoutMs) { billing.owned(course.sku) } ?: return null
+        val receipt = timed("store_inventory") { kotlinx.coroutines.withTimeout(inventoryTimeoutMs) { billing.owned(course.sku) } } ?: return null
         if (receipt.sku != course.sku || receipt.token.isBlank()) throw CourseFailure("رسید با دوره مطابقت ندارد.")
         receipts.saveDiscoveredReceipt(course, billing.provider, receipt)
-        return backend.reconcile(course, billing.provider, receipt).also {
+        return timed("receipt_confirmation") { backend.reconcile(course, billing.provider, receipt) }.also {
             if (it.courseId != course.id) throw CourseFailure("دسترسی برگشتی با دوره مطابقت ندارد.")
             receipts.saveAccess(it)
         }
@@ -81,12 +86,12 @@ class BuyCourse(private val backend: PurchaseBackend, private val receipts: Rece
         if (receipts.hasPendingReceipt(course.id) && (!restoreOnly || !receipts.requiresStoreRediscovery(course.id))) {
             val pending = receipts.receipt(course.id)?.takeIf { it.sku == course.sku && it.token.isNotBlank() }
                 ?: throw CourseFailure("رسید در انتظار با دوره مطابقت ندارد؛ با پشتیبانی تماس بگیر.")
-            val access = backend.retryPending(course, billing.provider, pending, restoreOnly)
+            val access = timed("pending_confirmation") { backend.retryPending(course, billing.provider, pending, restoreOnly) }
             if (access.courseId != course.id) throw CourseFailure("دسترسی برگشتی با دوره مطابقت ندارد.")
             receipts.saveAccess(access)
             return access
         }
-        val previous = kotlinx.coroutines.withTimeout(inventoryTimeoutMs) { billing.owned(course.sku) }
+        val previous = timed("store_inventory") { kotlinx.coroutines.withTimeout(inventoryTimeoutMs) { billing.owned(course.sku) } }
         // A successfully queried but empty inventory must not discard an already-paid local receipt.
         // Only explicit restoration uses this fallback; every receipt is still verified by the server.
         val saved = if (restoreOnly && previous == null) receipts.receipt(course.id)?.takeIf { it.sku == course.sku && it.token.isNotBlank() } else null
@@ -101,8 +106,10 @@ class BuyCourse(private val backend: PurchaseBackend, private val receipts: Rece
         if (restoreOnly && previous != null) receipts.saveDiscoveredReceipt(course, billing.provider, receipt)
         else receipts.savePendingReceipt(course, billing.provider, receipt)
         // Explicit restore authorizes recovery; merely discovering an old purchase during a buy does not.
-        val access = if (restoreOnly) backend.retryPending(course, billing.provider, receipt, true)
+        val access = timed("receipt_confirmation") {
+            if (restoreOnly) backend.retryPending(course, billing.provider, receipt, true)
             else backend.verify(course, billing.provider, receipt, previous != null)
+        }
         if (access.courseId != course.id) throw CourseFailure("دسترسی برگشتی با دوره مطابقت ندارد.")
         receipts.saveAccess(access)
         return access

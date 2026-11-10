@@ -32,7 +32,7 @@ class TrainingController(
 ) {
     private val mutable = MutableStateFlow(TrainingState(catalogCacheLoaded = false))
     val state = mutable.asStateFlow()
-    private val buy = BuyCourse(api, vault)
+    private val buy = BuyCourse(api, vault, onTiming = PurchaseTiming::record)
     private var pendingStorePurchase: Pair<Course, Boolean>? = null
 
     fun dismissStoreHelp() {
@@ -190,7 +190,7 @@ class TrainingController(
             val requests = RequestConnections()
             storeRequests = requests
             val backgroundApi = api.withRequestOwner(requests)
-            val backgroundBuy = BuyCourse(backgroundApi, vault)
+            val backgroundBuy = BuyCourse(backgroundApi, vault, onTiming = { stage, ms -> PurchaseTiming.record("automatic_$stage", ms) })
             try {
                 // Resolve the existing account before binding newly discovered SDK receipts.
                 try { backgroundApi.account() }
@@ -286,7 +286,11 @@ class TrainingController(
             // Its next HTTP request is also rejected by the closed owner, releasing the SDK lock.
             storeRequests?.close()
             // User interaction in the store must not time out and discard a completed payment.
-            storeMutex.withLock { buy.execute(purchaseCourse, billing, restoreOnly) }
+            val started = System.nanoTime()
+            storeMutex.withLock {
+                PurchaseTiming.since("interactive_queue", started)
+                buy.execute(purchaseCourse, billing, restoreOnly)
+            }
             updateAccess(course, true)
             open(course)
         }

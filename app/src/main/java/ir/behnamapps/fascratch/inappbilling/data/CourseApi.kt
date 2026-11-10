@@ -79,6 +79,8 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
     }
 
     private suspend fun request(path: String, token: String? = null, body: JSONObject? = null, accountSecret: String? = null, timeoutMillis: Int = 30_000): JSONObject = withContext(Dispatchers.IO) {
+        val started = System.nanoTime()
+        var receivedStatus = 0
         val connection = connection(path, token, accountSecret).apply { connectTimeout = minOf(15_000, timeoutMillis); readTimeout = timeoutMillis }
         try {
             if (body != null) {
@@ -87,6 +89,7 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
                 connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
             }
             val status = connection.responseCode
+            receivedStatus = status
             val stream = if (status in 200..299) connection.inputStream else connection.errorStream
             val bytes = stream?.use { it.readBytesBounded(2 * 1024 * 1024) } ?: byteArrayOf()
             val json = runCatching { JSONObject(String(bytes, Charsets.UTF_8)) }.getOrNull()
@@ -130,7 +133,12 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
         } catch (error: kotlinx.coroutines.CancellationException) { throw error }
         catch (error: CourseFailure) { throw error }
         catch (_: Exception) { throw CourseFailure("ارتباط امن با سرور برقرار نشد؛ اینترنت را بررسی کنید.") }
-        finally { finishConnection(connection) }
+        finally {
+            if (path in setOf("accounts/me", "accounts/register", "purchases/verify", "purchases/restore", "purchases/retry"))
+                PurchaseTiming.since("http_" + path.replace('/', '_'), started)
+            if (receivedStatus > 0 && path.startsWith("purchases/")) PurchaseTiming.server(connection.getHeaderField("Server-Timing"))
+            finishConnection(connection)
+        }
     }
 
     suspend fun courses(provider: String): List<Course> {

@@ -93,6 +93,7 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
             val stream = if (status in 200..299) connection.inputStream else connection.errorStream
             val bytes = stream?.use { it.readBytesBounded(2 * 1024 * 1024) } ?: byteArrayOf()
             val json = runCatching { JSONObject(String(bytes, Charsets.UTF_8)) }.getOrNull()
+            if (path.startsWith("purchases/")) PurchaseTiming.response(status, json?.optJSONObject("error")?.optString("code").orEmpty())
             if (status !in 200..299) {
                 val code = json?.optJSONObject("error")?.optString("code").orEmpty()
                 val retryAfter = PurchaseRetryPolicy.retryAfter(connection.getHeaderField("Retry-After"),
@@ -136,7 +137,12 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
         finally {
             if (path in setOf("accounts/me", "accounts/register", "purchases/verify", "purchases/restore", "purchases/retry"))
                 PurchaseTiming.since("http_" + path.replace('/', '_'), started)
-            if (receivedStatus > 0 && path.startsWith("purchases/")) PurchaseTiming.server(connection.getHeaderField("Server-Timing"))
+            if (receivedStatus > 0 && path.startsWith("purchases/")) {
+                // HTTP stacks may expose Server-Timing as several separate header values.
+                val timings = connection.headerFields.entries.filter { it.key.equals("Server-Timing", ignoreCase = true) }
+                    .flatMap { it.value.orEmpty() }.joinToString(", ")
+                PurchaseTiming.server(timings)
+            }
             finishConnection(connection)
         }
     }

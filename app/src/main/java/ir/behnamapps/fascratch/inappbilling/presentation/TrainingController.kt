@@ -40,6 +40,7 @@ class TrainingController(
     private var purchaseRequests: RequestConnections? = null
 
     private fun receiptFound(course: Course, automatic: Boolean) {
+        if (ownsCourse(course.id)) return
         mutable.update { current ->
             if (current.recovery?.course?.id == course.id && current.recovery.running) current
             else current.copy(recovery = PurchaseRecoveryState(course, android.os.SystemClock.elapsedRealtime(), automatic), message = null)
@@ -108,6 +109,7 @@ class TrainingController(
         if (learning?.requiresRecovery() == true) return false
         val profile = learning?.profiles?.value?.get(ir.behnamapps.fascratch.inappbilling.learning.LearningIdentity.KEY)
         if (profile?.courses?.any { it.uuid == id && it.canAccess() } == true) return true
+        if (profile?.courses?.any { it.uuid == id && it.paidAccessRevoked() } == true) return false
         return if (profile?.registered == true) false else vault.wasVerified(id)
     }
 
@@ -240,8 +242,8 @@ class TrainingController(
                     if (learning?.requiresRecovery() == true) break
                     if (pauseStoreSync) break
                     if (learning?.profiles?.value?.get(ir.behnamapps.fascratch.inappbilling.learning.LearningIdentity.KEY)?.courses?.any { it.uuid == course.id && it.accessSource == "gift" && it.canAccess() } == true) continue
-                    // Already-confirmed account purchases need no SDK check; missing purchases do, including registered accounts.
-                    if (learning?.profiles?.value?.get(ir.behnamapps.fascratch.inappbilling.learning.LearningIdentity.KEY)?.courses?.any { it.uuid == course.id && it.canAccess() } == true) continue
+                    // A known purchase is submitted quietly too: older server records only have a receipt hash.
+                    // The server returns cached access and retains the encrypted token for later queued checks.
                     try {
                         storeMutex.withLock {
                             val found = withTimeout(60_000) { backgroundBuy.reconcile(course, billing) }
@@ -259,6 +261,7 @@ class TrainingController(
                             "خرید «${course.title}» در استور پیدا شد، اما به حساب دیگری متصل است؛ برای ورود به حساب صاحب خرید، بازیابی خرید را بزن.") }
                         if (CoursePolicy.revokesAccess(error.code)) {
                             vault.revoke(course.id); updateAccess(course, false)
+                            learning?.refreshProfile()
                             if (error.code != "not_owned" && state.value.course?.id == course.id) mutable.update { it.copy(message = error.userMessage) }
                         }
                     } catch (_: Exception) { recoveryFinished(course.id, "تأیید خرید کامل نشد؛ دوباره تلاش کن یا با ما تماس بگیر.") }

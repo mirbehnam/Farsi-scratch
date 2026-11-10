@@ -23,6 +23,7 @@ data class LearnerCourse(val uuid: String, val title: String, val watchMs: Long,
     val accessSource: String? = null, val accessUntilMs: Long? = null) {
     fun canAccess(now: Long = System.currentTimeMillis()): Boolean = enabled &&
         (if (accessSource == "gift") accessUntilMs != null && now < accessUntilMs else purchased)
+    fun paidAccessRevoked(): Boolean = purchased && !canAccess()
 }
 data class LearnerProfile(val uuid: String, val name: String, val level: Int, val watchMs: Long,
     val xpIntoLevel: Double, val xpForNext: Double, val rank: Int?, val enabled: Boolean,
@@ -252,6 +253,7 @@ class LearningRepository private constructor(context: Context) {
         if (requiresRecovery()) return false
         val profile = identity.profile()
         if (profile?.courses?.any { it.uuid == id && it.canAccess() } == true) return true
+        if (profile?.courses?.any { it.uuid == id && it.paidAccessRevoked() } == true) return false
         return if (profile?.registered == true) false
             else PurchaseVault(app).wasVerified(id)
     }

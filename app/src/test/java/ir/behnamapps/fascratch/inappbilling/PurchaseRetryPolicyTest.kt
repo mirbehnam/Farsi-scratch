@@ -6,6 +6,68 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PurchaseRetryPolicyTest {
+    @Test fun manualRestoreIsNotBlockedByBackgroundBackoffAfterAnAccountSwitch() {
+        assertTrue(PurchaseRetryPolicy.waitsForConfirmation(false, 1000, 9000, 10000, 2, false))
+        assertTrue(PurchaseRetryPolicy.waitsForConfirmation(false, 1000, 0, 10000, 2, false))
+        assertFalse(PurchaseRetryPolicy.waitsForConfirmation(true, 1000, 9000, 10000, 2, false))
+        assertFalse(PurchaseRetryPolicy.waitsForConfirmation(true, 1000, 9000, 10000, 2, true))
+        assertFalse(PurchaseRetryPolicy.waitsForConfirmation(false, 10000, 9000, 10000, 2, false))
+    }
+    @Test fun freshStoreReceiptUsesExplicitRecoveryOnTheFirstRestoreClickForBothStores() = runBlocking {
+        for (provider in listOf("cafebazaar", "myket")) {
+            val course = Course("course", "", "", "sku")
+            var receipt: Receipt? = null
+            var savedAccess: CourseAccess? = null
+            var restores = 0
+            val store = object : ReceiptStore {
+                override fun saveReceipt(courseId: String, value: Receipt) { receipt = value }
+                override fun receipt(courseId: String) = receipt
+                override fun saveAccess(access: CourseAccess) { savedAccess = access }
+            }
+            val billing = object : BillingGateway {
+                override val provider = provider
+                override suspend fun owned(sku: String) = Receipt(sku, "sdk-receipt")
+                override suspend fun purchase(sku: String): Receipt = error("Restore must never charge")
+                override fun close() = Unit
+            }
+            val backend = object : PurchaseBackend {
+                override suspend fun verify(course: Course, provider: String, receipt: Receipt, restore: Boolean): CourseAccess = error("Must explicitly recover")
+                override suspend fun retryPending(course: Course, provider: String, value: Receipt, explicitRestore: Boolean): CourseAccess {
+                    assertTrue(explicitRestore); assertEquals(receipt, value); restores++
+                    return CourseAccess(course.id, "verified-access", 10000, "original-owner")
+                }
+            }
+            BuyCourse(backend, store).execute(course, billing, true)
+            assertEquals(1, restores)
+            assertEquals("verified-access", savedAccess?.token)
+        }
+    }
+    @Test fun switchedAccountRestorationRefreshesSdkReceiptInsteadOfUsingStalePendingReceipt() = runBlocking {
+        val course = Course("course", "", "", "sku")
+        var discovered = false
+        val store = object : ReceiptStore {
+            override fun hasPendingReceipt(courseId: String) = true
+            override fun requiresStoreRediscovery(courseId: String) = true
+            override fun receipt(courseId: String) = Receipt("sku", "stale-token", "old-owner")
+            override fun saveReceipt(courseId: String, receipt: Receipt) = error("Use fresh discovery")
+            override fun saveDiscoveredReceipt(course: Course, provider: String, receipt: Receipt) { assertEquals("current-token", receipt.token); discovered = true }
+            override fun saveAccess(access: CourseAccess) = Unit
+        }
+        val billing = object : BillingGateway {
+            override val provider = "cafebazaar"
+            override suspend fun owned(sku: String) = Receipt(sku, "current-token")
+            override suspend fun purchase(sku: String): Receipt = error("No payment")
+            override fun close() = Unit
+        }
+        val backend = object : PurchaseBackend {
+            override suspend fun verify(course: Course, provider: String, receipt: Receipt, restore: Boolean): CourseAccess = error("Use explicit recovery")
+            override suspend fun retryPending(course: Course, provider: String, receipt: Receipt, explicitRestore: Boolean): CourseAccess {
+                assertTrue(discovered); assertTrue(explicitRestore); assertEquals("current-token", receipt.token)
+                return CourseAccess(course.id, "verified-access", 10000)
+            }
+        }
+        assertNotNull(BuyCourse(backend, store).execute(course, billing, true))
+    }
     @Test fun changedAccountRequiresFreshSdkDiscoveryBeforeSubmittingToCurrentAccount() = runBlocking {
         val course = Course("course", "", "", "sku")
         var queried = false

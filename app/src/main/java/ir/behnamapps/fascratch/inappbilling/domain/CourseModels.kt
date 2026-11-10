@@ -78,7 +78,7 @@ class BuyCourse(private val backend: PurchaseBackend, private val receipts: Rece
 
     suspend fun execute(course: Course, billing: BillingGateway, restoreOnly: Boolean): CourseAccess {
         // A paid receipt waiting for confirmation must never open payment again, even if inventory is down.
-        if (receipts.hasPendingReceipt(course.id)) {
+        if (receipts.hasPendingReceipt(course.id) && (!restoreOnly || !receipts.requiresStoreRediscovery(course.id))) {
             val pending = receipts.receipt(course.id)?.takeIf { it.sku == course.sku && it.token.isNotBlank() }
                 ?: throw CourseFailure("رسید در انتظار با دوره مطابقت ندارد؛ با پشتیبانی تماس بگیر.")
             val access = backend.retryPending(course, billing.provider, pending, restoreOnly)
@@ -98,8 +98,11 @@ class BuyCourse(private val backend: PurchaseBackend, private val receipts: Rece
         }
         if (receipt.sku != course.sku || receipt.token.isBlank()) throw CourseFailure("رسید خرید با دوره مطابقت ندارد.")
         // Persist before HTTP verification: process death/outage must not lose the paid receipt.
-        receipts.savePendingReceipt(course, billing.provider, receipt)
-        val access = backend.verify(course, billing.provider, receipt, previous != null || restoreOnly)
+        if (restoreOnly && previous != null) receipts.saveDiscoveredReceipt(course, billing.provider, receipt)
+        else receipts.savePendingReceipt(course, billing.provider, receipt)
+        // Explicit restore authorizes recovery; merely discovering an old purchase during a buy does not.
+        val access = if (restoreOnly) backend.retryPending(course, billing.provider, receipt, true)
+            else backend.verify(course, billing.provider, receipt, previous != null)
         if (access.courseId != course.id) throw CourseFailure("دسترسی برگشتی با دوره مطابقت ندارد.")
         receipts.saveAccess(access)
         return access

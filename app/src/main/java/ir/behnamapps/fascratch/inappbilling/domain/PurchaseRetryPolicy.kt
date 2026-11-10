@@ -6,6 +6,11 @@ import java.util.TimeZone
 
 /** No credentials, clocks or Android dependencies: shared by interactive confirmation and the job. */
 object PurchaseRetryPolicy {
+    /** Backoff controls automatic work; an explicit restore gets one store-verified server attempt. */
+    fun waitsForConfirmation(explicitRestore: Boolean, now: Long, cooldownUntil: Long,
+        pendingNext: Long, attempt: Int, blocked: Boolean): Boolean = !explicitRestore &&
+        (cooldownUntil > now || (attempt > 0 && !blocked && pendingNext > now))
+
     fun retryable(failure: CourseFailure): Boolean = failure.code !in setOf(
         "refunded", "rejected", "not_owned", "access_disabled", "purchase_owner_mismatch", "purchase_account_required"
     ) && (failure.status == 0 || failure.status == 408 || failure.status == 425 || failure.status == 429 ||

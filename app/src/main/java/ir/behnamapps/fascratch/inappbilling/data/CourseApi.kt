@@ -231,8 +231,10 @@ class CourseApi(context: android.content.Context? = null) : PurchaseBackend {
             throw CourseFailure("تأیید خرید نیاز به بررسی دارد؛ بازیابی خرید را بزن یا با پشتیبانی تماس بگیر.", 409, "confirmation_review_required")
         if (pending != null && !explicitRecovery && !PurchaseRetryPolicy.sameOwner(pending.owner, identity?.profile()?.uuid, identity?.requiresRecovery() == true))
             throw CourseFailure("رسید خرید محفوظ است؛ برای تأیید آن وارد حساب هنگام خرید شو یا بازیابی خرید را انجام بده.", 409, "purchase_owner_mismatch")
-        if (vault != null && (vault.cooldownUntil() > System.currentTimeMillis() ||
-            (pending != null && pending.attempt > 0 && !pending.blocked && pending.next > System.currentTimeMillis())))
+        // Scheduler backoff must not lock the explicit recovery button. The server still
+        // verifies the receipt and enforces its own live rate limit on this single request.
+        if (vault != null && PurchaseRetryPolicy.waitsForConfirmation(explicitRecovery, System.currentTimeMillis(),
+            vault.cooldownUntil(), pending?.next ?: 0, pending?.attempt ?: 0, pending?.blocked ?: false))
             throw CourseFailure("رسید خرید محفوظ است و تأیید آن خودکار تکرار می‌شود؛ تا پایان زمان انتظار سرور صبر کن.", 429, "confirmation_pending")
         confirmReceipt(course, provider, receipt, restore, pending,
             background = retrying && !explicitRecovery)

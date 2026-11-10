@@ -12,6 +12,12 @@ import androidx.compose.ui.res.painterResource
 import ir.behnamapps.fascratch.R
 
 private val bundledAchievementHashes = mapOf(
+    "content_store_visit" to "90aa0dd700bd720c16c712483df2ff49d830d26adae744a82efc84f7289dabfb",
+    "content_buyer_10" to "f95d0c9fba13887c3a2692f81907ffde3896a91b990d29208aa52c687e593935",
+    "ads_30" to "184e2cf2879d73e250776f47c1dde07afec5a1663597dcc86bcac25d42480391",
+    "ads_15" to "e87405589909851d51206afda6a19a9369dcb280878f5d7960ea3942ee4125ac",
+    "quality_run" to "fa65da6ad097c4e83d71b6bd72ac8137c80c3452ee14d6edaebfe64bbc096251",
+    "html_export" to "4cff806c1c2af2020ddc616be205a33c8542cd42fb38c107671912fc2bc0a989",
     "future_investor" to "14a7f87830768272b4f5d526d7ae74db4bce04a419731fc4e4c7acf9bde05d83",
     "tour_complete" to "851394ad7c5994bc7acaeba280c2b1435a12d5dcb5df28165343c267383fff32",
     "showcase_10" to "5eafe67ac2c9ae1802c233eb00438628460eb3f655a37e8b53c1be8e60967592",
@@ -35,6 +41,12 @@ private val bundledAchievementHashes = mapOf(
 /** Bundled WebP is immediate and offline; optional public updates reuse the bounded hash cache. */
 @Composable internal fun AchievementTrophy(trophy: ShowcaseTrophy, fallback: @Composable () -> Unit) {
     val local = when (trophy.id) {
+        "content_store_visit" -> R.drawable.achievement_content_store_visit
+        "content_buyer_10" -> R.drawable.achievement_content_buyer_10
+        "ads_30" -> R.drawable.achievement_ads_30
+        "ads_15" -> R.drawable.achievement_ads_15
+        "quality_run" -> R.drawable.achievement_quality_run
+        "html_export" -> R.drawable.achievement_html_export
         "future_investor" -> R.drawable.achievement_future_investor
         "tour_complete" -> R.drawable.achievement_tour_complete
         "showcase_10" -> R.drawable.achievement_showcase_10
